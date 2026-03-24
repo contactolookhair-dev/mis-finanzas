@@ -43,19 +43,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-hero-glow">
+    <div className="min-h-screen">
       <div className="screen-shell">
         <div className="lg:pl-[120px]">
-          <header className="glass-panel sticky top-3 z-20 mb-4 rounded-[28px] px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]">
+          <header className="glass-panel sticky top-3 z-20 mb-4 rounded-[24px] px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
             <div className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/55">
-                    Mis Finanzas · Modo simple
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-500/80">
+                    Mis Finanzas · Manual
                   </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Gastos y deudas</h1>
-                    <span className="rounded-full border border-white/70 bg-white/75 px-2.5 py-1 text-[10px] font-medium text-neutral-600">
+                    <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Tu dinero hoy</h1>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-medium text-slate-500">
                       {authSession?.authenticated === true
                         ? `Workspace: ${authSession.activeWorkspace?.workspaceName ?? "sin seleccionar"}`
                         : "Modo prueba"}
@@ -65,10 +65,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="hidden items-center gap-3 sm:flex">
                   <Link
                     href="/movimientos"
-                    className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "h-9 px-3 text-xs font-semibold")}
+                    className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "h-9 border-slate-200 bg-white px-3 text-xs font-semibold")}
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    Agregar gasto
+                    Nueva transacción
                   </Link>
                 </div>
               </div>
@@ -80,10 +80,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <div className="grid grid-cols-1 gap-3 sm:hidden">
                   <Link
                     href="/movimientos"
-                    className={cn(buttonVariants({ variant: "secondary" }), "h-10 text-xs font-semibold")}
+                    className={cn(buttonVariants({ variant: "secondary" }), "h-10 border-slate-200 bg-white text-xs font-semibold")}
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    Agregar gasto
+                    Nueva transacción
                   </Link>
                 </div>
               </div>
@@ -93,7 +93,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <main className="pb-24">{children}</main>
         </div>
 
-        <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[30px] border-white/50 bg-white/68 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)] lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[92px] lg:-translate-y-1/2">
+        <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[28px] border-white/70 bg-white/86 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)] lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[94px] lg:-translate-y-1/2">
           <div className="grid grid-cols-5 gap-2 lg:grid-cols-1">
             {visibleNavigationItems.map((item) => {
               const isActive = pathname === item.href;
@@ -106,8 +106,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className={cn(
                     "flex flex-col items-center justify-center gap-2 rounded-[22px] px-2 py-3 text-[11px] font-medium transition-colors",
                     isActive
-                      ? "bg-primary/92 text-white shadow-[0_8px_18px_rgba(15,61,62,0.25)]"
-                      : "text-neutral-500 hover:bg-white/55 hover:text-foreground"
+                      ? "bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white shadow-[0_8px_18px_rgba(124,58,237,0.35)]"
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
                   <Icon className="h-4 w-4" />

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { Building2, CircleDollarSign, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,6 +28,12 @@ const typeLabel: Record<AccountItem["type"], string> = {
   EFECTIVO: "Efectivo"
 };
 
+const typeIcon: Record<AccountItem["type"], ComponentType<{ className?: string }>> = {
+  CREDITO: CreditCard,
+  DEBITO: Building2,
+  EFECTIVO: CircleDollarSign
+};
+
 export function CuentasClient() {
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +48,11 @@ export function CuentasClient() {
     color: "",
     icon: ""
   });
+
+  const totalAvailable = useMemo(
+    () => accounts.reduce((acc, account) => acc + account.balance, 0),
+    [accounts]
+  );
 
   async function loadAccounts() {
     try {
@@ -100,10 +112,16 @@ export function CuentasClient() {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      <Card className="space-y-4 rounded-[24px] p-4">
+      <Card className="relative overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 p-5 text-white shadow-[0_26px_48px_rgba(124,58,237,0.28)]">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/70">Total disponible</p>
+        <p className="mt-2 text-4xl font-semibold tracking-tight">{formatCurrency(totalAvailable)}</p>
+        <p className="mt-2 text-xs text-white/80">Suma de todas tus carteras y efectivo.</p>
+      </Card>
+
+      <Card className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Cuentas manuales</p>
-          <h2 className="mt-1 text-lg font-semibold">Tarjetas y efectivo</h2>
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Nueva cartera</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-900">Agregar tarjeta o efectivo</h2>
         </div>
         <form className="grid gap-2.5 sm:grid-cols-2" onSubmit={handleCreate}>
           <Input
@@ -112,7 +130,7 @@ export function CuentasClient() {
             onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
           />
           <Input
-            placeholder="Banco (opcional)"
+            placeholder="Banco"
             value={form.bank}
             onChange={(event) => setForm((current) => ({ ...current, bank: event.target.value }))}
           />
@@ -135,54 +153,68 @@ export function CuentasClient() {
             }
           />
           <Input
-            placeholder="Color (opcional, ej: #22c55e)"
+            placeholder="Color opcional (#9333ea)"
             value={form.color}
             onChange={(event) => setForm((current) => ({ ...current, color: event.target.value }))}
           />
           <Input
-            placeholder="Icono (opcional, ej: 💳)"
+            placeholder="Icono opcional (💳)"
             value={form.icon}
             onChange={(event) => setForm((current) => ({ ...current, icon: event.target.value }))}
           />
           <div className="sm:col-span-2">
-            <Button type="submit" disabled={saving || form.name.trim().length < 2}>
-              {saving ? "Guardando..." : "Crear cuenta"}
+            <Button
+              type="submit"
+              disabled={saving || form.name.trim().length < 2}
+              className="h-11 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500"
+            >
+              {saving ? "Guardando..." : "Crear cartera"}
             </Button>
           </div>
         </form>
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
       </Card>
 
-      <Card className="rounded-[24px] p-4">
-        <h3 className="text-base font-semibold">Saldo actual por cuenta</h3>
-        <p className="mt-1 text-sm text-neutral-500">
-          El saldo se calcula automáticamente con tus movimientos manuales.
-        </p>
-        <div className="mt-3 space-y-2">
-          {loading ? <p className="text-sm text-neutral-500">Cargando cuentas...</p> : null}
-          {!loading && accounts.length === 0 ? (
-            <p className="text-sm text-neutral-500">Aún no hay cuentas registradas.</p>
-          ) : null}
-          {accounts.map((account) => (
-            <div
+      <div className="space-y-2">
+        {loading ? <Card className="rounded-[20px] p-4 text-sm text-slate-500">Cargando carteras...</Card> : null}
+        {!loading && accounts.length === 0 ? (
+          <Card className="rounded-[20px] p-4 text-sm text-slate-500">Aún no hay carteras registradas.</Card>
+        ) : null}
+        {accounts.map((account) => {
+          const Icon = typeIcon[account.type];
+          return (
+            <Card
               key={account.id}
-              className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-3"
+              className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft transition hover:-translate-y-0.5"
             >
-              <div>
-                <p className="text-sm font-semibold">
-                  {account.icon ? `${account.icon} ` : ""}
-                  {account.name}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  {account.bank} · {typeLabel[account.type]}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white"
+                    style={{
+                      background: account.color
+                        ? account.color
+                        : "linear-gradient(135deg, #7c3aed 0%, #ec4899 60%, #10b981 100%)"
+                    }}
+                  >
+                    {account.icon ? <span>{account.icon}</span> : <Icon className="h-5 w-5" />}
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{account.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {account.bank} · {typeLabel[account.type]}
+                    </p>
+                  </div>
+                </div>
+                <p className={`text-base font-semibold ${account.balance >= 0 ? "text-emerald-600" : "text-fuchsia-600"}`}>
+                  {formatCurrency(account.balance)}
                 </p>
               </div>
-              <p className="text-sm font-semibold">{formatCurrency(account.balance)}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
+            </Card>
+          );
+        })}
+      </div>
     </div>
   );
 }
