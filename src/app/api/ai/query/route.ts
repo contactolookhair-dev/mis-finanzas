@@ -1,7 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { queryFinancialAI } from "@/server/services/ai-service";
-import { requireRoutePermission } from "@/server/permissions/route-permissions";
 
 const aiQuerySchema = z.object({
   question: z.string().min(3),
@@ -21,6 +19,11 @@ const aiQuerySchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    const [{ requireRoutePermission }, { queryFinancialAI }] = await Promise.all([
+      import("@/server/permissions/route-permissions"),
+      import("@/server/services/ai-service")
+    ]);
+
     const access = await requireRoutePermission(request, "ai:query");
     if (!access.ok) {
       return access.response;
