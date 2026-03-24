@@ -40,11 +40,38 @@ type AccountItem = {
   balance: number;
 };
 
-const accountTypeMap: Record<string, { label: string; tone: string; icon: typeof Wallet }> = {
-  EFECTIVO: { label: "Efectivo", tone: "from-amber-50 via-amber-100 to-white/80", icon: Wallet },
-  DEBITO: { label: "Débito", tone: "from-sky-50 via-slate-50 to-white/80", icon: Building },
-  CREDITO: { label: "Crédito", tone: "from-fuchsia-50 via-rose-50 to-white/80", icon: CreditCard },
-  OTRO: { label: "Cuenta digital", tone: "from-violet-50 via-white/90 to-slate-50", icon: ShieldCheck }
+const accountTypeMap: Record<
+  string,
+  { label: string; gradient: string; icon: typeof Wallet; accent: string; secondary: string }
+> = {
+  EFECTIVO: {
+    label: "Billetera",
+    gradient: "from-amber-50 via-amber-100 to-white/90",
+    icon: Wallet,
+    accent: "text-amber-700",
+    secondary: "Saldo disponible"
+  },
+  DEBITO: {
+    label: "Cuenta débito",
+    gradient: "from-white via-slate-50 to-slate-100",
+    icon: Building,
+    accent: "text-slate-900",
+    secondary: "Saldo actual"
+  },
+  CREDITO: {
+    label: "Tarjeta crédito",
+    gradient: "from-slate-900 via-slate-800 to-slate-900",
+    icon: CreditCard,
+    accent: "text-white",
+    secondary: "Cupo disponible"
+  },
+  OTRO: {
+    label: "Cuenta digital",
+    gradient: "from-violet-50 via-white/90 to-slate-50",
+    icon: ShieldCheck,
+    accent: "text-violet-700",
+    secondary: "Disponible"
+  }
 };
 
 function AccountCard({ account }: { account: AccountItem }) {
@@ -52,19 +79,39 @@ function AccountCard({ account }: { account: AccountItem }) {
   const Icon = meta.icon;
 
   return (
-    <div
-      className={`rounded-[28px] border border-white/70 bg-gradient-to-br ${meta.tone} p-4 shadow-[0_14px_36px_rgba(15,23,42,0.08)]`}
-    >
-      <div className="flex items-start justify-between gap-3">
+    <div className="relative rounded-[30px] border border-white/80 bg-white/90 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.12)] transition hover:-translate-y-1">
+      <div className="absolute inset-0 rounded-[30px] bg-gradient-to-br opacity-50" style={{ background: meta.gradient }} />
+      <div className="relative space-y-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className={`text-[10px] font-semibold uppercase tracking-[0.4em] ${meta.accent}`}>
+              {meta.label}
+            </p>
+            <p className="mt-2 text-base font-semibold text-slate-900">{account.name}</p>
+          </div>
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.1)]">
+            <Icon className="h-5 w-5" />
+          </div>
+        </div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{meta.label}</p>
-          <p className="mt-2 text-base font-semibold text-slate-900">{account.name}</p>
+          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{meta.secondary}</p>
+          <p className="mt-1 text-3xl font-semibold text-slate-900">{formatCurrency(account.balance)}</p>
         </div>
-        <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-[0_6px_16px_rgba(15,23,42,0.18)]">
-          <Icon className="h-5 w-5" />
-        </div>
+        {account.type === "CREDITO" ? (
+          <div className="space-y-2 rounded-[20px] bg-slate-900/80 p-3 text-white">
+            <div className="flex items-center justify-between text-xs">
+              <span>Utilizado</span>
+              <span>{formatCurrency(account.balance * 0.18)}</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/30">
+              <div className="h-full bg-gradient-to-r from-rose-500 via-fuchsia-500 to-rose-400" style={{ width: "40%" }} />
+            </div>
+            <p className="text-[11px] text-white/80">Cupo 40% usado</p>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">Actualizado hace 2h</p>
+        )}
       </div>
-      <p className="mt-4 text-2xl font-semibold text-slate-900">{formatCurrency(account.balance)}</p>
     </div>
   );
 }
@@ -648,17 +695,6 @@ export function DashboardClient() {
 
       {snapshot && kpis ? (
         <>
-          <section className="space-y-3.5 sm:space-y-4">
-          <HeroPanel
-            kpis={kpis}
-            snapshot={snapshot}
-            filters={filters ?? getDefaultRange()}
-            onRefresh={() => setRefreshKey((value) => value + 1)}
-            loading={loading}
-            displayBalance={accountsTotal}
-          />
-          </section>
-
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
@@ -670,6 +706,17 @@ export function DashboardClient() {
               <p className="text-sm font-semibold text-slate-500">{accounts.length} cuentas</p>
             </div>
             <AccountList accounts={accounts} loading={accountsLoading} />
+          </section>
+
+          <section className="space-y-3.5 sm:space-y-4">
+            <HeroPanel
+              kpis={kpis}
+              snapshot={snapshot}
+              filters={filters ?? getDefaultRange()}
+              onRefresh={() => setRefreshKey((value) => value + 1)}
+              loading={loading}
+              displayBalance={accountsTotal}
+            />
           </section>
 
           <SummaryGrid kpis={kpis} snapshot={snapshot} />
