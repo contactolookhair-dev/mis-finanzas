@@ -1,0 +1,540 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BusinessUnitType {
+  PERSONAL
+  NEGOCIO
+}
+
+enum AccountType {
+  CUENTA_CORRIENTE
+  CUENTA_VISTA
+  TARJETA_CREDITO
+  TARJETA_DEBITO
+  EFECTIVO
+  OTRO
+}
+
+enum CategoryType {
+  INGRESO
+  EGRESO
+  MIXTA
+}
+
+enum FinancialOrigin {
+  PERSONAL
+  EMPRESA
+}
+
+enum TransactionType {
+  INGRESO
+  EGRESO
+}
+
+enum ReviewStatus {
+  PENDIENTE
+  REVISADO
+  OBSERVADO
+}
+
+enum ReimbursementStatus {
+  PENDIENTE
+  REEMBOLSADO
+  NO_APLICA
+}
+
+enum ExpenseStatus {
+  PENDIENTE
+  PAGADO
+}
+
+enum DebtorStatus {
+  PENDIENTE
+  ABONANDO
+  PAGADO
+  ATRASADO
+}
+
+enum ExpenseFrequency {
+  SEMANAL
+  QUINCENAL
+  MENSUAL
+  ANUAL
+}
+
+enum RuleMatchField {
+  DESCRIPCION
+  NOTAS
+}
+
+enum RuleMatchMode {
+  PARTIAL
+  EXACT
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum ImportTemplateParser {
+  CSV
+  XLSX
+  PDF
+}
+
+enum ImportAmountMode {
+  SIGNED
+  SEPARATE_DEBIT_CREDIT
+}
+
+enum ImportBatchStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model Workspace {
+  id                String            @id @default(cuid())
+  name              String
+  slug              String            @unique
+  description       String?
+  isActive          Boolean           @default(true)
+  businessUnits     BusinessUnit[]
+  accounts          Account[]
+  categories        Category[]
+  subcategories     Subcategory[]
+  transactions      Transaction[]
+  classificationRules ClassificationRule[]
+  fixedExpenses     FixedExpense[]
+  variableExpenses  VariableExpense[]
+  debtors           Debtor[]
+  reimbursements    Reimbursement[]
+  appSettings       AppSettings[]
+  userSettings      UserSettings[]
+  aiSettings        AISettings[]
+  dashboardSettings DashboardSettings[]
+  modules           WorkspaceModule[]
+  members           WorkspaceMember[]
+  sessions          AuthSession[]
+  adminAuditLogs    AdminAuditLog[]
+  importTemplates   ImportTemplateConfig[]
+  importBatches     ImportBatch[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+}
+
+model AuthSession {
+  id                String     @id @default(cuid())
+  sessionTokenHash  String     @unique
+  userKey           String
+  displayName       String?
+  activeWorkspaceId String?
+  expiresAt         DateTime
+  workspace         Workspace? @relation(fields: [activeWorkspaceId], references: [id])
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([userKey, expiresAt])
+}
+
+model AdminAuditLog {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  userKey       String
+  sessionId     String?
+  section       String
+  action        String
+  changedFields Json
+  beforeData    Json?
+  afterData     Json?
+  createdAt     DateTime @default(now())
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, section])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userKey     String
+  role        WorkspaceRole @default(VIEWER)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, role])
+  @@unique([workspaceId, userKey])
+}
+
+model BusinessUnit {
+  id                  String               @id @default(cuid())
+  workspaceId         String
+  name                String
+  slug                String
+  type                BusinessUnitType
+  isActive            Boolean              @default(true)
+  description         String?
+  color               String?
+  accounts            Account[]
+  transactions        Transaction[]
+  fixedExpenses       FixedExpense[]
+  variableExpenses    VariableExpense[]
+  reimbursements      Reimbursement[]
+  classificationRules ClassificationRule[]
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, type])
+}
+
+model Account {
+  id                    String            @id @default(cuid())
+  workspaceId           String
+  name                  String
+  institution           String?
+  type                  AccountType
+  currencyCode          String            @default("CLP")
+  isActive              Boolean           @default(true)
+  isBusiness            Boolean           @default(false)
+  businessUnitId        String?
+  transactions          Transaction[]
+  fixedExpenses         FixedExpense[]
+  variableExpenses      VariableExpense[]
+  reimbursementsPaid    Reimbursement[]   @relation("ReimbursementPersonalAccount")
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  workspace             Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  businessUnit          BusinessUnit?     @relation(fields: [businessUnitId], references: [id])
+
+  @@index([workspaceId, type])
+}
+
+model Category {
+  id                  String               @id @default(cuid())
+  workspaceId         String
+  name                String
+  slug                String
+  type                CategoryType
+  icon                String?
+  isActive            Boolean              @default(true)
+  sortOrder           Int                  @default(0)
+  subcategories       Subcategory[]
+  transactions        Transaction[]
+  fixedExpenses       FixedExpense[]
+  variableExpenses    VariableExpense[]
+  classificationRules ClassificationRule[]
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, type])
+}
+
+model Subcategory {
+  id                  String               @id @default(cuid())
+  workspaceId         String
+  name                String
+  slug                String
+  categoryId          String
+  isActive            Boolean              @default(true)
+  transactions        Transaction[]
+  classificationRules ClassificationRule[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category            Category             @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, categoryId])
+}
+
+model Transaction {
+  id                        String            @id @default(cuid())
+  workspaceId               String
+  date                      DateTime
+  description               String
+  amount                    Decimal           @db.Decimal(14, 2)
+  balance                   Decimal?          @db.Decimal(14, 2)
+  type                      TransactionType
+  accountId                 String?
+  categoryId                String?
+  subcategoryId             String?
+  businessUnitId            String?
+  financialOrigin           FinancialOrigin
+  notes                     String?
+  isReimbursable            Boolean           @default(false)
+  isBusinessPaidPersonally  Boolean           @default(false)
+  reviewStatus              ReviewStatus      @default(PENDIENTE)
+  duplicateFingerprint      String?
+  importBatchId             String?
+  metadata                  Json?
+  reimbursements            Reimbursement[]
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+  workspace                 Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  importBatch               ImportBatch?      @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  account                   Account?          @relation(fields: [accountId], references: [id])
+  category                  Category?         @relation(fields: [categoryId], references: [id])
+  subcategory               Subcategory?      @relation(fields: [subcategoryId], references: [id])
+  businessUnit              BusinessUnit?     @relation(fields: [businessUnitId], references: [id])
+
+  @@index([date, amount, description])
+  @@index([financialOrigin, businessUnitId])
+  @@index([duplicateFingerprint])
+  @@index([workspaceId, date])
+  @@index([workspaceId, importBatchId])
+  @@unique([workspaceId, duplicateFingerprint])
+}
+
+model ClassificationRule {
+  id              String           @id @default(cuid())
+  workspaceId     String
+  name            String
+  keyword         String
+  priority        Int              @default(0)
+  matchField      RuleMatchField   @default(DESCRIPCION)
+  matchMode       RuleMatchMode    @default(PARTIAL)
+  categoryId      String?
+  subcategoryId   String?
+  businessUnitId  String?
+  financialOrigin FinancialOrigin?
+  isReimbursable  Boolean?
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category        Category?        @relation(fields: [categoryId], references: [id])
+  subcategory     Subcategory?     @relation(fields: [subcategoryId], references: [id])
+  businessUnit    BusinessUnit?    @relation(fields: [businessUnitId], references: [id])
+}
+
+model ImportTemplateConfig {
+  id                String               @id @default(cuid())
+  workspaceId       String
+  name              String
+  institution       String
+  parser            ImportTemplateParser
+  detectionPriority Int                  @default(50)
+  filenameHints     Json
+  headerHints       Json
+  columnMappings    Json
+  dateFormats       Json
+  amountMode        ImportAmountMode     @default(SIGNED)
+  hasBalance        Boolean              @default(false)
+  isActive          Boolean              @default(true)
+  isSystem          Boolean              @default(false)
+  notes             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  workspace         Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, parser, isActive])
+  @@index([workspaceId, detectionPriority])
+}
+
+model FixedExpense {
+  id              String            @id @default(cuid())
+  workspaceId     String
+  name            String
+  amount          Decimal           @db.Decimal(14, 2)
+  frequency       ExpenseFrequency
+  dueDay          Int
+  categoryId      String?
+  businessUnitId  String?
+  accountId       String?
+  status          ExpenseStatus     @default(PENDIENTE)
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  workspace       Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category        Category?         @relation(fields: [categoryId], references: [id])
+  businessUnit    BusinessUnit?     @relation(fields: [businessUnitId], references: [id])
+  account         Account?          @relation(fields: [accountId], references: [id])
+}
+
+model VariableExpense {
+  id                  String        @id @default(cuid())
+  workspaceId         String
+  name                String
+  amount              Decimal       @db.Decimal(14, 2)
+  date                DateTime
+  categoryId          String?
+  businessUnitId      String?
+  accountId           String?
+  sourceTransactionId String?
+  notes               String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  workspace           Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category            Category?     @relation(fields: [categoryId], references: [id])
+  businessUnit        BusinessUnit? @relation(fields: [businessUnitId], references: [id])
+  account             Account?      @relation(fields: [accountId], references: [id])
+}
+
+model Debtor {
+  id               String         @id @default(cuid())
+  workspaceId      String
+  name             String
+  reason           String
+  totalAmount      Decimal        @db.Decimal(14, 2)
+  paidAmount       Decimal        @default(0) @db.Decimal(14, 2)
+  startDate        DateTime
+  estimatedPayDate DateTime?
+  status           DebtorStatus   @default(PENDIENTE)
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  payments         DebtorPayment[]
+}
+
+model DebtorPayment {
+  id          String    @id @default(cuid())
+  debtorId    String
+  amount      Decimal   @db.Decimal(14, 2)
+  paidAt      DateTime
+  notes       String?
+  createdAt   DateTime  @default(now())
+  debtor      Debtor    @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+}
+
+model Reimbursement {
+  id                String               @id @default(cuid())
+  workspaceId       String
+  transactionId     String?
+  businessUnitId    String
+  personalAccountId String?
+  amount            Decimal              @db.Decimal(14, 2)
+  status            ReimbursementStatus  @default(PENDIENTE)
+  reimbursedAt      DateTime?
+  notes             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  workspace         Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transaction       Transaction?         @relation(fields: [transactionId], references: [id])
+  businessUnit      BusinessUnit         @relation(fields: [businessUnitId], references: [id])
+  personalAccount   Account?             @relation("ReimbursementPersonalAccount", fields: [personalAccountId], references: [id])
+
+  @@index([businessUnitId, status])
+  @@unique([transactionId])
+  @@index([workspaceId, status])
+}
+
+model UserSettings {
+  id                    String    @id @default(cuid())
+  workspaceId           String
+  userKey               String
+  language              String    @default("es-CL")
+  locale                String    @default("es-CL")
+  currencyCode          String    @default("CLP")
+  currencySymbol        String    @default("$")
+  dateFormat            String    @default("dd-MM-yyyy")
+  defaultBusinessUnitId String?
+  dashboardFilters      Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userKey])
+  @@index([workspaceId, userKey])
+}
+
+model AppSettings {
+  id                   String   @id @default(cuid())
+  workspaceId          String   @unique
+  dashboardModules     Json
+  enabledModules       Json
+  suggestedAiQuestions Json
+  transactionLabels    Json
+  importSettings       Json
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model AISettings {
+  id                    String    @id @default(cuid())
+  workspaceId           String    @unique
+  modelProvider         String    @default("internal")
+  modelName             String    @default("financial-assistant-v1")
+  isEnabled             Boolean   @default(true)
+  systemPrompt          String?
+  responseTone          String    @default("claro-profesional")
+  responseDetailLevel   String    @default("medio")
+  suggestedQuestions    Json
+  insightParameters     Json
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, isEnabled])
+}
+
+model DashboardSettings {
+  id                    String    @id @default(cuid())
+  workspaceId           String    @unique
+  layoutConfig          Json
+  defaultDateRangeDays  Int       @default(30)
+  visibleWidgets        Json
+  kpiDefinitions        Json
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+model ImportBatch {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  userKey       String
+  sessionId     String?
+  fileName      String
+  parser        ImportTemplateParser
+  status        ImportBatchStatus @default(PROCESSING)
+  rowsTotal     Int               @default(0)
+  rowsIncluded  Int               @default(0)
+  importedCount Int               @default(0)
+  omittedCount  Int               @default(0)
+  duplicateCount Int              @default(0)
+  errorCount    Int               @default(0)
+  metadata      Json?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  completedAt   DateTime?
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, status])
+}
+
+model WorkspaceModule {
+  id          String    @id @default(cuid())
+  workspaceId String
+  code        String
+  label       String
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, code])
+  @@index([workspaceId, isActive])
+}

@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  background-image: radial-gradient(circle at top, rgba(255, 255, 255, 0.9), transparent 24%);
+}
+
+* {
+  scrollbar-width: thin;
+}
+
+.glass-panel {
+  @apply border border-white/60 bg-white/75 backdrop-blur-xl;
+}
+
+.screen-shell {
+  @apply mx-auto w-full max-w-7xl px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-10;
+}
