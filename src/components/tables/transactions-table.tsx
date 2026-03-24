@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import { getAccountIcon, getCategoryIcon } from "@/lib/ui/icon-maps";
 
 type TransactionRow = {
   id: string;
@@ -61,81 +62,68 @@ export function TransactionsTable() {
   }, []);
 
   return (
-    <Card className="overflow-hidden p-0">
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left">
-          <thead className="bg-muted/80 text-xs uppercase tracking-[0.18em] text-neutral-500">
-            <tr>
-              <th className="px-4 py-4">Fecha</th>
-              <th className="px-4 py-4">Descripción</th>
-              <th className="px-4 py-4">Cuenta</th>
-              <th className="px-4 py-4">Categoría</th>
-              <th className="px-4 py-4">Unidad</th>
-              <th className="px-4 py-4">Origen</th>
-              <th className="px-4 py-4">Monto</th>
-              <th className="px-4 py-4">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr className="border-t border-border/80 text-sm">
-                <td className="px-4 py-6 text-neutral-500" colSpan={8}>
-                  Cargando movimientos reales...
-                </td>
-              </tr>
-            ) : null}
-            {!loading && error ? (
-              <tr className="border-t border-border/80 text-sm">
-                <td className="px-4 py-6 text-danger" colSpan={8}>
-                  {error}
-                </td>
-              </tr>
-            ) : null}
-            {!loading && !error && rows.length === 0 ? (
-              <tr className="border-t border-border/80 text-sm">
-                <td className="px-4 py-6 text-neutral-500" colSpan={8}>
-                  No hay movimientos para mostrar en este workspace.
-                </td>
-              </tr>
-            ) : null}
-            {rows.map((transaction) => (
-              <tr key={transaction.id} className="border-t border-border/80 text-sm">
-                <td className="px-4 py-4">{formatDate(transaction.date)}</td>
-                <td className="px-4 py-4">
-                  <div className="space-y-1">
-                    <p className="font-medium">{transaction.description}</p>
-                    {transaction.reimbursable ? (
-                      <p className="text-xs text-warning">Reembolsable por negocio</p>
-                    ) : null}
+    <div className="space-y-2">
+      {loading ? (
+        <Card className="premium-surface p-4 text-sm text-slate-500">Cargando movimientos...</Card>
+      ) : null}
+      {!loading && error ? (
+        <Card className="premium-surface p-4 text-sm text-rose-600">{error}</Card>
+      ) : null}
+      {!loading && !error && rows.length === 0 ? (
+        <Card className="premium-surface p-4 text-sm text-slate-500">
+          No hay movimientos registrados todavía.
+        </Card>
+      ) : null}
+
+      {!loading &&
+        !error &&
+        rows.map((transaction) => {
+          const CategoryIcon = getCategoryIcon(transaction.category);
+          const AccountIcon = getAccountIcon(transaction.account);
+          return (
+            <Card key={transaction.id} className="premium-surface animate-fade-up p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {transaction.description}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <span className="inline-flex items-center gap-1">
+                      <CategoryIcon className="h-3.5 w-3.5" />
+                      {transaction.category}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <AccountIcon className="h-3.5 w-3.5" />
+                      {transaction.account}
+                    </span>
+                    <span>{formatDate(transaction.date)}</span>
                   </div>
-                </td>
-                <td className="px-4 py-4 text-neutral-500">{transaction.account}</td>
-                <td className="px-4 py-4">{transaction.category}</td>
-                <td className="px-4 py-4">{transaction.businessUnit}</td>
-                <td className="px-4 py-4">
-                  {transaction.origin === "PERSONAL" ? "Personal" : "Empresa"}
-                </td>
-                <td
-                  className={`px-4 py-4 font-semibold ${
-                    transaction.amount > 0 ? "text-success" : "text-foreground"
-                  }`}
-                >
-                  {formatCurrency(transaction.amount)}
-                </td>
-                <td className="px-4 py-4">
-                  <Badge tone={getTone(transaction.reviewStatus) as "warning" | "success" | "neutral"}>
-                    {transaction.reviewStatus === "PENDIENTE"
-                      ? "Pendiente"
-                      : transaction.reviewStatus === "REVISADO"
-                        ? "Revisado"
-                        : "Observado"}
-                  </Badge>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+                  {transaction.reimbursable ? (
+                    <p className="mt-1 text-xs text-amber-600">Reembolsable por negocio</p>
+                  ) : null}
+                </div>
+                <div className="text-right">
+                  <p
+                    className={`text-base font-semibold ${
+                      transaction.amount > 0 ? "text-emerald-600" : "text-fuchsia-600"
+                    }`}
+                  >
+                    {formatCurrency(transaction.amount)}
+                  </p>
+                  <div className="mt-1">
+                    <Badge tone={getTone(transaction.reviewStatus) as "warning" | "success" | "neutral"}>
+                      {transaction.reviewStatus === "PENDIENTE"
+                        ? "Pendiente"
+                        : transaction.reviewStatus === "REVISADO"
+                          ? "Revisado"
+                          : "Observado"}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+    </div>
   );
 }

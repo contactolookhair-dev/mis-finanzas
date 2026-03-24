@@ -38,6 +38,13 @@ type Props = {
 };
 
 type TransactionKind = "GASTO" | "INGRESO" | "TRANSFERENCIA";
+const QUICK_PREFS_KEY = "mis-finanzas.quick-transaction";
+
+type QuickPrefs = {
+  kind?: TransactionKind;
+  accountId?: string;
+  categoryId?: string;
+};
 
 function getToday() {
   const now = new Date();
@@ -96,8 +103,28 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     setError(null);
   }
 
+  function loadPrefs() {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(QUICK_PREFS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as QuickPrefs;
+      if (parsed.kind) setKind(parsed.kind);
+      if (parsed.accountId) setAccountId(parsed.accountId);
+      if (parsed.categoryId) setCategoryId(parsed.categoryId);
+    } catch {
+      // no-op
+    }
+  }
+
+  function savePrefs(prefs: QuickPrefs) {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(QUICK_PREFS_KEY, JSON.stringify(prefs));
+  }
+
   useEffect(() => {
     if (!open) return;
+    loadPrefs();
     async function loadCatalogs() {
       try {
         setLoading(true);
@@ -228,6 +255,12 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
       if (isOwed && owedByType === "PERSONA") {
         await upsertPersonDebt();
       }
+
+      savePrefs({
+        kind,
+        accountId,
+        categoryId
+      });
 
       resetForm();
       onOpenChange(false);
