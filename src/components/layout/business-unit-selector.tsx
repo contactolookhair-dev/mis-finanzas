@@ -19,7 +19,7 @@ export function BusinessUnitSelector() {
         params.set("unidad", event.target.value);
         router.push(`${pathname}?${params.toString()}` as Route);
       }}
-      className="min-w-[180px]"
+      className="h-10 min-w-[150px] text-xs sm:min-w-[170px] sm:text-sm"
     >
       {appConfig.businessUnits.map((unit) => (
         <option key={unit.id} value={unit.id}>

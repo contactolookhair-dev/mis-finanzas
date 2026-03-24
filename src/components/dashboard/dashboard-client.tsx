@@ -224,6 +224,14 @@ function HeroPanel({
   loading: boolean;
 }) {
   const neutralGain = kpis.netFlow >= 0;
+  const netFlowComparison = snapshot.comparisons.netFlow;
+  const netFlowTone =
+    netFlowComparison.delta > 0
+      ? "bg-emerald-50/90 text-emerald-700"
+      : netFlowComparison.delta < 0
+        ? "bg-rose-50/90 text-rose-700"
+        : "bg-slate-100/90 text-slate-700";
+
   return (
     <Card className="rounded-[32px] border border-white/65 bg-gradient-to-br from-slate-50/92 via-white/94 to-slate-100/80 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -234,6 +242,16 @@ function HeroPanel({
           <p className="mt-2 text-[2.1rem] font-semibold leading-none tracking-[-0.03em] text-slate-950 sm:text-[2.7rem]">
             {formatCurrency(kpis.netFlow)}
           </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${netFlowTone}`}>
+              {netFlowComparison.deltaPct >= 0 ? "+" : ""}
+              {netFlowComparison.deltaPct.toFixed(1)}% vs mes anterior
+            </span>
+            <span className="text-[11px] text-slate-500 sm:text-xs">
+              {netFlowComparison.delta >= 0 ? "+" : ""}
+              {formatCurrency(netFlowComparison.delta)}
+            </span>
+          </div>
           <p className="mt-2 text-xs text-slate-500 sm:text-sm">
             {snapshot.comparisons.currentPeriodLabel} · {kpis.totalTransactions} movimientos
           </p>
@@ -496,8 +514,8 @@ export function DashboardClient() {
   return (
     <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
       {error ? (
-        <Card className="rounded-[28px] border border-rose-100 bg-rose-50/80 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-          <p className="text-sm text-danger">{error}</p>
+        <Card className="rounded-[28px] border border-sky-100 bg-sky-50/75 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+          <p className="text-sm text-sky-800">{error}</p>
         </Card>
       ) : null}
 
@@ -521,12 +539,6 @@ export function DashboardClient() {
             onRefresh={() => setRefreshKey((value) => value + 1)}
             loading={loading}
           />
-            <FiltersRow
-              filters={filters ?? getDefaultRange()}
-              onChange={(patch) => setFilters((current) => ({ ...(current ?? {}), ...patch }))}
-              onReset={() => setFilters(getDefaultRange())}
-              snapshot={snapshot}
-            />
           </section>
 
           <SummaryGrid kpis={kpis} snapshot={snapshot} />
@@ -545,6 +557,13 @@ export function DashboardClient() {
           </section>
 
           <RecentTransactionsList items={snapshot.recentTransactions} />
+
+          <FiltersRow
+            filters={filters ?? getDefaultRange()}
+            onChange={(patch) => setFilters((current) => ({ ...(current ?? {}), ...patch }))}
+            onReset={() => setFilters(getDefaultRange())}
+            snapshot={snapshot}
+          />
         </>
       ) : null}
 

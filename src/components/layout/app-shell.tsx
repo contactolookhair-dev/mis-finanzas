@@ -16,7 +16,7 @@ import type { AuthSessionResponse } from "@/shared/types/auth";
 function BusinessUnitSelectorFallback() {
   const defaultUnit = appConfig.businessUnits[0];
   return (
-    <Select className="min-w-[180px]" defaultValue={defaultUnit.id}>
+    <Select className="h-10 min-w-[150px] text-xs sm:min-w-[170px] sm:text-sm" defaultValue={defaultUnit.id}>
       <option value={defaultUnit.id}>{defaultUnit.name}</option>
     </Select>
   );
@@ -42,41 +42,43 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-hero-glow">
       <div className="screen-shell">
-        <header className="glass-panel sticky top-4 z-20 mb-6 rounded-[30px] px-4 py-4 shadow-card">
-          <div className="flex flex-col gap-4">
-            <div className="flex items-start justify-between gap-4">
+        <header className="glass-panel sticky top-3 z-20 mb-4 rounded-[28px] px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary/70">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/55">
                   Chile · Finanzas híbridas
                 </p>
-                <h1 className="mt-1 text-xl font-semibold sm:text-2xl">Mis Finanzas</h1>
-                <p className="mt-1 text-xs text-neutral-500">
-                  {authSession?.authenticated === true
-                    ? `Workspace: ${authSession.activeWorkspace?.workspaceName ?? "sin seleccionar"}`
-                    : "Sesion no iniciada"}
-                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Mis Finanzas</h1>
+                  <span className="rounded-full border border-white/70 bg-white/75 px-2.5 py-1 text-[10px] font-medium text-neutral-600">
+                    {authSession?.authenticated === true
+                      ? `Workspace: ${authSession.activeWorkspace?.workspaceName ?? "sin seleccionar"}`
+                      : "Sesión no iniciada"}
+                  </span>
+                </div>
               </div>
               <div className="hidden items-center gap-3 sm:flex">
                 <Button variant="secondary" size="icon" aria-label="Refrescar">
                   <RefreshCcw className="h-4 w-4" />
                 </Button>
-                <Button>
+                <Button variant="secondary" className="h-9 px-3 text-xs font-semibold">
                   <Upload className="mr-2 h-4 w-4" />
                   Subir cartola
                 </Button>
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
               <Suspense fallback={<BusinessUnitSelectorFallback />}>
                 <BusinessUnitSelector />
               </Suspense>
               <div className="grid grid-cols-2 gap-3 sm:hidden">
-                <Button variant="secondary">
+                <Button variant="secondary" className="h-10 text-xs">
                   <RefreshCcw className="mr-2 h-4 w-4" />
                   Refrescar
                 </Button>
-                <Button>
+                <Button variant="secondary" className="h-10 text-xs font-semibold">
                   <Upload className="mr-2 h-4 w-4" />
                   Subir
                 </Button>
@@ -87,7 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <main className="pb-24">{children}</main>
 
-        <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[30px] p-2 shadow-card lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[92px] lg:-translate-y-1/2">
+        <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[30px] border-white/50 bg-white/68 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)] lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[92px] lg:-translate-y-1/2">
           <div className="grid grid-cols-5 gap-2 lg:grid-cols-1">
             {navigationItems.map((item) => {
               const isActive = pathname === item.href;
@@ -98,10 +100,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-2 rounded-[22px] px-2 py-3 text-[11px] font-medium transition",
+                    "flex flex-col items-center justify-center gap-2 rounded-[22px] px-2 py-3 text-[11px] font-medium transition-colors",
                     isActive
-                      ? "bg-primary text-white"
-                      : "text-neutral-500 hover:bg-white/70 hover:text-foreground"
+                      ? "bg-primary/92 text-white shadow-[0_8px_18px_rgba(15,61,62,0.25)]"
+                      : "text-neutral-500 hover:bg-white/55 hover:text-foreground"
                   )}
                 >
                   <Icon className="h-4 w-4" />
