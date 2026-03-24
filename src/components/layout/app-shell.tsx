@@ -3,11 +3,11 @@
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { RefreshCcw, Upload } from "lucide-react";
+import { Plus } from "lucide-react";
 import { appConfig } from "@/lib/config/app-config";
 import { navigationItems } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { BusinessUnitSelector } from "@/components/layout/business-unit-selector";
 import { Select } from "@/components/ui/select";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
@@ -25,6 +25,9 @@ function BusinessUnitSelectorFallback() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
+  const visibleNavigationItems = navigationItems.filter((item) =>
+    "hidden" in item ? !item.hidden : true
+  );
 
   async function refreshSession() {
     try {
@@ -48,10 +51,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/55">
-                    Chile · Finanzas híbridas
+                    Mis Finanzas · Modo simple
                   </p>
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                    <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Mis Finanzas</h1>
+                    <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Gastos y deudas</h1>
                     <span className="rounded-full border border-white/70 bg-white/75 px-2.5 py-1 text-[10px] font-medium text-neutral-600">
                       {authSession?.authenticated === true
                         ? `Workspace: ${authSession.activeWorkspace?.workspaceName ?? "sin seleccionar"}`
@@ -60,13 +63,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                 </div>
                 <div className="hidden items-center gap-3 sm:flex">
-                  <Button variant="secondary" size="icon" aria-label="Refrescar">
-                    <RefreshCcw className="h-4 w-4" />
-                  </Button>
-                  <Button variant="secondary" className="h-9 px-3 text-xs font-semibold">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Subir cartola
-                  </Button>
+                  <Link
+                    href="/gastos"
+                    className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "h-9 px-3 text-xs font-semibold")}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Agregar gasto
+                  </Link>
                 </div>
               </div>
 
@@ -74,15 +77,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Suspense fallback={<BusinessUnitSelectorFallback />}>
                   <BusinessUnitSelector />
                 </Suspense>
-                <div className="grid grid-cols-2 gap-3 sm:hidden">
-                  <Button variant="secondary" className="h-10 text-xs">
-                    <RefreshCcw className="mr-2 h-4 w-4" />
-                    Refrescar
-                  </Button>
-                  <Button variant="secondary" className="h-10 text-xs font-semibold">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Subir
-                  </Button>
+                <div className="grid grid-cols-1 gap-3 sm:hidden">
+                  <Link
+                    href="/gastos"
+                    className={cn(buttonVariants({ variant: "secondary" }), "h-10 text-xs font-semibold")}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Agregar gasto
+                  </Link>
                 </div>
               </div>
             </div>
@@ -92,8 +94,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[30px] border-white/50 bg-white/68 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)] lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[92px] lg:-translate-y-1/2">
-          <div className="grid grid-cols-5 gap-2 lg:grid-cols-1">
-            {navigationItems.map((item) => {
+          <div className="grid grid-cols-4 gap-2 lg:grid-cols-1">
+            {visibleNavigationItems.map((item) => {
               const isActive = pathname === item.href;
               const Icon = item.icon;
 

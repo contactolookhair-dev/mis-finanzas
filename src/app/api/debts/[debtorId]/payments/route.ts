@@ -1,0 +1,72 @@
+import { DebtorStatus } from "@prisma/client";
+import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/server/db/prisma";
+import { toAmountNumber } from "@/server/lib/amounts";
+import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
+
+const createPaymentSchema = z.object({
+  amount: z.coerce.number().positive(),
+  paidAt: z.string().min(1),
+  notes: z.string().optional().nullable()
+});
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { debtorId: string } }
+) {
+  const context = await getWorkspaceContextFromRequest(request);
+  if (!context.workspaceId || !context.userKey) {
+    return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+  }
+
+  try {
+    const input = createPaymentSchema.parse((await request.json()) as unknown);
+    const debtor = await prisma.debtor.findFirst({
+      where: {
+        id: params.debtorId,
+        workspaceId: context.workspaceId
+      }
+    });
+
+    if (!debtor) {
+      return NextResponse.json({ message: "Deuda no encontrada." }, { status: 404 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.debtorPayment.create({
+        data: {
+          debtorId: debtor.id,
+          amount: input.amount,
+          paidAt: new Date(`${input.paidAt}T12:00:00`),
+          notes: input.notes ?? null
+        }
+      });
+
+      const nextPaidAmount = toAmountNumber(debtor.paidAmount) + input.amount;
+      const totalAmount = toAmountNumber(debtor.totalAmount);
+      const nextStatus =
+        nextPaidAmount >= totalAmount
+          ? DebtorStatus.PAGADO
+          : nextPaidAmount > 0
+            ? DebtorStatus.ABONANDO
+            : DebtorStatus.PENDIENTE;
+
+      await tx.debtor.update({
+        where: { id: debtor.id },
+        data: {
+          paidAmount: nextPaidAmount,
+          status: nextStatus
+        }
+      });
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ message: "Datos inválidos para registrar abono.", issues: error.issues }, { status: 400 });
+    }
+    return NextResponse.json({ message: "No se pudo registrar el abono." }, { status: 500 });
+  }
+}
+
