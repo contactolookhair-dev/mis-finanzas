@@ -10,8 +10,17 @@ const dashboardQuerySchema = dashboardFiltersSchema.extend({
 });
 
 export async function GET(request: NextRequest) {
+  const isDev = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
+  console.log("Dashboard DEV MODE:", isDev);
+
   const context = await getWorkspaceContextFromRequest(request);
   if (!context.workspaceId || !context.userKey) {
+    if (isDev) {
+      return NextResponse.json(
+        { message: "Modo desarrollo activo, pero no hay workspace disponible." },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 
