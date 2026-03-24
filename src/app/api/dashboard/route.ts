@@ -71,6 +71,7 @@ function buildEmptySnapshot(filters: DashboardFilters = {}): DashboardSnapshot {
 
 export async function GET(request: NextRequest) {
   const isDev = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
+  console.log("dashboard route entered");
   console.log("Dashboard DEV MODE:", isDev);
 
   const rawQuery = {
@@ -83,12 +84,15 @@ export async function GET(request: NextRequest) {
   };
 
   const context = await getWorkspaceContextFromRequest(request);
+  console.log("dashboard context", {
+    hasWorkspaceId: Boolean(context.workspaceId),
+    hasUserKey: Boolean(context.userKey),
+    source: context.source
+  });
   if (!context.workspaceId || !context.userKey) {
-    if (isDev) {
-      const fallbackFilters = dashboardQuerySchema.safeParse(rawQuery);
-      return NextResponse.json(buildEmptySnapshot(fallbackFilters.success ? fallbackFilters.data : {}));
-    }
-    return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+    console.log("dashboard missing context, returning empty snapshot");
+    const fallbackFilters = dashboardQuerySchema.safeParse(rawQuery);
+    return NextResponse.json(buildEmptySnapshot(fallbackFilters.success ? fallbackFilters.data : {}));
   }
 
   try {
@@ -100,6 +104,7 @@ export async function GET(request: NextRequest) {
       hasExplicitFilters ? query : {},
       { userKey: context.userKey }
     );
+    console.log("dashboard snapshot resolved");
     return NextResponse.json(snapshot);
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -110,10 +115,12 @@ export async function GET(request: NextRequest) {
     }
 
     if (isDev) {
+      console.log("dashboard error in dev, returning empty snapshot fallback");
       const fallbackFilters = dashboardQuerySchema.safeParse(rawQuery);
       return NextResponse.json(buildEmptySnapshot(fallbackFilters.success ? fallbackFilters.data : {}));
     }
 
+    console.log("dashboard returning 500 from route");
     return NextResponse.json({ message: "No se pudo cargar el dashboard." }, { status: 500 });
   }
 }

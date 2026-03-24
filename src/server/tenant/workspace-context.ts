@@ -17,12 +17,14 @@ export async function getWorkspaceContextFromRequest(request: NextRequest): Prom
   }
 
   if (isDev) {
+    console.log("workspace-context dev bypass active");
     const workspace = await prisma.workspace.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: "asc" }
     });
 
     if (workspace) {
+      console.log("workspace-context resolved from dev bypass", { source: "dev-auth-bypass" });
       return {
         workspaceId: workspace.id,
         userKey: "dev-user",
@@ -34,6 +36,7 @@ export async function getWorkspaceContextFromRequest(request: NextRequest): Prom
 
   const auth = await getAuthContextOrNull(request);
   if (auth) {
+    console.log("workspace-context resolved from session");
     return {
       workspaceId: auth.workspaceId,
       userKey: auth.userKey,
@@ -70,12 +73,14 @@ export async function getWorkspaceContextFromRequest(request: NextRequest): Prom
   }
 
   if (isPublicMode()) {
+    console.log("workspace-context trying public mode");
     const workspace = await prisma.workspace.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: "asc" }
     });
 
     if (workspace) {
+      console.log("workspace-context resolved from public mode");
       return {
         workspaceId: workspace.id,
         userKey: "public",

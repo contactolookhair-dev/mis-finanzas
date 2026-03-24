@@ -95,6 +95,10 @@ export async function getDashboardSnapshot(
   filters: DashboardFilters = {},
   options?: { userKey?: string }
 ) {
+  console.log("dashboard-service getDashboardSnapshot called", {
+    hasWorkspaceId: Boolean(workspaceId),
+    hasUserKey: Boolean(options?.userKey)
+  });
   const resolvedFilters =
     Object.keys(filters).length > 0
       ? normalizeDashboardFilters(filters)
