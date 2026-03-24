@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db/prisma";
 import { getAuthSessionFromRequest } from "@/server/auth/session";
+import { isDevAuthBypassEnabled } from "@/server/auth/public-mode";
+import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 
 const switchWorkspaceSchema = z.object({
   workspaceId: z.string().min(3)
@@ -9,18 +11,43 @@ const switchWorkspaceSchema = z.object({
 
 export async function PATCH(request: NextRequest) {
   try {
+    const isDev = isDevAuthBypassEnabled();
+    if (process.env.NODE_ENV !== "production") {
+      console.log("DEV MODE:", isDev);
+    }
+
     const session = await getAuthSessionFromRequest(request);
-    if (!session) {
+    if (!isDev && !session) {
       return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+    }
+
+    if (isDev && !session) {
+      const context = await getWorkspaceContextFromRequest(request);
+      if (!context.workspaceId) {
+        return NextResponse.json(
+          { message: "Modo desarrollo activo pero no hay workspace disponible." },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        message: "Modo desarrollo activo. Workspace fijo aplicado.",
+        workspaceId: context.workspaceId
+      });
     }
 
     const json = await request.json();
     const payload = switchWorkspaceSchema.parse(json);
+    const authSession = session;
+
+    if (!authSession) {
+      return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+    }
 
     const membership = await prisma.workspaceMember.findFirst({
       where: {
         workspaceId: payload.workspaceId,
-        userKey: session.userKey,
+        userKey: authSession.userKey,
         isActive: true
       }
     });
@@ -32,7 +59,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     await prisma.authSession.update({
-      where: { id: session.id },
+      where: { id: authSession.id },
       data: { activeWorkspaceId: payload.workspaceId }
     });
 
@@ -48,4 +75,3 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "No se pudo actualizar el workspace." }, { status: 500 });
   }
 }
-

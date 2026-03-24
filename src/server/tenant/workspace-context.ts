@@ -11,7 +11,12 @@ export type WorkspaceContext = {
 };
 
 export async function getWorkspaceContextFromRequest(request: NextRequest): Promise<WorkspaceContext> {
-  if (isDevAuthBypassEnabled()) {
+  const isDev = isDevAuthBypassEnabled();
+  if (process.env.NODE_ENV !== "production") {
+    console.log("DEV MODE:", isDev);
+  }
+
+  if (isDev) {
     const workspace = await prisma.workspace.findFirst({
       where: { isActive: true },
       orderBy: { createdAt: "asc" }
