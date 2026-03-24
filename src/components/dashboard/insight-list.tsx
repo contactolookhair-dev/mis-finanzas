@@ -12,13 +12,18 @@ export function InsightList({ insights }: { insights: FinancialInsight[] }) {
     warning: "Atención",
     critical: "Crítico"
   } as const;
+  const leadBySeverity = {
+    info: "Vas mejor que el mes pasado.",
+    warning: "Cuidado con tus gastos.",
+    critical: "Acción recomendada hoy."
+  } as const;
 
   return (
-    <Card className="space-y-4 rounded-[28px] border border-white/75 bg-white/88 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
+    <Card className="space-y-4 rounded-[28px] border border-white/75 bg-gradient-to-br from-white/92 to-cyan-50/50 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
       <div>
         <h3 className="text-base font-semibold text-slate-900 sm:text-lg">Insights automáticos</h3>
         <p className="mt-1 text-xs text-neutral-500 sm:text-sm">
-          Alertas generadas con datos reales del workspace activo.
+          Radar financiero con señales del comportamiento real de tu negocio.
         </p>
       </div>
       <div className="space-y-2.5">
@@ -31,7 +36,7 @@ export function InsightList({ insights }: { insights: FinancialInsight[] }) {
         {insights.map((insight) => (
           <div
             key={insight.id}
-            className={`rounded-[22px] border p-3.5 shadow-[0_6px_16px_rgba(15,23,42,0.04)] ${severityStyles[insight.severity]}`}
+            className={`rounded-[22px] border p-3.5 shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(15,23,42,0.08)] ${severityStyles[insight.severity]}`}
           >
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-slate-800">{insight.title}</p>
@@ -39,7 +44,8 @@ export function InsightList({ insights }: { insights: FinancialInsight[] }) {
                 {severityLabels[insight.severity]}
               </span>
             </div>
-            <p className="mt-1.5 text-xs text-neutral-600 sm:text-sm">{insight.description}</p>
+            <p className="mt-1 text-[11px] font-medium text-neutral-700 sm:text-xs">{leadBySeverity[insight.severity]}</p>
+            <p className="mt-1 text-xs text-neutral-600 sm:text-sm">{insight.description}</p>
           </div>
         ))}
       </div>

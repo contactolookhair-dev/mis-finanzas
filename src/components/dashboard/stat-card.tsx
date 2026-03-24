@@ -21,10 +21,16 @@ export function StatCard({
   };
 }) {
   const accentStyles = {
-    teal: "from-[#0f3d3e] via-[#1e5f61] to-[#7fc7b5]",
-    emerald: "from-[#0b5d46] via-[#0f8a68] to-[#d7f3e7]",
-    sand: "from-[#7b4f2e] via-[#b07a44] to-[#f2dfc2]",
-    ink: "from-[#111827] via-[#334155] to-[#dbe4f0]"
+    teal: "from-[#0b3b6f] via-[#0e7cc7] to-[#7dd3fc]",
+    emerald: "from-[#0d5f52] via-[#10b981] to-[#9ff4cf]",
+    sand: "from-[#7a341b] via-[#f97316] to-[#fed7aa]",
+    ink: "from-[#111827] via-[#1f2937] to-[#9ca3af]"
+  } satisfies Record<string, string>;
+  const accentIconStyles = {
+    teal: "bg-cyan-200/28 text-cyan-50",
+    emerald: "bg-emerald-200/28 text-emerald-50",
+    sand: "bg-orange-200/28 text-orange-50",
+    ink: "bg-slate-200/28 text-slate-50"
   } satisfies Record<string, string>;
 
   const isNeutral = !comparison || Math.abs(comparison.delta) < 0.005;
@@ -41,16 +47,22 @@ export function StatCard({
       : "bg-amber-100/18 text-amber-50";
 
   return (
-    <Card className={`space-y-3 overflow-hidden border-white/45 bg-gradient-to-br p-4 text-white shadow-[0_14px_32px_rgba(15,23,42,0.08)] sm:p-5 ${accentStyles[accent]}`}>
+    <Card className={`group relative space-y-3 overflow-hidden border-white/45 bg-gradient-to-br p-4 text-white shadow-[0_14px_32px_rgba(15,23,42,0.08)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_38px_rgba(15,23,42,0.14)] sm:p-5 ${accentStyles[accent]}`}>
+      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/12 blur-2xl" />
       <div className="flex items-start justify-between gap-3">
         <p className="text-xs uppercase tracking-[0.18em] text-white/70">{label}</p>
-        {comparison ? (
-          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${comparisonTone}`}>
+        <div className="flex items-center gap-2">
+          {comparison ? (
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${comparisonTone}`}>
+              <TrendIcon className="h-3.5 w-3.5" />
+              {comparison.deltaPct >= 0 ? "+" : ""}
+              {comparison.deltaPct.toFixed(1)}%
+            </span>
+          ) : null}
+          <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${accentIconStyles[accent]}`}>
             <TrendIcon className="h-3.5 w-3.5" />
-            {comparison.deltaPct >= 0 ? "+" : ""}
-            {comparison.deltaPct.toFixed(1)}%
           </span>
-        ) : null}
+        </div>
       </div>
       <div className="space-y-1.5">
         <p className="text-[1.45rem] font-semibold tracking-tight sm:text-[1.6rem]">{formatCurrency(value)}</p>

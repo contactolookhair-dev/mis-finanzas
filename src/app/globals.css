@@ -22,3 +22,35 @@ body {
 .screen-shell {
   @apply mx-auto w-full max-w-7xl px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-10;
 }
+
+@keyframes count-pop {
+  0% {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.5;
+  }
+}
+
+.text-number-glow {
+  animation: count-pop 400ms ease-out;
+  text-shadow: 0 0 22px rgba(45, 212, 191, 0.18);
+}
+
+.animate-shimmer {
+  animation: shimmer 1.35s ease-in-out infinite;
+}

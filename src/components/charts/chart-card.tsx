@@ -55,13 +55,27 @@ export function LineChartCard({
   description?: string;
 }) {
   return (
-    <Card className="h-[320px] rounded-[28px] border border-white/75 bg-white/88 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
+    <Card className="h-[320px] rounded-[28px] border border-white/75 bg-gradient-to-br from-white/92 to-cyan-50/55 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
       <div className="mb-4">
         <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{title}</h3>
         {description ? <p className="mt-1 text-xs text-neutral-500 sm:text-sm">{description}</p> : null}
       </div>
       <ResponsiveContainer width="100%" height="86%">
         <LineChart data={data}>
+          <defs>
+            <linearGradient id="incomeStroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.92} />
+              <stop offset="100%" stopColor="#22d3ee" stopOpacity={0.92} />
+            </linearGradient>
+            <linearGradient id="expenseStroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#f97316" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#fb7185" stopOpacity={0.9} />
+            </linearGradient>
+            <linearGradient id="netStroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#334155" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#0f172a" stopOpacity={0.85} />
+            </linearGradient>
+          </defs>
           <CartesianGrid strokeDasharray="2 4" vertical={false} stroke="#e5e7eb" opacity={0.55} />
           <XAxis dataKey="month" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
           <YAxis
@@ -82,9 +96,37 @@ export function LineChartCard({
             formatter={(value: number) => formatCurrency(value)}
           />
           <Legend wrapperStyle={{ fontSize: "11px", color: "#64748b", paddingTop: "8px" }} />
-          <Line type="monotone" dataKey="ingresos" stroke="#0f766e" strokeWidth={2.4} dot={false} />
-          <Line type="monotone" dataKey="egresos" stroke="#b45309" strokeWidth={2.4} dot={false} />
-          <Line type="monotone" dataKey="neto" stroke="#1f2937" strokeWidth={2} dot={false} strokeDasharray="5 4" />
+          <Line
+            type="monotone"
+            dataKey="ingresos"
+            stroke="url(#incomeStroke)"
+            strokeWidth={2.7}
+            dot={false}
+            activeDot={{ r: 4, strokeWidth: 0, fill: "#0f766e" }}
+            isAnimationActive
+            animationDuration={650}
+          />
+          <Line
+            type="monotone"
+            dataKey="egresos"
+            stroke="url(#expenseStroke)"
+            strokeWidth={2.7}
+            dot={false}
+            activeDot={{ r: 4, strokeWidth: 0, fill: "#ea580c" }}
+            isAnimationActive
+            animationDuration={760}
+          />
+          <Line
+            type="monotone"
+            dataKey="neto"
+            stroke="url(#netStroke)"
+            strokeWidth={2.1}
+            dot={false}
+            strokeDasharray="5 4"
+            activeDot={{ r: 4, strokeWidth: 0, fill: "#111827" }}
+            isAnimationActive
+            animationDuration={880}
+          />
         </LineChart>
       </ResponsiveContainer>
     </Card>

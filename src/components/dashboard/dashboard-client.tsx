@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCcw, Sparkles } from "lucide-react";
+import { RefreshCcw, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { LineChartCard } from "@/components/charts/chart-card";
 import { InsightList } from "@/components/dashboard/insight-list";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -231,19 +231,24 @@ function HeroPanel({
       : netFlowComparison.delta < 0
         ? "bg-rose-50/90 text-rose-700"
         : "bg-slate-100/90 text-slate-700";
+  const TrendIcon =
+    netFlowComparison.delta > 0 ? TrendingUp : netFlowComparison.delta < 0 ? TrendingDown : Sparkles;
 
   return (
-    <Card className="rounded-[32px] border border-white/65 bg-gradient-to-br from-slate-50/92 via-white/94 to-slate-100/80 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.1)] sm:p-6">
+    <Card className="relative overflow-hidden rounded-[32px] border border-white/65 bg-gradient-to-br from-cyan-50/95 via-white/96 to-emerald-50/90 p-5 shadow-[0_20px_56px_rgba(15,23,42,0.14)] sm:p-6">
+      <div className="pointer-events-none absolute -right-12 -top-10 h-40 w-40 rounded-full bg-cyan-300/30 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-14 left-10 h-36 w-36 rounded-full bg-emerald-300/25 blur-3xl" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.36em] text-slate-400">
+        <div className="relative z-10">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.36em] text-slate-500">
             Dinero disponible hoy
           </p>
-          <p className="mt-2 text-[2.1rem] font-semibold leading-none tracking-[-0.03em] text-slate-950 sm:text-[2.7rem]">
+          <p className="text-number-glow mt-2 text-[2.35rem] font-semibold leading-none tracking-[-0.035em] text-slate-950 sm:text-[3rem]">
             {formatCurrency(kpis.netFlow)}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${netFlowTone}`}>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${netFlowTone}`}>
+              <TrendIcon className="h-3.5 w-3.5" />
               {netFlowComparison.deltaPct >= 0 ? "+" : ""}
               {netFlowComparison.deltaPct.toFixed(1)}% vs mes anterior
             </span>
@@ -256,32 +261,38 @@ function HeroPanel({
             {snapshot.comparisons.currentPeriodLabel} · {kpis.totalTransactions} movimientos
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="relative z-10 flex flex-wrap items-center gap-2">
           <ExportActions
             filters={filters}
             defaultReportType="dashboard_summary"
             compact
           />
-          <Button variant="secondary" size="sm" className="h-9 px-3 text-xs" onClick={onRefresh} disabled={loading}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-9 px-3 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(15,23,42,0.12)] active:translate-y-0"
+            onClick={onRefresh}
+            disabled={loading}
+          >
             <RefreshCcw className="mr-2 h-4 w-4" />
             Actualizar
           </Button>
         </div>
       </div>
       <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-        <div className="rounded-[24px] border border-white/70 bg-white/72 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="rounded-[24px] border border-emerald-100/70 bg-gradient-to-br from-emerald-50/90 to-white/85 px-3.5 py-3 shadow-[0_10px_24px_rgba(16,185,129,0.12)] transition-all duration-200 hover:-translate-y-0.5">
           <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Ingresos</p>
           <p className="mt-1 text-lg font-semibold text-emerald-700">{formatCurrency(kpis.incomes)}</p>
           <p className="text-[11px] text-slate-500">{snapshot.comparisons.incomes.deltaPct >= 0 ? "+" : ""}
             {snapshot.comparisons.incomes.deltaPct.toFixed(1)}%</p>
         </div>
-        <div className="rounded-[24px] border border-white/70 bg-white/72 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="rounded-[24px] border border-rose-100/70 bg-gradient-to-br from-rose-50/90 to-white/85 px-3.5 py-3 shadow-[0_10px_24px_rgba(244,63,94,0.1)] transition-all duration-200 hover:-translate-y-0.5">
           <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Egresos</p>
           <p className="mt-1 text-lg font-semibold text-rose-600">{formatCurrency(kpis.expenses)}</p>
           <p className="text-[11px] text-slate-500">{snapshot.comparisons.expenses.deltaPct >= 0 ? "+" : ""}
             {snapshot.comparisons.expenses.deltaPct.toFixed(1)}%</p>
         </div>
-        <div className="rounded-[24px] border border-white/70 bg-white/72 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="rounded-[24px] border border-cyan-100/80 bg-gradient-to-br from-cyan-50/90 to-white/85 px-3.5 py-3 shadow-[0_10px_24px_rgba(14,165,233,0.1)] transition-all duration-200 hover:-translate-y-0.5">
           <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Dinero personal en empresa</p>
           <p className="mt-1 text-lg font-semibold text-teal-700">
             {formatCurrency(kpis.personalMoneyInBusiness)}
@@ -292,8 +303,8 @@ function HeroPanel({
           </p>
         </div>
       </div>
-      <p className="mt-4 text-[11px] text-slate-500">
-        {neutralGain ? "Flujo positivo, sigue así." : "Hay presión de caja, revisa los egresos."}
+      <p className="mt-4 text-[11px] text-slate-600">
+        {neutralGain ? "Vas mejor que el mes pasado. Mantén este ritmo." : "Cuidado con tus gastos, el flujo se está ajustando."}
       </p>
     </Card>
   );
@@ -355,7 +366,7 @@ function RecentTransactionsList({ items }: { items: DashboardSnapshot["recentTra
         {items.map((item) => (
           <div
             key={item.id}
-            className="rounded-[24px] border border-white/75 bg-white/78 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition-colors hover:bg-white"
+            className="rounded-[24px] border border-white/75 bg-white/78 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_12px_26px_rgba(15,23,42,0.08)]"
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -522,9 +533,9 @@ export function DashboardClient() {
       {loading && !snapshot ? (
         <Card className="rounded-[28px] border border-white/70 bg-white/84 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
           <div className="space-y-3">
-            <div className="h-3 w-32 animate-pulse rounded-full bg-slate-200/80" />
-            <div className="h-9 w-44 animate-pulse rounded-xl bg-slate-200/70" />
-            <div className="h-3 w-56 animate-pulse rounded-full bg-slate-200/70" />
+            <div className="h-3 w-32 animate-shimmer rounded-full bg-slate-200/80" />
+            <div className="h-9 w-44 animate-shimmer rounded-xl bg-slate-200/70" />
+            <div className="h-3 w-56 animate-shimmer rounded-full bg-slate-200/70" />
           </div>
         </Card>
       ) : null}
@@ -569,7 +580,7 @@ export function DashboardClient() {
 
       <Button
         variant="secondary"
-        className="fixed bottom-4 right-4 z-30 flex h-11 items-center gap-2 rounded-full px-5 text-sm font-semibold shadow-[0_14px_38px_rgba(15,23,42,0.26)] sm:hidden"
+        className="fixed bottom-4 right-4 z-30 flex h-11 items-center gap-2 rounded-full border border-white/40 bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 text-sm font-semibold text-white shadow-[0_14px_38px_rgba(14,116,144,0.35)] transition-all duration-200 hover:brightness-105 active:scale-[0.985] sm:hidden"
       >
         Agregar gasto
       </Button>
