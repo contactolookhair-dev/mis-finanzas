@@ -5,6 +5,7 @@ import { RefreshCcw, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { LineChartCard } from "@/components/charts/chart-card";
 import { InsightList } from "@/components/dashboard/insight-list";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { Building, CreditCard, ShieldCheck, Wallet } from "lucide-react";
 import { ExportActions } from "@/components/exports/export-actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,79 @@ function getDefaultRange() {
     startDate: format(start),
     endDate: format(end)
   };
+}
+
+type AccountItem = {
+  id: string;
+  name: string;
+  type: string;
+  balance: number;
+};
+
+const accountTypeMap: Record<string, { label: string; tone: string; icon: typeof Wallet }> = {
+  EFECTIVO: { label: "Efectivo", tone: "from-amber-50 via-amber-100 to-white/80", icon: Wallet },
+  DEBITO: { label: "Débito", tone: "from-sky-50 via-slate-50 to-white/80", icon: Building },
+  CREDITO: { label: "Crédito", tone: "from-fuchsia-50 via-rose-50 to-white/80", icon: CreditCard },
+  OTRO: { label: "Cuenta digital", tone: "from-violet-50 via-white/90 to-slate-50", icon: ShieldCheck }
+};
+
+function AccountCard({ account }: { account: AccountItem }) {
+  const meta = accountTypeMap[account.type] ?? accountTypeMap.OTRO;
+  const Icon = meta.icon;
+
+  return (
+    <div
+      className={`rounded-[28px] border border-white/70 bg-gradient-to-br ${meta.tone} p-4 shadow-[0_14px_36px_rgba(15,23,42,0.08)]`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{meta.label}</p>
+          <p className="mt-2 text-base font-semibold text-slate-900">{account.name}</p>
+        </div>
+        <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-[0_6px_16px_rgba(15,23,42,0.18)]">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+      <p className="mt-4 text-2xl font-semibold text-slate-900">{formatCurrency(account.balance)}</p>
+    </div>
+  );
+}
+
+function AccountList({
+  accounts,
+  loading
+}: {
+  accounts: AccountItem[];
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[...Array(3)].map((_, index) => (
+          <div
+            key={`skeleton-${index}`}
+            className="h-32 animate-pulse rounded-[28px] border border-dashed border-slate-200 bg-white/70"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (accounts.length === 0) {
+    return (
+      <Card className="rounded-[28px] border border-dashed border-slate-200 bg-white/70 p-4 text-center text-sm text-slate-600 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+        Aún no tienes cuentas registradas.
+      </Card>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {accounts.map((account) => (
+        <AccountCard key={account.id} account={account} />
+      ))}
+    </div>
+  );
 }
 
 function FilterChip({
@@ -215,15 +289,18 @@ function HeroPanel({
   snapshot,
   filters,
   onRefresh,
-  loading
+  loading,
+  displayBalance
 }: {
   kpis: DashboardSnapshot["kpis"];
   snapshot: DashboardSnapshot;
   filters: DashboardFilters;
   onRefresh: () => void;
   loading: boolean;
+  displayBalance?: number;
 }) {
-  const neutralGain = kpis.netFlow >= 0;
+  const totalBalance = typeof displayBalance === "number" ? displayBalance : kpis.netFlow;
+  const neutralGain = totalBalance >= 0;
   const netFlowComparison = snapshot.comparisons.netFlow;
   const netFlowTone =
     netFlowComparison.delta > 0
@@ -243,8 +320,8 @@ function HeroPanel({
           <p className="text-[10px] font-semibold uppercase tracking-[0.36em] text-slate-500">
             Dinero disponible hoy
           </p>
-          <p className="text-number-glow mt-2 text-[2.35rem] font-semibold leading-none tracking-[-0.035em] text-slate-950 sm:text-[3rem]">
-            {formatCurrency(kpis.netFlow)}
+  <p className="text-number-glow mt-2 text-[2.35rem] font-semibold leading-none tracking-[-0.035em] text-slate-950 sm:text-[3rem]">
+            {formatCurrency(totalBalance)}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${netFlowTone}`}>
@@ -431,6 +508,8 @@ export function DashboardClient() {
   const [filters, setFilters] = useState<DashboardFilters | null>(null);
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [accounts, setAccounts] = useState<AccountItem[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const initializedRef = useRef(false);
@@ -505,6 +584,29 @@ export function DashboardClient() {
   }, [queryString, refreshKey, filters]);
 
   useEffect(() => {
+    let aborted = false;
+
+    async function loadAccounts() {
+      try {
+        setAccountsLoading(true);
+        const response = await fetch("/api/accounts", { cache: "no-store" });
+        if (!response.ok) throw new Error("No se pudieron cargar las cuentas.");
+        const payload = (await response.json()) as { items: AccountItem[] };
+        if (!aborted) setAccounts(payload.items ?? []);
+      } catch {
+        if (!aborted) setAccounts([]);
+      } finally {
+        if (!aborted) setAccountsLoading(false);
+      }
+    }
+
+    void loadAccounts();
+    return () => {
+      aborted = true;
+    };
+  }, [refreshKey]);
+
+  useEffect(() => {
     if (!initializedRef.current || !filters) return;
 
     const timeout = window.setTimeout(() => {
@@ -521,6 +623,10 @@ export function DashboardClient() {
   }, [filters]);
 
   const kpis = snapshot?.kpis;
+  const accountsTotal = useMemo(
+    () => accounts.reduce((sum, account) => sum + account.balance, 0),
+    [accounts]
+  );
 
   return (
     <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
@@ -549,7 +655,21 @@ export function DashboardClient() {
             filters={filters ?? getDefaultRange()}
             onRefresh={() => setRefreshKey((value) => value + 1)}
             loading={loading}
+            displayBalance={accountsTotal}
           />
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                  Tus cuentas
+                </p>
+                <h2 className="text-lg font-semibold text-slate-900">Dónde está tu dinero</h2>
+              </div>
+              <p className="text-sm font-semibold text-slate-500">{accounts.length} cuentas</p>
+            </div>
+            <AccountList accounts={accounts} loading={accountsLoading} />
           </section>
 
           <SummaryGrid kpis={kpis} snapshot={snapshot} />
