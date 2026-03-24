@@ -1,16 +1,32 @@
 import type { NextRequest } from "next/server";
 import { getAuthContextOrNull } from "@/server/auth/auth-context";
-import { isPublicMode } from "@/server/auth/public-mode";
+import { isDevAuthBypassEnabled, isPublicMode } from "@/server/auth/public-mode";
 import { prisma } from "@/server/db/prisma";
 
 export type WorkspaceContext = {
   workspaceId?: string;
   userKey?: string;
   role?: "OWNER" | "ADMIN" | "EDITOR" | "VIEWER";
-  source: "session" | "dev-headers" | "public" | "none";
+  source: "session" | "dev-headers" | "dev-auth-bypass" | "public" | "none";
 };
 
 export async function getWorkspaceContextFromRequest(request: NextRequest): Promise<WorkspaceContext> {
+  if (isDevAuthBypassEnabled()) {
+    const workspace = await prisma.workspace.findFirst({
+      where: { isActive: true },
+      orderBy: { createdAt: "asc" }
+    });
+
+    if (workspace) {
+      return {
+        workspaceId: workspace.id,
+        userKey: "dev-user",
+        role: "OWNER",
+        source: "dev-auth-bypass"
+      };
+    }
+  }
+
   const auth = await getAuthContextOrNull(request);
   if (auth) {
     return {

@@ -7,7 +7,7 @@ type AuthorizedContext = {
   workspaceId: string;
   userKey: string;
   role: "OWNER" | "ADMIN" | "EDITOR" | "VIEWER";
-  source: "session" | "dev-headers" | "none";
+  source: "session" | "dev-headers" | "dev-auth-bypass" | "public" | "none";
 };
 
 export async function requireRoutePermission(request: NextRequest, action: PermissionAction) {
