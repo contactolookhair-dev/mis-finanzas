@@ -45,7 +45,7 @@ function FilterChip({
     <button
       type="button"
       onClick={onClear}
-      className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/85 px-3 py-2 text-xs font-medium text-neutral-600 transition hover:bg-white"
+      className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/75 px-3 py-1.5 text-[11px] font-medium text-neutral-600 transition-colors hover:bg-white"
     >
       <span className="text-neutral-400">{label}</span>
       <span className="text-neutral-800">{value}</span>
@@ -115,12 +115,12 @@ function FiltersRow({
   const chips = getFilterLabel(filters, snapshot);
 
   return (
-    <Card className="space-y-4 rounded-[28px] border border-white/80 bg-white/80 shadow-[0_20px_45px_rgba(15,23,42,0.08)] p-5">
+    <Card className="space-y-4 rounded-[28px] border border-white/70 bg-white/78 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] sm:p-5">
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-neutral-500">Filtros</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-neutral-500">Filtros</p>
       </div>
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-2.5 lg:grid-cols-3">
         <Input
           type="date"
           value={filters.startDate ?? ""}
@@ -145,7 +145,7 @@ function FiltersRow({
           ))}
         </Select>
       </div>
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-2.5 lg:grid-cols-3">
         <Select
           value={filters.financialOrigin ?? ""}
           onChange={(event) =>
@@ -187,8 +187,8 @@ function FiltersRow({
           ))}
         </Select>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button variant="ghost" className="px-4 py-2 text-sm font-semibold" onClick={onReset}>
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <Button variant="ghost" className="px-3 py-1.5 text-xs font-semibold" onClick={onReset}>
           Restablecer filtros
         </Button>
         <div className="flex flex-wrap gap-2">
@@ -225,16 +225,16 @@ function HeroPanel({
 }) {
   const neutralGain = kpis.netFlow >= 0;
   return (
-    <Card className="rounded-[32px] border border-white/70 bg-gradient-to-br from-slate-50/90 to-white/90 p-6 shadow-[0_35px_70px_rgba(15,23,42,0.12)]">
+    <Card className="rounded-[32px] border border-white/65 bg-gradient-to-br from-slate-50/92 via-white/94 to-slate-100/80 p-5 shadow-[0_18px_50px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-400">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.36em] text-slate-400">
             Dinero disponible hoy
           </p>
-          <p className="mt-3 text-4xl font-semibold tracking-tight text-slate-900">
+          <p className="mt-2 text-[2.1rem] font-semibold leading-none tracking-[-0.03em] text-slate-950 sm:text-[2.7rem]">
             {formatCurrency(kpis.netFlow)}
           </p>
-          <p className="mt-1 text-sm text-slate-600">
+          <p className="mt-2 text-xs text-slate-500 sm:text-sm">
             {snapshot.comparisons.currentPeriodLabel} · {kpis.totalTransactions} movimientos
           </p>
         </div>
@@ -244,37 +244,37 @@ function HeroPanel({
             defaultReportType="dashboard_summary"
             compact
           />
-          <Button variant="secondary" size="sm" onClick={onRefresh} disabled={loading}>
+          <Button variant="secondary" size="sm" className="h-9 px-3 text-xs" onClick={onRefresh} disabled={loading}>
             <RefreshCcw className="mr-2 h-4 w-4" />
             Actualizar
           </Button>
         </div>
       </div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-[26px] border border-white/60 bg-white/80 px-4 py-3 shadow-[0_20px_40px_rgba(15,23,42,0.06)]">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Ingresos</p>
-          <p className="mt-1 text-xl font-semibold text-emerald-700">{formatCurrency(kpis.incomes)}</p>
-          <p className="text-xs text-slate-500">{snapshot.comparisons.incomes.deltaPct >= 0 ? "+" : ""}
+      <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+        <div className="rounded-[24px] border border-white/70 bg-white/72 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Ingresos</p>
+          <p className="mt-1 text-lg font-semibold text-emerald-700">{formatCurrency(kpis.incomes)}</p>
+          <p className="text-[11px] text-slate-500">{snapshot.comparisons.incomes.deltaPct >= 0 ? "+" : ""}
             {snapshot.comparisons.incomes.deltaPct.toFixed(1)}%</p>
         </div>
-        <div className="rounded-[26px] border border-white/60 bg-white/80 px-4 py-3 shadow-[0_20px_40px_rgba(15,23,42,0.06)]">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Egresos</p>
-          <p className="mt-1 text-xl font-semibold text-rose-600">{formatCurrency(kpis.expenses)}</p>
-          <p className="text-xs text-slate-500">{snapshot.comparisons.expenses.deltaPct >= 0 ? "+" : ""}
+        <div className="rounded-[24px] border border-white/70 bg-white/72 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Egresos</p>
+          <p className="mt-1 text-lg font-semibold text-rose-600">{formatCurrency(kpis.expenses)}</p>
+          <p className="text-[11px] text-slate-500">{snapshot.comparisons.expenses.deltaPct >= 0 ? "+" : ""}
             {snapshot.comparisons.expenses.deltaPct.toFixed(1)}%</p>
         </div>
-        <div className="rounded-[26px] border border-white/60 bg-white/80 px-4 py-3 shadow-[0_20px_40px_rgba(15,23,42,0.06)]">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Dinero personal en empresa</p>
-          <p className="mt-1 text-xl font-semibold text-teal-700">
+        <div className="rounded-[24px] border border-white/70 bg-white/72 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Dinero personal en empresa</p>
+          <p className="mt-1 text-lg font-semibold text-teal-700">
             {formatCurrency(kpis.personalMoneyInBusiness)}
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-[11px] text-slate-500">
             {snapshot.comparisons.personalMoneyInBusiness.deltaPct >= 0 ? "+" : ""}
             {snapshot.comparisons.personalMoneyInBusiness.deltaPct.toFixed(1)}%
           </p>
         </div>
       </div>
-      <p className="mt-5 text-xs text-slate-500">
+      <p className="mt-4 text-[11px] text-slate-500">
         {neutralGain ? "Flujo positivo, sigue así." : "Hay presión de caja, revisa los egresos."}
       </p>
     </Card>
@@ -283,7 +283,7 @@ function HeroPanel({
 
 function SummaryGrid({ kpis, snapshot }: { kpis: DashboardSnapshot["kpis"]; snapshot: DashboardSnapshot }) {
   return (
-    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <StatCard
         label="Ingresos"
         value={kpis.incomes}
@@ -322,24 +322,27 @@ function SummaryGrid({ kpis, snapshot }: { kpis: DashboardSnapshot["kpis"]; snap
 
 function RecentTransactionsList({ items }: { items: DashboardSnapshot["recentTransactions"] }) {
   return (
-    <Card className="space-y-4 rounded-[28px] border border-white/80 bg-white/90 p-5 shadow-[0_30px_60px_rgba(15,23,42,0.08)]">
+    <Card className="space-y-4 rounded-[28px] border border-white/75 bg-white/88 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
       <div>
-        <h3 className="text-lg font-semibold text-slate-900">Movimientos recientes</h3>
-        <p className="mt-1 text-sm text-slate-500">Lo último registrado en tu flujo filtrado.</p>
+        <h3 className="text-base font-semibold text-slate-900 sm:text-lg">Movimientos recientes</h3>
+        <p className="mt-1 text-xs text-slate-500 sm:text-sm">Lo último registrado en tu flujo filtrado.</p>
       </div>
       <div className="space-y-3">
         {items.length === 0 ? (
-          <p className="text-sm text-neutral-500">No hay movimientos en este rango.</p>
+          <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-center">
+            <p className="text-sm font-medium text-slate-600">No hay movimientos en este rango</p>
+            <p className="mt-1 text-xs text-slate-500">Cambia filtros o importa nuevos datos para ver actividad.</p>
+          </div>
         ) : null}
         {items.map((item) => (
           <div
             key={item.id}
-            className="rounded-[26px] border border-white/80 bg-white/80 px-4 py-3 shadow-[0_20px_45px_rgba(15,23,42,0.05)]"
+            className="rounded-[24px] border border-white/75 bg-white/78 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.05)] transition-colors hover:bg-white"
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="font-semibold text-slate-900">{item.description}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-semibold text-slate-900">{item.description}</p>
+                <p className="mt-0.5 text-[11px] text-slate-500 sm:text-xs">
                   {formatDate(item.date)} · {item.category} · {item.businessUnit}
                 </p>
               </div>
@@ -360,23 +363,23 @@ function RecentTransactionsList({ items }: { items: DashboardSnapshot["recentTra
 
 function ComparisonSummary({ snapshot }: { snapshot: DashboardSnapshot }) {
   return (
-    <Card className="space-y-4">
+    <Card className="space-y-4 rounded-[28px] border border-white/75 bg-white/86 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
       <div>
-        <h3 className="text-lg font-semibold">Lectura comparativa</h3>
-        <p className="mt-1 text-sm text-neutral-500">
+        <h3 className="text-base font-semibold text-slate-900 sm:text-lg">Lectura comparativa</h3>
+        <p className="mt-1 text-xs text-neutral-500 sm:text-sm">
           {snapshot.comparisons.currentPeriodLabel} frente a {snapshot.comparisons.previousPeriodLabel}
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         {snapshot.comparisons.chart.map((item) => (
-          <div key={item.key} className="rounded-[22px] border border-white/80 bg-white/75 p-4">
+          <div key={item.key} className="rounded-[20px] border border-white/70 bg-white/70 p-3.5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-neutral-700">{item.label}</p>
-                <p className="mt-1 text-lg font-semibold text-neutral-900">{formatCurrency(item.current)}</p>
+                <p className="text-xs font-medium text-neutral-600">{item.label}</p>
+                <p className="mt-1 text-base font-semibold text-neutral-900">{formatCurrency(item.current)}</p>
               </div>
               <span
-                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                   item.delta >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
                 }`}
               >
@@ -384,7 +387,7 @@ function ComparisonSummary({ snapshot }: { snapshot: DashboardSnapshot }) {
                 {item.deltaPct.toFixed(1)}%
               </span>
             </div>
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-1.5 text-[11px] text-neutral-500">
               Anterior: {formatCurrency(item.previous)} · Variación: {item.delta >= 0 ? "+" : ""}
               {formatCurrency(item.delta)}
             </p>
@@ -491,22 +494,26 @@ export function DashboardClient() {
   const kpis = snapshot?.kpis;
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
       {error ? (
-        <Card className="rounded-[28px] border border-white/60 bg-white/80 p-5 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
+        <Card className="rounded-[28px] border border-rose-100 bg-rose-50/80 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
           <p className="text-sm text-danger">{error}</p>
         </Card>
       ) : null}
 
       {loading && !snapshot ? (
-        <Card className="rounded-[28px] border border-white/60 bg-white/80 p-5 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
-          <p className="text-sm text-neutral-500">Cargando dashboard financiero real...</p>
+        <Card className="rounded-[28px] border border-white/70 bg-white/84 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+          <div className="space-y-3">
+            <div className="h-3 w-32 animate-pulse rounded-full bg-slate-200/80" />
+            <div className="h-9 w-44 animate-pulse rounded-xl bg-slate-200/70" />
+            <div className="h-3 w-56 animate-pulse rounded-full bg-slate-200/70" />
+          </div>
         </Card>
       ) : null}
 
       {snapshot && kpis ? (
         <>
-          <section className="space-y-4">
+          <section className="space-y-3.5 sm:space-y-4">
           <HeroPanel
             kpis={kpis}
             snapshot={snapshot}
@@ -524,7 +531,7 @@ export function DashboardClient() {
 
           <SummaryGrid kpis={kpis} snapshot={snapshot} />
 
-          <section className="grid gap-4 lg:grid-cols-[1.4fr_0.6fr]">
+          <section className="grid gap-3.5 lg:grid-cols-[1.45fr_0.55fr] lg:gap-4">
             <LineChartCard
               title="Tendencia mensual"
               description="6 meses para seguir ingresos, egresos y flujo neto."
@@ -543,7 +550,7 @@ export function DashboardClient() {
 
       <Button
         variant="secondary"
-        className="fixed bottom-6 right-5 z-30 flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold shadow-[0_20px_60px_rgba(15,23,42,0.4)] sm:hidden"
+        className="fixed bottom-4 right-4 z-30 flex h-11 items-center gap-2 rounded-full px-5 text-sm font-semibold shadow-[0_14px_38px_rgba(15,23,42,0.26)] sm:hidden"
       >
         Agregar gasto
       </Button>

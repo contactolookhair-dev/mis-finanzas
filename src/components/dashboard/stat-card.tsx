@@ -41,22 +41,22 @@ export function StatCard({
       : "bg-amber-100/18 text-amber-50";
 
   return (
-    <Card className={`space-y-3 overflow-hidden bg-gradient-to-br text-white ${accentStyles[accent]}`}>
+    <Card className={`space-y-3 overflow-hidden border-white/45 bg-gradient-to-br p-4 text-white shadow-[0_14px_32px_rgba(15,23,42,0.08)] sm:p-5 ${accentStyles[accent]}`}>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-white/72">{label}</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-white/70">{label}</p>
         {comparison ? (
-          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium ${comparisonTone}`}>
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${comparisonTone}`}>
             <TrendIcon className="h-3.5 w-3.5" />
             {comparison.deltaPct >= 0 ? "+" : ""}
             {comparison.deltaPct.toFixed(1)}%
           </span>
         ) : null}
       </div>
-      <div className="space-y-2">
-        <p className="text-2xl font-semibold tracking-tight">{formatCurrency(value)}</p>
-        <p className="mt-1 text-sm text-white/72">{detail}</p>
+      <div className="space-y-1.5">
+        <p className="text-[1.45rem] font-semibold tracking-tight sm:text-[1.6rem]">{formatCurrency(value)}</p>
+        <p className="mt-1 text-xs text-white/75 sm:text-sm">{detail}</p>
         {comparison ? (
-          <p className="text-xs text-white/72">
+          <p className="text-[11px] text-white/72">
             {comparison.previousLabel ? `Vs ${comparison.previousLabel}` : "Vs periodo anterior"}:{" "}
             {comparison.delta >= 0 ? "+" : ""}
             {formatCurrency(comparison.delta)}
