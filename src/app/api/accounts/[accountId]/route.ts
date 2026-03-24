@@ -6,6 +6,8 @@ import {
 } from "@/server/services/manual-accounts-service";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 
+const DEV_MODE = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
+
 const updateAccountSchema = z.object({
   name: z.string().min(2).optional(),
   bank: z.string().optional().nullable(),
@@ -20,7 +22,13 @@ export async function PATCH(
   { params }: { params: { accountId: string } }
 ) {
   const context = await getWorkspaceContextFromRequest(request);
-  if (!context.workspaceId || !context.userKey) {
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json(
+      { message: "Modo prueba activo sin workspace configurado." },
+      { status: 400 }
+    );
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 

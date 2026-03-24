@@ -5,6 +5,8 @@ import { prisma } from "@/server/db/prisma";
 import { toAmountNumber } from "@/server/lib/amounts";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 
+const DEV_MODE = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
+
 const createPaymentSchema = z.object({
   amount: z.coerce.number().positive(),
   paidAt: z.string().min(1),
@@ -16,7 +18,13 @@ export async function POST(
   { params }: { params: { debtorId: string } }
 ) {
   const context = await getWorkspaceContextFromRequest(request);
-  if (!context.workspaceId || !context.userKey) {
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json(
+      { message: "Modo prueba activo sin workspace configurado." },
+      { status: 400 }
+    );
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 
@@ -69,4 +77,3 @@ export async function POST(
     return NextResponse.json({ message: "No se pudo registrar el abono." }, { status: 500 });
   }
 }
-

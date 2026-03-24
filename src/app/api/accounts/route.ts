@@ -6,6 +6,8 @@ import {
 } from "@/server/services/manual-accounts-service";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 
+const DEV_MODE = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
+
 const createAccountSchema = z.object({
   name: z.string().min(2),
   bank: z.string().optional().nullable(),
@@ -17,7 +19,10 @@ const createAccountSchema = z.object({
 
 export async function GET(request: NextRequest) {
   const context = await getWorkspaceContextFromRequest(request);
-  if (!context.workspaceId || !context.userKey) {
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json({ items: [] });
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 
@@ -27,7 +32,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const context = await getWorkspaceContextFromRequest(request);
-  if (!context.workspaceId || !context.userKey) {
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json(
+      { message: "Modo prueba activo sin workspace configurado." },
+      { status: 400 }
+    );
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 

@@ -7,6 +7,8 @@ import { buildDuplicateFingerprint } from "@/server/services/import/import-finge
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 import { toAmountNumber } from "@/server/lib/amounts";
 
+const DEV_MODE = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
+
 const transactionsQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
@@ -45,7 +47,10 @@ function toEndDate(value?: string) {
 
 export async function GET(request: NextRequest) {
   const context = await getWorkspaceContextFromRequest(request);
-  if (!context.workspaceId || !context.userKey) {
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json({ items: [], pageInfo: { nextCursor: null, hasMore: false } });
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 
@@ -115,7 +120,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const context = await getWorkspaceContextFromRequest(request);
-  if (!context.workspaceId || !context.userKey) {
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json(
+      { message: "Modo prueba activo sin workspace configurado." },
+      { status: 400 }
+    );
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 
