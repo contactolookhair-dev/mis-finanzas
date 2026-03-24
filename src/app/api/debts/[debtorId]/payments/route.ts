@@ -20,7 +20,7 @@ export async function POST(
   const context = await getWorkspaceContextFromRequest(request);
   if (!context.workspaceId && DEV_MODE) {
     return NextResponse.json(
-      { message: "Modo prueba activo sin workspace configurado." },
+      { message: "No se pudo resolver el contexto de trabajo." },
       { status: 400 }
     );
   }

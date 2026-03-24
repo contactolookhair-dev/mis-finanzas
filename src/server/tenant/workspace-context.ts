@@ -7,10 +7,56 @@ export type WorkspaceContext = {
   workspaceId?: string;
   userKey?: string;
   role?: "OWNER" | "ADMIN" | "EDITOR" | "VIEWER";
-  source: "session" | "dev-headers" | "dev-auth-bypass" | "public" | "none";
+  source: "forced-personal" | "session" | "dev-headers" | "dev-auth-bypass" | "public" | "none";
 };
 
+const FORCE_PERSONAL_WORKSPACE = process.env.FORCE_PERSONAL_WORKSPACE !== "false";
+
+async function ensurePersonalWorkspace() {
+  return prisma.workspace.upsert({
+    where: { slug: "personal" },
+    update: {
+      name: "Personal",
+      isActive: true
+    },
+    create: {
+      name: "Personal",
+      slug: "personal",
+      isActive: true
+    }
+  });
+}
+
 export async function getWorkspaceContextFromRequest(request: NextRequest): Promise<WorkspaceContext> {
+  if (FORCE_PERSONAL_WORKSPACE) {
+    try {
+      const workspace = await ensurePersonalWorkspace();
+      console.log("workspace-context forced personal mode", {
+        workspaceId: workspace.id,
+        source: "forced-personal"
+      });
+
+      return {
+        workspaceId: workspace.id,
+        userKey: "dev-user",
+        role: "OWNER",
+        source: "forced-personal"
+      };
+    } catch (error) {
+      console.log("workspace-context forced personal fallback", {
+        source: "forced-personal",
+        message: error instanceof Error ? error.message : "unknown"
+      });
+
+      return {
+        workspaceId: process.env.PERSONAL_WORKSPACE_ID ?? "personal-fallback",
+        userKey: "dev-user",
+        role: "OWNER",
+        source: "forced-personal"
+      };
+    }
+  }
+
   const isDev = isDevAuthBypassEnabled();
   if (process.env.NODE_ENV !== "production") {
     console.log("DEV MODE:", isDev);

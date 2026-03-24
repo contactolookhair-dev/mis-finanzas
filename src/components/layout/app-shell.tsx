@@ -1,46 +1,18 @@
 "use client";
 
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Plus } from "lucide-react";
-import { appConfig } from "@/lib/config/app-config";
 import { navigationItems } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
-import { BusinessUnitSelector } from "@/components/layout/business-unit-selector";
-import { Select } from "@/components/ui/select";
-import { fetchAuthSession } from "@/shared/lib/auth-session-client";
-import type { AuthSessionResponse } from "@/shared/types/auth";
-
-function BusinessUnitSelectorFallback() {
-  const defaultUnit = appConfig.businessUnits[0];
-  return (
-    <Select className="h-10 min-w-[150px] text-xs sm:min-w-[170px] sm:text-sm" defaultValue={defaultUnit.id}>
-      <option value={defaultUnit.id}>{defaultUnit.name}</option>
-    </Select>
-  );
-}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
   const visibleNavigationItems = navigationItems.filter((item) =>
     "hidden" in item ? !item.hidden : true
   );
-
-  async function refreshSession() {
-    try {
-      const session = await fetchAuthSession();
-      setAuthSession(session);
-    } catch {
-      setAuthSession({ authenticated: false });
-    }
-  }
-
-  useEffect(() => {
-    void refreshSession();
-  }, []);
 
   return (
     <div className="min-h-screen">
@@ -56,9 +28,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <h1 className="text-lg font-semibold tracking-tight text-slate-900 sm:text-xl">Tu dinero hoy</h1>
                     <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-medium text-slate-500">
-                      {authSession?.authenticated === true
-                        ? `Workspace: ${authSession.activeWorkspace?.workspaceName ?? "sin seleccionar"}`
-                        : "Modo prueba"}
+                      Personal
                     </span>
                   </div>
                 </div>
@@ -73,19 +43,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-                <Suspense fallback={<BusinessUnitSelectorFallback />}>
-                  <BusinessUnitSelector />
-                </Suspense>
-                <div className="grid grid-cols-1 gap-3 sm:hidden">
-                  <Link
-                    href="/movimientos"
-                    className={cn(buttonVariants({ variant: "secondary" }), "h-10 border-slate-200 bg-white text-xs font-semibold")}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Nueva transacción
-                  </Link>
-                </div>
+              <div className="grid grid-cols-1 gap-3 sm:hidden">
+                <Link
+                  href="/movimientos"
+                  className={cn(buttonVariants({ variant: "secondary" }), "h-10 border-slate-200 bg-white text-xs font-semibold")}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nueva transacción
+                </Link>
               </div>
             </div>
           </header>
