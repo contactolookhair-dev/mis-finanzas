@@ -1,0 +1,50 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
+import {
+  listManualAccountsWithBalances,
+  updateManualAccount
+} from "@/server/services/manual-accounts-service";
+import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
+
+const updateAccountSchema = z.object({
+  name: z.string().min(2).optional(),
+  bank: z.string().optional().nullable(),
+  type: z.enum(["CREDITO", "DEBITO", "EFECTIVO"]).optional(),
+  isActive: z.boolean().optional(),
+  color: z.string().optional(),
+  icon: z.string().optional()
+});
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { accountId: string } }
+) {
+  const context = await getWorkspaceContextFromRequest(request);
+  if (!context.workspaceId || !context.userKey) {
+    return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+  }
+
+  try {
+    const payload = updateAccountSchema.parse((await request.json()) as unknown);
+    const updated = await updateManualAccount({
+      workspaceId: context.workspaceId,
+      accountId: params.accountId,
+      ...payload
+    });
+
+    if (!updated) {
+      return NextResponse.json({ message: "Cuenta no encontrada." }, { status: 404 });
+    }
+
+    const items = await listManualAccountsWithBalances(context.workspaceId);
+    return NextResponse.json({ items });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { message: "Datos invalidos para actualizar cuenta.", issues: error.issues },
+        { status: 400 }
+      );
+    }
+    return NextResponse.json({ message: "No se pudo actualizar la cuenta." }, { status: 500 });
+  }
+}

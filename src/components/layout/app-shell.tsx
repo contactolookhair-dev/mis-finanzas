@@ -94,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[30px] border-white/50 bg-white/68 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)] lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[92px] lg:-translate-y-1/2">
-          <div className="grid grid-cols-4 gap-2 lg:grid-cols-1">
+          <div className="grid grid-cols-5 gap-2 lg:grid-cols-1">
             {visibleNavigationItems.map((item) => {
               const isActive = pathname === item.href;
               const Icon = item.icon;

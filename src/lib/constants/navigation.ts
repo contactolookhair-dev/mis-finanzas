@@ -3,11 +3,13 @@ import {
   CreditCard,
   HandCoins,
   Home,
+  Landmark,
   Wallet
 } from "lucide-react";
 
 export const navigationItems = [
   { href: "/inicio", label: "Inicio", icon: Home },
+  { href: "/cuentas", label: "Cuentas", icon: Landmark },
   { href: "/movimientos", label: "Movimientos", icon: CreditCard },
   { href: "/pendientes", label: "Pendientes", icon: HandCoins },
   { href: "/resumen", label: "Resumen", icon: Wallet },

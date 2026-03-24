@@ -6,3 +6,10 @@ export async function listAccounts(workspaceId: string) {
     orderBy: [{ isBusiness: "asc" }, { name: "asc" }]
   });
 }
+
+export async function listAccountsIncludingInactive(workspaceId: string) {
+  return prisma.account.findMany({
+    where: { workspaceId },
+    orderBy: [{ isActive: "desc" }, { isBusiness: "asc" }, { name: "asc" }]
+  });
+}

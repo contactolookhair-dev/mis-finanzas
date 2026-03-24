@@ -17,6 +17,7 @@ const quickExpenseSchema = z.object({
   amount: z.coerce.number().positive("Monto debe ser mayor a 0"),
   type: z.enum(["INGRESO", "EGRESO"]),
   paymentMethod: z.enum(["EFECTIVO", "DEBITO", "CREDITO", "TRANSFERENCIA", "OTRO"]),
+  accountId: z.string().min(1, "Selecciona una cuenta"),
   financialOrigin: z.enum(["PERSONAL", "EMPRESA"]),
   businessUnitId: z.string().optional(),
   categoryId: z.string().optional(),
@@ -33,12 +34,25 @@ const quickExpenseSchema = z.object({
 });
 
 type QuickExpenseValues = z.infer<typeof quickExpenseSchema>;
+type AccountItem = {
+  id: string;
+  name: string;
+  bank: string;
+  type: "CREDITO" | "DEBITO" | "EFECTIVO";
+  balance: number;
+};
+type CategoryItem = {
+  id: string;
+  name: string;
+};
 type DebtorPerson = {
   id: string;
   name: string;
   totalAmount: number;
   notes: string | null;
 };
+type AccountsPayload = { items: AccountItem[] };
+type CategoriesPayload = { items: CategoryItem[] };
 type DebtsPayload = {
   people: DebtorPerson[];
 };
@@ -61,7 +75,11 @@ function getToday() {
 
 export function GastosClient() {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [accounts, setAccounts] = useState<AccountItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [debtors, setDebtors] = useState<DebtorPerson[]>([]);
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [tableKey, setTableKey] = useState(0);
@@ -70,6 +88,8 @@ export function GastosClient() {
     handleSubmit,
     reset,
     watch,
+    setValue,
+    getValues,
     formState: { errors, isSubmitting }
   } = useForm<QuickExpenseValues>({
     resolver: zodResolver(quickExpenseSchema),
@@ -85,26 +105,45 @@ export function GastosClient() {
       businessUnitId: "",
       owedBusinessUnitId: "",
       owedDebtorId: "",
+      accountId: "",
       categoryId: "",
       owedAmount: undefined
     }
   });
 
+  async function reloadCatalogs() {
+    const [accountsResponse, categoriesResponse, debtsResponse, dashboardResponse] = await Promise.all([
+      fetch("/api/accounts", { cache: "no-store" }),
+      fetch("/api/categories", { cache: "no-store" }),
+      fetch("/api/debts", { cache: "no-store" }),
+      fetch("/api/dashboard", { cache: "no-store" })
+    ]);
+
+    if (accountsResponse.ok) {
+      const accountsPayload = (await accountsResponse.json()) as AccountsPayload;
+      setAccounts(accountsPayload.items ?? []);
+      if (!getValues("accountId") && accountsPayload.items?.[0]?.id) {
+        setValue("accountId", accountsPayload.items[0].id, { shouldValidate: true });
+      }
+    }
+    if (categoriesResponse.ok) {
+      const categoriesPayload = (await categoriesResponse.json()) as CategoriesPayload;
+      setCategories(categoriesPayload.items ?? []);
+    }
+    if (debtsResponse.ok) {
+      const debtsPayload = (await debtsResponse.json()) as DebtsPayload;
+      setDebtors(debtsPayload.people ?? []);
+    }
+    if (dashboardResponse.ok) {
+      const dashboardPayload = (await dashboardResponse.json()) as DashboardSnapshot;
+      setSnapshot(dashboardPayload);
+    }
+  }
+
   useEffect(() => {
     async function loadReferences() {
       try {
-        const [dashboardResponse, debtsResponse] = await Promise.all([
-          fetch("/api/dashboard", { cache: "no-store" }),
-          fetch("/api/debts", { cache: "no-store" })
-        ]);
-        if (dashboardResponse.ok) {
-          const dashboardPayload = (await dashboardResponse.json()) as DashboardSnapshot;
-          setSnapshot(dashboardPayload);
-        }
-        if (debtsResponse.ok) {
-          const debtsPayload = (await debtsResponse.json()) as DebtsPayload;
-          setDebtors(debtsPayload.people ?? []);
-        }
+        await reloadCatalogs();
       } catch {
         // Mantener la pantalla operativa aunque fallen referencias.
       }
@@ -112,6 +151,33 @@ export function GastosClient() {
 
     void loadReferences();
   }, []);
+
+  async function handleCreateCategory() {
+    const normalized = newCategoryName.trim();
+    if (normalized.length < 2) return;
+    setCreatingCategory(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/categories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ name: normalized })
+      });
+      const payload = (await response.json()) as CategoriesPayload & { message?: string };
+      if (!response.ok) {
+        throw new Error(payload.message ?? "No se pudo crear la categoría.");
+      }
+      setCategories(payload.items ?? []);
+      setNewCategoryName("");
+      setSaved(`Categoría "${normalized}" creada.`);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "No se pudo crear la categoría.");
+    } finally {
+      setCreatingCategory(false);
+    }
+  }
 
   async function upsertPersonDebt(values: QuickExpenseValues, owedAmount: number) {
     if (values.owedDebtorMode === "EXISTING" && values.owedDebtorId) {
@@ -191,6 +257,7 @@ export function GastosClient() {
         ...values,
         financialOrigin: isCompanyDebt ? "EMPRESA" : values.financialOrigin,
         businessUnitId: isCompanyDebt ? values.owedBusinessUnitId || values.businessUnitId || null : values.businessUnitId || null,
+        accountId: values.accountId || null,
         categoryId: values.categoryId || null,
         isBusinessPaidPersonally: isCompanyDebt && values.type === "EGRESO",
         isReimbursable: isCompanyDebt && values.type === "EGRESO",
@@ -217,6 +284,7 @@ export function GastosClient() {
 
     setSaved(values.isOwed ? "Movimiento y deuda pendiente registrados correctamente." : "Gasto registrado correctamente.");
     setTableKey((value) => value + 1);
+    void reloadCatalogs();
     reset({
       ...values,
       description: "",
@@ -274,6 +342,18 @@ export function GastosClient() {
             </Select>
           </label>
           <label className="space-y-1.5">
+            <span className="text-xs font-medium text-neutral-600">Cuenta</span>
+            <Select {...register("accountId")}>
+              <option value="">Selecciona cuenta</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} · {account.bank}
+                </option>
+              ))}
+            </Select>
+            {errors.accountId ? <p className="text-xs text-danger">{errors.accountId.message}</p> : null}
+          </label>
+          <label className="space-y-1.5">
             <span className="text-xs font-medium text-neutral-600">Origen</span>
             <Select {...register("financialOrigin")}>
               <option value="PERSONAL">Personal</option>
@@ -295,12 +375,31 @@ export function GastosClient() {
             <span className="text-xs font-medium text-neutral-600">Categoría</span>
             <Select {...register("categoryId")}>
               <option value="">Sin categoría</option>
-              {snapshot?.references.categories.map((category) => (
+              {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
                 </option>
               ))}
             </Select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-neutral-600">Nueva categoría</span>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Ej: Mascotas"
+                value={newCategoryName}
+                onChange={(event) => setNewCategoryName(event.target.value)}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                className="px-3"
+                onClick={() => void handleCreateCategory()}
+                disabled={creatingCategory || newCategoryName.trim().length < 2}
+              >
+                {creatingCategory ? "..." : "Crear"}
+              </Button>
+            </div>
           </label>
           <label className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/30 px-3 py-2 sm:col-span-2">
             <input type="checkbox" {...register("isOwed")} />
