@@ -25,11 +25,6 @@ function BusinessUnitSelectorFallback() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
-  const [showLogin, setShowLogin] = useState(false);
-  const [loginUserKey, setLoginUserKey] = useState("");
-  const [loginName, setLoginName] = useState("");
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [loginLoading, setLoginLoading] = useState(false);
 
   async function refreshSession() {
     try {
@@ -43,42 +38,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refreshSession();
   }, []);
-
-  async function handleDevLogin() {
-    if (!loginUserKey.trim()) {
-      setLoginError("Ingresa un identificador para iniciar sesión.");
-      return;
-    }
-
-    try {
-      setLoginLoading(true);
-      setLoginError(null);
-      const response = await fetch("/api/auth/dev-login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          userKey: loginUserKey.trim(),
-          displayName: loginName.trim() || undefined
-        })
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        throw new Error(payload.message ?? "No se pudo iniciar sesión.");
-      }
-
-      await refreshSession();
-      setShowLogin(false);
-      setLoginUserKey("");
-      setLoginName("");
-    } catch (error) {
-      setLoginError(error instanceof Error ? error.message : "No se pudo iniciar sesión.");
-    } finally {
-      setLoginLoading(false);
-    }
-  }
 
   return (
     <div className="min-h-screen bg-hero-glow">
@@ -96,17 +55,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <span className="rounded-full border border-white/70 bg-white/75 px-2.5 py-1 text-[10px] font-medium text-neutral-600">
                       {authSession?.authenticated === true
                         ? `Workspace: ${authSession.activeWorkspace?.workspaceName ?? "sin seleccionar"}`
-                        : "Sesión no iniciada"}
+                        : "Modo prueba"}
                     </span>
-                    {authSession?.authenticated !== true ? (
-                      <Button
-                        variant="secondary"
-                        className="h-7 px-2.5 text-[11px] font-semibold"
-                        onClick={() => setShowLogin((value) => !value)}
-                      >
-                        Iniciar sesión
-                      </Button>
-                    ) : null}
                   </div>
                 </div>
                 <div className="hidden items-center gap-3 sm:flex">
@@ -119,37 +69,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </Button>
                 </div>
               </div>
-
-              {authSession?.authenticated !== true && showLogin ? (
-                <div className="rounded-[22px] border border-white/70 bg-white/75 p-3 shadow-[0_8px_22px_rgba(15,23,42,0.08)]">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                    <input
-                      value={loginUserKey}
-                      onChange={(event) => setLoginUserKey(event.target.value)}
-                      placeholder="Usuario o correo"
-                      className="h-10 rounded-2xl border border-white/70 bg-white/90 px-3 text-xs outline-none focus:border-primary sm:text-sm"
-                    />
-                    <input
-                      value={loginName}
-                      onChange={(event) => setLoginName(event.target.value)}
-                      placeholder="Nombre visible (opcional)"
-                      className="h-10 rounded-2xl border border-white/70 bg-white/90 px-3 text-xs outline-none focus:border-primary sm:text-sm"
-                    />
-                    <Button
-                      variant="secondary"
-                      className="h-10 text-xs font-semibold"
-                      onClick={handleDevLogin}
-                      disabled={loginLoading}
-                    >
-                      {loginLoading ? "Entrando..." : "Continuar"}
-                    </Button>
-                  </div>
-                  {loginError ? <p className="mt-2 text-xs text-rose-600">{loginError}</p> : null}
-                  <p className="mt-2 text-[11px] text-neutral-500">
-                    Este acceso usa el login de desarrollo si está habilitado en el entorno.
-                  </p>
-                </div>
-              ) : null}
 
               <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <Suspense fallback={<BusinessUnitSelectorFallback />}>

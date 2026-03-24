@@ -3,16 +3,61 @@ import { prisma } from "@/server/db/prisma";
 import { getAuthSessionFromRequest } from "@/server/auth/session";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 import { hasPermission } from "@/server/permissions/permissions";
+import { isPublicMode } from "@/server/auth/public-mode";
 
 export async function GET(request: NextRequest) {
   const session = await getAuthSessionFromRequest(request);
   if (!session) {
-    return NextResponse.json(
-      {
-        authenticated: false
-      },
-      { status: 401 }
-    );
+    if (isPublicMode()) {
+      const context = await getWorkspaceContextFromRequest(request);
+      if (!context.workspaceId || !context.role) {
+        return NextResponse.json({ authenticated: false });
+      }
+
+      const workspace = await prisma.workspace.findFirst({
+        where: { id: context.workspaceId, isActive: true },
+        select: { id: true, name: true, slug: true }
+      });
+
+      if (!workspace) {
+        return NextResponse.json({ authenticated: false });
+      }
+
+      return NextResponse.json({
+        authenticated: true,
+        user: {
+          userKey: context.userKey ?? "public",
+          displayName: "Modo prueba"
+        },
+        activeWorkspace: {
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+          workspaceSlug: workspace.slug,
+          role: context.role
+        },
+        permissions: {
+          canViewSettings: hasPermission(context.role, "settings:view"),
+          canViewAuditLog: hasPermission(context.role, "settings:audit:view"),
+          canEditSettings: hasPermission(context.role, "settings:edit"),
+          canEditAI: hasPermission(context.role, "settings:ai:edit"),
+          canEditDashboard: hasPermission(context.role, "settings:dashboard:edit"),
+          canEditModules: hasPermission(context.role, "settings:modules:edit"),
+          canImportTransactions: hasPermission(context.role, "transactions:import"),
+          canExportReports: hasPermission(context.role, "reports:export"),
+          canQueryAI: hasPermission(context.role, "ai:query")
+        },
+        memberships: [
+          {
+            workspaceId: workspace.id,
+            workspaceName: workspace.name,
+            workspaceSlug: workspace.slug,
+            role: context.role
+          }
+        ]
+      });
+    }
+
+    return NextResponse.json({ authenticated: false });
   }
 
   const context = await getWorkspaceContextFromRequest(request);

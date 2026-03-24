@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasPermission, type PermissionAction } from "@/server/permissions/permissions";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
+import { isPublicMode } from "@/server/auth/public-mode";
 
 type AuthorizedContext = {
   workspaceId: string;
@@ -15,7 +16,10 @@ export async function requireRoutePermission(request: NextRequest, action: Permi
   if (!context.workspaceId || !context.userKey || !context.role) {
     return {
       ok: false as const,
-      response: NextResponse.json({ message: "Sesion requerida." }, { status: 401 })
+      response: NextResponse.json(
+        { message: isPublicMode() ? "Modo prueba no disponible." : "Sesion requerida." },
+        { status: 401 }
+      )
     };
   }
 
