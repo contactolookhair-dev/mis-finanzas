@@ -74,7 +74,7 @@ export function InicioClient() {
     <div className="space-y-5">
       <section className="grid gap-3 sm:grid-cols-2">
         <Link
-          href="/gastos#agregar-gasto"
+          href="/movimientos#agregar-gasto"
           className={cn(buttonVariants({ variant: "default" }), "h-auto justify-start rounded-[24px] px-4 py-4 text-left")}
         >
           <ArrowDownToLine className="mt-0.5 h-5 w-5" />
@@ -84,7 +84,7 @@ export function InicioClient() {
           </div>
         </Link>
         <Link
-          href="/deudas?tab=personas&action=nueva"
+          href="/pendientes?tab=personas&action=nueva"
           className={cn(buttonVariants({ variant: "secondary" }), "h-auto justify-start rounded-[24px] px-4 py-4 text-left")}
         >
           <HandCoins className="mt-0.5 h-5 w-5" />
@@ -94,7 +94,7 @@ export function InicioClient() {
           </div>
         </Link>
         <Link
-          href="/deudas?tab=personas&action=abono"
+          href="/pendientes?tab=personas&action=abono"
           className={cn(buttonVariants({ variant: "secondary" }), "h-auto justify-start rounded-[24px] px-4 py-4 text-left")}
         >
           <CircleDollarSign className="mt-0.5 h-5 w-5" />
@@ -104,7 +104,7 @@ export function InicioClient() {
           </div>
         </Link>
         <Link
-          href="/deudas"
+          href="/pendientes"
           className={cn(buttonVariants({ variant: "secondary" }), "h-auto justify-start rounded-[24px] px-4 py-4 text-left")}
         >
           <WalletCards className="mt-0.5 h-5 w-5" />

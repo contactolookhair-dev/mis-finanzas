@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { GastosClient } from "@/components/gastos/gastos-client";
 
 export default function MovimientosPage() {
-  redirect("/gastos");
+  return <GastosClient />;
 }

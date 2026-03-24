@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
                 <div className="hidden items-center gap-3 sm:flex">
                   <Link
-                    href="/gastos"
+                    href="/movimientos"
                     className={cn(buttonVariants({ variant: "secondary", size: "sm" }), "h-9 px-3 text-xs font-semibold")}
                   >
                     <Plus className="mr-2 h-4 w-4" />
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </Suspense>
                 <div className="grid grid-cols-1 gap-3 sm:hidden">
                   <Link
-                    href="/gastos"
+                    href="/movimientos"
                     className={cn(buttonVariants({ variant: "secondary" }), "h-10 text-xs font-semibold")}
                   >
                     <Plus className="mr-2 h-4 w-4" />

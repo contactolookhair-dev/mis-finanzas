@@ -8,8 +8,8 @@ import {
 
 export const navigationItems = [
   { href: "/inicio", label: "Inicio", icon: Home },
-  { href: "/gastos", label: "Gastos", icon: CreditCard },
-  { href: "/deudas", label: "Deudas", icon: HandCoins },
+  { href: "/movimientos", label: "Movimientos", icon: CreditCard },
+  { href: "/pendientes", label: "Pendientes", icon: HandCoins },
   { href: "/resumen", label: "Resumen", icon: Wallet },
   { href: "/configuracion", label: "Admin", icon: Coins, hidden: true },
   { href: "/ia", label: "IA", icon: Coins, hidden: true },
