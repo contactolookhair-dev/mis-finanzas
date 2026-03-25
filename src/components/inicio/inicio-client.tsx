@@ -89,6 +89,7 @@ export function InicioClient() {
   const [financialHealth, setFinancialHealth] = useState<FinancialHealthResponse | null>(null);
   const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
   const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
+  const [debugWidgetPanelOpen, setDebugWidgetPanelOpen] = useState(false);
 
   const monthGrid = useMemo(() => buildMonthGrid(new Date()), []);
   const movementDateKeys = useMemo(
@@ -186,6 +187,22 @@ export function InicioClient() {
   }, [selectedDate]);
   const onboardingInsightReady = Boolean(snapshot && accounts.length > 0 && movements.length > 0);
   const totalAvailableTone = availableTotal < 0 ? "negative" : "positive";
+
+  useEffect(() => {
+    console.log("inicio/debug-toolbar mount");
+    return () => {
+      console.log("inicio/debug-toolbar unmount");
+    };
+  }, []);
+
+  useEffect(() => {
+    console.log("inicio/debug-toolbar render", {
+      debugWidgetPanelOpen,
+      hasSnapshot: Boolean(snapshot),
+      accountsCount: accounts.length,
+      movementsCount: movements.length
+    });
+  }, [debugWidgetPanelOpen, snapshot, accounts.length, movements.length]);
 
   useEffect(() => {
     if (loading || !snapshot) {
@@ -391,6 +408,48 @@ export function InicioClient() {
           </p>
         </div>
       </SurfaceCard>
+
+      <div
+        data-debug-toolbar="true"
+        className="relative z-[200] flex items-center justify-between gap-3 border-4 border-red-500 bg-yellow-200 px-4 py-3"
+        style={{
+          display: "flex",
+          visibility: "visible",
+          opacity: 1,
+          pointerEvents: "auto"
+        }}
+      >
+        <div>
+          <p className="text-sm font-bold text-black">DEBUG TOOLBAR ACTIVO</p>
+          <p className="text-xs text-black">Este bloque debe aparecer siempre debajo de Saldo total.</p>
+        </div>
+        <button
+          type="button"
+          data-debug-widget-button="true"
+          onClick={() => setDebugWidgetPanelOpen((value) => !value)}
+          className="border-4 border-black bg-white px-4 py-2 text-sm font-bold text-black"
+          style={{
+            display: "block",
+            visibility: "visible",
+            opacity: 1,
+            pointerEvents: "auto"
+          }}
+        >
+          {debugWidgetPanelOpen ? "Cerrar widgets" : "Agregar widgets"}
+        </button>
+      </div>
+
+      {debugWidgetPanelOpen ? (
+        <div
+          data-debug-widget-panel="true"
+          className="relative z-[200] border-4 border-blue-600 bg-white px-4 py-3"
+        >
+          <p className="text-sm font-bold text-slate-900">Panel debug de widgets</p>
+          <p className="mt-1 text-xs text-slate-600">
+            Si ves este bloque, el render de la zona modular en /inicio ya esta confirmado.
+          </p>
+        </div>
+      ) : null}
 
       <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
       {financialHealthError ? (
