@@ -282,8 +282,8 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-4">
-      <div className="glass-surface safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.96)_100%)] p-4 animate-fade-up sm:max-w-2xl sm:rounded-[32px] sm:p-6">
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
+      <div className="glass-surface safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(248,250,252,0.9)_100%)] p-4 animate-fade-up ring-1 ring-white/35 sm:max-w-2xl sm:rounded-[32px] sm:p-6">
         <div className="mb-4 flex items-center justify-between">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-violet-500">Nueva transacción</p>

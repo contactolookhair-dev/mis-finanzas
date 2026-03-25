@@ -820,7 +820,7 @@ export function DashboardClient() {
       <Button
         variant="secondary"
         onClick={() => openQuickTransaction("GASTO")}
-        className="glass-surface fixed bottom-4 right-4 z-30 flex h-11 items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 text-sm font-semibold text-white transition-all duration-200 hover:brightness-105 active:scale-[0.985] sm:hidden"
+        className="glass-surface fixed bottom-4 right-4 z-30 flex h-11 items-center gap-2 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 text-sm font-semibold text-white ring-1 ring-white/25 transition-all duration-200 hover:brightness-105 active:scale-[0.985] sm:hidden"
       >
         Agregar gasto
       </Button>
