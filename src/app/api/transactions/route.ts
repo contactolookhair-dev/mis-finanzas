@@ -12,11 +12,13 @@ const DEV_MODE = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
 const transactionsQuerySchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  accountId: z.string().optional(),
   businessUnitId: z.string().optional(),
   categoryId: z.string().optional(),
   financialOrigin: z.enum(["PERSONAL", "EMPRESA"]).optional(),
   reviewStatus: z.enum(["PENDIENTE", "REVISADO", "OBSERVADO"]).optional(),
   search: z.string().optional(),
+  type: z.enum(["INGRESO", "EGRESO"]).optional(),
   take: z.coerce.number().int().min(1).max(100).optional(),
   cursor: z.string().optional()
 });
@@ -58,11 +60,13 @@ export async function GET(request: NextRequest) {
     const query = transactionsQuerySchema.parse({
       startDate: request.nextUrl.searchParams.get("startDate") ?? undefined,
       endDate: request.nextUrl.searchParams.get("endDate") ?? undefined,
+      accountId: request.nextUrl.searchParams.get("accountId") ?? undefined,
       businessUnitId: request.nextUrl.searchParams.get("businessUnitId") ?? undefined,
       categoryId: request.nextUrl.searchParams.get("categoryId") ?? undefined,
       financialOrigin: request.nextUrl.searchParams.get("financialOrigin") ?? undefined,
       reviewStatus: request.nextUrl.searchParams.get("reviewStatus") ?? undefined,
       search: request.nextUrl.searchParams.get("search") ?? undefined,
+      type: request.nextUrl.searchParams.get("type") ?? undefined,
       take: request.nextUrl.searchParams.get("take") ?? undefined,
       cursor: request.nextUrl.searchParams.get("cursor") ?? undefined
     });
@@ -71,9 +75,11 @@ export async function GET(request: NextRequest) {
       workspaceId: context.workspaceId,
       startDate: toStartDate(query.startDate),
       endDate: toEndDate(query.endDate),
+      accountId: query.accountId,
       businessUnitId: query.businessUnitId,
       categoryId: query.categoryId,
       financialOrigin: query.financialOrigin,
+      type: query.type,
       reviewStatus: query.reviewStatus,
       search: query.search,
       take: query.take ?? 50,
@@ -91,6 +97,7 @@ export async function GET(request: NextRequest) {
         description: item.description,
         amount: toAmountNumber(item.amount),
         type: item.type,
+        accountId: item.accountId,
         account: item.account?.name ?? "Sin cuenta",
         category: item.category?.name ?? "Sin categoria",
         businessUnit: item.businessUnit?.name ?? "Sin asignar",

@@ -23,6 +23,7 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { computeCreditCardMetrics } from "@/lib/accounts/credit-card";
+import { getCreditCardBillingPeriod } from "@/lib/accounts/credit-card-period";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
@@ -506,10 +507,43 @@ function AccountDetailModal({
   onDelete: () => void;
 }) {
   const [statementItems, setStatementItems] = useState<
-    { id: string; date: string; description: string; amount: number; account: string }[]
+    {
+      id: string;
+      date: string;
+      description: string;
+      amount: number;
+      type: "INGRESO" | "EGRESO" | "TRANSFERENCIA";
+      accountId: string | null;
+      origin?: "PERSONAL" | "EMPRESA";
+    }[]
   >([]);
   const [statementLoading, setStatementLoading] = useState(false);
   const [statementError, setStatementError] = useState<string | null>(null);
+
+  const billingPeriod = useMemo(() => {
+    if (!account || account.type !== "CREDITO") return null;
+    return getCreditCardBillingPeriod({
+      closingDay: account.closingDay,
+      paymentDay: account.paymentDay
+    });
+  }, [account]);
+
+  const statementCharges = useMemo(
+    () => statementItems.filter((item) => item.amount < 0),
+    [statementItems]
+  );
+  const statementPayments = useMemo(
+    () => statementItems.filter((item) => item.amount > 0),
+    [statementItems]
+  );
+  const statementChargesTotal = useMemo(
+    () => statementCharges.reduce((sum, item) => sum + Math.abs(item.amount), 0),
+    [statementCharges]
+  );
+  const statementPaymentsTotal = useMemo(
+    () => statementPayments.reduce((sum, item) => sum + item.amount, 0),
+    [statementPayments]
+  );
 
   useEffect(() => {
     let active = true;
@@ -518,25 +552,34 @@ function AccountDetailModal({
         setStatementItems([]);
         return;
       }
+      const period = getCreditCardBillingPeriod({
+        closingDay: account.closingDay,
+        paymentDay: account.paymentDay
+      });
       setStatementLoading(true);
       setStatementError(null);
       try {
-        const now = new Date();
-        const startDate = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-01`;
-        const endDate = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")}`;
         const params = new URLSearchParams();
-        params.set("take", "80");
-        params.set("startDate", startDate);
-        params.set("endDate", endDate);
+        params.set("take", "200");
+        params.set("startDate", period.periodStart);
+        params.set("endDate", period.periodEnd);
+        params.set("accountId", account.id);
         const response = await fetch(`/api/transactions?${params.toString()}`, { cache: "no-store" });
         if (!response.ok) throw new Error("No se pudo cargar el estado de cuenta.");
-        const payload = (await response.json()) as { items: { id: string; date: string; description: string; amount: number; account: string }[] };
+        const payload = (await response.json()) as {
+          items: {
+            id: string;
+            date: string;
+            description: string;
+            amount: number;
+            type: "INGRESO" | "EGRESO" | "TRANSFERENCIA";
+            accountId: string | null;
+            origin?: "PERSONAL" | "EMPRESA";
+          }[];
+        };
         if (!active) return;
-        const filtered = (payload.items ?? [])
-          .filter((item) => item.description !== BASE_TRANSACTION_MARKER)
-          .filter((item) => item.account === account.name)
-          .filter((item) => item.amount < 0);
-        setStatementItems(filtered.slice(0, 12));
+        const filtered = (payload.items ?? []).filter((item) => item.description !== BASE_TRANSACTION_MARKER);
+        setStatementItems(filtered);
       } catch (error) {
         if (!active) return;
         setStatementError(error instanceof Error ? error.message : "No se pudo cargar el estado de cuenta.");
@@ -677,31 +720,98 @@ function AccountDetailModal({
           <SurfaceCard variant="soft" padding="sm" className="mt-4 space-y-3">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Estado de cuenta</p>
-              <h4 className="mt-1 text-sm font-semibold text-slate-900">Compras del período</h4>
-              <p className="mt-1 text-xs text-slate-500">Basado en movimientos registrados en esta tarjeta.</p>
+              <h4 className="mt-1 text-sm font-semibold text-slate-900">Período actual</h4>
+              <p className="mt-1 text-xs text-slate-500">
+                {billingPeriod
+                  ? `${billingPeriod.periodStart} → ${billingPeriod.periodEnd}`
+                  : "Basado en movimientos registrados en esta tarjeta."}
+              </p>
             </div>
 
             {statementLoading ? (
-              <p className="text-xs text-slate-500">Cargando compras...</p>
+              <p className="text-xs text-slate-500">Cargando estado de cuenta...</p>
             ) : statementError ? (
               <p className="text-xs text-rose-600">{statementError}</p>
             ) : statementItems.length === 0 ? (
-              <p className="text-xs text-slate-500">Aún no hay compras registradas en este período.</p>
+              <p className="text-xs text-slate-500">Aún no hay movimientos registrados en este período.</p>
             ) : (
-              <div className="space-y-2">
-                {statementItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{item.description}</p>
-                      <p className="mt-0.5 text-[11px] text-slate-500">{formatDate(item.date)}</p>
-                    </div>
-                    <p className="shrink-0 text-sm font-semibold text-rose-700">{formatCurrency(Math.abs(item.amount))}</p>
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Compras del período</p>
+                    <p className="mt-1 text-lg font-semibold text-rose-700">{formatCurrency(statementChargesTotal)}</p>
                   </div>
-                ))}
-              </div>
+                  <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pagos del período</p>
+                    <p className="mt-1 text-lg font-semibold text-emerald-700">{formatCurrency(statementPaymentsTotal)}</p>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Próximo cierre</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      {billingPeriod ? formatDate(billingPeriod.nextCloseDate.toISOString()) : "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Fecha de pago</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      {billingPeriod?.dueDate ? formatDate(billingPeriod.dueDate.toISOString()) : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Compras del período</p>
+                    <div className="mt-2 space-y-2">
+                      {statementCharges.length === 0 ? (
+                        <p className="text-xs text-slate-500">Sin compras aún.</p>
+                      ) : (
+                        statementCharges.slice(0, 8).map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">{item.description}</p>
+                              <p className="mt-0.5 text-[11px] text-slate-500">{formatDate(item.date)}</p>
+                            </div>
+                            <p className="shrink-0 text-sm font-semibold text-rose-700">
+                              {formatCurrency(Math.abs(item.amount))}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pagos realizados</p>
+                    <div className="mt-2 space-y-2">
+                      {statementPayments.length === 0 ? (
+                        <p className="text-xs text-slate-500">Sin pagos registrados en este período.</p>
+                      ) : (
+                        statementPayments.slice(0, 6).map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-slate-900">{item.description}</p>
+                              <p className="mt-0.5 text-[11px] text-slate-500">{formatDate(item.date)}</p>
+                            </div>
+                            <p className="shrink-0 text-sm font-semibold text-emerald-700">
+                              {formatCurrency(item.amount)}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
             )}
           </SurfaceCard>
         ) : null}

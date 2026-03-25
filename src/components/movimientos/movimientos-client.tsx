@@ -388,6 +388,12 @@ function MovementRow({
 }) {
   const appearance = getAccountAppearance(transaction.account);
   const badgeTone = (TYPE_TONE[transaction.type] as "success" | "danger" | "warning" | "neutral") ?? "neutral";
+  const creditMovementLabel =
+    appearance?.kind === "TARJETA" && transaction.type !== "TRANSFERENCIA"
+      ? transaction.amount < 0
+        ? "Compra tarjeta"
+        : "Pago tarjeta"
+      : null;
 
   return (
     <SurfaceCard
@@ -399,6 +405,11 @@ function MovementRow({
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={badgeTone}>{transaction.type === "INGRESO" ? "Ingreso" : transaction.type === "EGRESO" ? "Egreso" : "Transferencia"}</Badge>
+            {creditMovementLabel ? (
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                {creditMovementLabel}
+              </span>
+            ) : null}
             <span className={`text-lg font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
               {formatCurrency(transaction.amount)}
             </span>

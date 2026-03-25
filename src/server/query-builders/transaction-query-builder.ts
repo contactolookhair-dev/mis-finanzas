@@ -8,6 +8,8 @@ import type {
 export type TransactionFilterInput = {
   workspaceId?: string;
   workspaceIds?: string[];
+  accountId?: string;
+  accountIds?: string[];
   businessUnitId?: string;
   businessUnitIds?: string[];
   categoryId?: string;
@@ -38,6 +40,7 @@ export function buildTransactionWhere(
   filters: TransactionFilterInput = {}
 ): Prisma.TransactionWhereInput {
   const workspaceIds = filters.workspaceIds ?? (filters.workspaceId ? [filters.workspaceId] : []);
+  const accountIds = filters.accountIds ?? (filters.accountId ? [filters.accountId] : []);
   const businessUnitIds = filters.businessUnitIds ?? (filters.businessUnitId ? [filters.businessUnitId] : []);
   const categoryIds = filters.categoryIds ?? (filters.categoryId ? [filters.categoryId] : []);
   const subcategoryIds = filters.subcategoryIds ?? (filters.subcategoryId ? [filters.subcategoryId] : []);
@@ -51,6 +54,10 @@ export function buildTransactionWhere(
 
   if (workspaceIds.length > 0) {
     andConditions.push({ workspaceId: { in: workspaceIds } });
+  }
+
+  if (accountIds.length > 0) {
+    andConditions.push({ accountId: { in: accountIds } });
   }
 
   if (businessUnitIds.length > 0) {
