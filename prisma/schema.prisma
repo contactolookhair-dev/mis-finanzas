@@ -117,6 +117,7 @@ model Workspace {
   fixedExpenses     FixedExpense[]
   variableExpenses  VariableExpense[]
   debtors           Debtor[]
+  payables          Payable[]
   reimbursements    Reimbursement[]
   appSettings       AppSettings[]
   userSettings      UserSettings[]
@@ -417,6 +418,22 @@ model DebtorPayment {
   notes       String?
   createdAt   DateTime  @default(now())
   debtor      Debtor    @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+}
+
+model Payable {
+  id          String    @id @default(cuid())
+  workspaceId String
+  origin      String
+  amount      Decimal   @db.Decimal(14, 2)
+  dueDate     DateTime
+  paidAt      DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, dueDate])
+  @@index([workspaceId, paidAt])
 }
 
 model Reimbursement {

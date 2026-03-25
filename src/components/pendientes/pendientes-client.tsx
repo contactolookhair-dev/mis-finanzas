@@ -22,8 +22,6 @@ import { formatDate } from "@/lib/formatters/date";
 import { cn } from "@/lib/utils";
 import {
   derivePayableStatus,
-  readPayablesFromStorage,
-  writePayablesToStorage,
   sumPayables,
   todayISODate,
   type PayableItem,
@@ -102,6 +100,8 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
   const [payables, setPayables] = useState<PayableItem[]>([]);
   const [loadingDebts, setLoadingDebts] = useState(true);
   const [errorDebts, setErrorDebts] = useState<string | null>(null);
+  const [loadingPayables, setLoadingPayables] = useState(true);
+  const [errorPayables, setErrorPayables] = useState<string | null>(null);
 
   const [payablesModalOpen, setPayablesModalOpen] = useState(false);
   const [editingPayableId, setEditingPayableId] = useState<string | null>(null);
@@ -148,10 +148,6 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
     [debts]
   );
 
-  useEffect(() => {
-    setPayables(readPayablesFromStorage());
-  }, []);
-
   async function loadDebts() {
     try {
       setLoadingDebts(true);
@@ -170,8 +166,28 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
     }
   }
 
+  async function loadPayables() {
+    try {
+      setLoadingPayables(true);
+      setErrorPayables(null);
+      const response = await fetch("/api/payables", { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        throw new Error(payload.message ?? "No se pudieron cargar los pagos pendientes.");
+      }
+      const payload = (await response.json()) as { items?: PayableItem[] };
+      setPayables(payload.items ?? []);
+    } catch (error) {
+      setErrorPayables(error instanceof Error ? error.message : "Error cargando pagos pendientes.");
+      setPayables([]);
+    } finally {
+      setLoadingPayables(false);
+    }
+  }
+
   useEffect(() => {
     void loadDebts();
+    void loadPayables();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -192,7 +208,7 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
     setPayableForm({
       origin: item.origin,
       amount: `${item.amount}`,
-      dueDate: item.dueDate,
+      dueDate: item.dueDate.slice(0, 10),
       notes: item.notes ?? ""
     });
     setPayablesModalOpen(true);
@@ -204,38 +220,68 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
     if (!Number.isFinite(amount) || amount <= 0) return;
     const dueDate = payableForm.dueDate || todayISODate();
     const notes = payableForm.notes?.trim() || null;
-
-    setPayables((current) => {
-      const next = [...current];
-      if (editingPayableId) {
-        const index = next.findIndex((item) => item.id === editingPayableId);
-        if (index >= 0) {
-          next[index] = { ...next[index], origin, amount, dueDate, notes };
+    async function run() {
+      try {
+        setErrorPayables(null);
+        if (editingPayableId) {
+          const response = await fetch(`/api/payables/${editingPayableId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origin, amount, dueDate, notes })
+          });
+          const payload = (await response.json()) as { message?: string };
+          if (!response.ok) throw new Error(payload.message ?? "No se pudo guardar el pendiente.");
+        } else {
+          const response = await fetch("/api/payables", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origin, amount, dueDate, notes })
+          });
+          const payload = (await response.json()) as { message?: string };
+          if (!response.ok) throw new Error(payload.message ?? "No se pudo guardar el pendiente.");
         }
-      } else {
-        next.unshift({ id: makeId("payable"), origin, amount, dueDate, notes, paidAt: null });
+        closePayablesModal();
+        await loadPayables();
+      } catch (error) {
+        setErrorPayables(error instanceof Error ? error.message : "No se pudo guardar el pendiente.");
       }
-      writePayablesToStorage(next);
-      return next;
-    });
-    closePayablesModal();
+    }
+    void run();
   }
 
   function deletePayable(id: string) {
-    setPayables((current) => {
-      const next = current.filter((item) => item.id !== id);
-      writePayablesToStorage(next);
-      return next;
-    });
+    async function run() {
+      try {
+        setErrorPayables(null);
+        const response = await fetch(`/api/payables/${id}`, { method: "DELETE" });
+        const payload = (await response.json()) as { message?: string };
+        if (!response.ok) throw new Error(payload.message ?? "No se pudo eliminar el pendiente.");
+        await loadPayables();
+      } catch (error) {
+        setErrorPayables(error instanceof Error ? error.message : "No se pudo eliminar el pendiente.");
+      }
+    }
+    void run();
   }
 
   function togglePayablePaid(id: string, paid: boolean) {
     const paidAt = paid ? todayISODate() : null;
-    setPayables((current) => {
-      const next = current.map((item) => (item.id === id ? { ...item, paidAt } : item));
-      writePayablesToStorage(next);
-      return next;
-    });
+    async function run() {
+      try {
+        setErrorPayables(null);
+        const response = await fetch(`/api/payables/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paidAt })
+        });
+        const payload = (await response.json()) as { message?: string };
+        if (!response.ok) throw new Error(payload.message ?? "No se pudo actualizar el pendiente.");
+        await loadPayables();
+      } catch (error) {
+        setErrorPayables(error instanceof Error ? error.message : "No se pudo actualizar el pendiente.");
+      }
+    }
+    void run();
   }
 
   const payablesSorted = useMemo(() => {
@@ -483,7 +529,20 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
             </Button>
           </div>
 
-          {payablesSorted.length === 0 ? (
+          {loadingPayables ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <SkeletonCard />
+              <SkeletonCard />
+            </div>
+          ) : errorPayables ? (
+            <div className="mt-4">
+              <ErrorStateCard
+                title="No se pudieron cargar tus pagos"
+                description={errorPayables}
+                onRetry={() => void loadPayables()}
+              />
+            </div>
+          ) : payablesSorted.length === 0 ? (
             <div className="mt-4">
               <EmptyStateCard
                 title="No tienes pagos pendientes"
@@ -576,7 +635,7 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
                       {editingPayableId ? "Editar pago pendiente" : "Nuevo pago pendiente"}
                     </p>
                     <p className="mt-1 text-sm text-slate-600">
-                      Guarda esto localmente por ahora. Luego lo llevamos a base de datos si hace falta.
+                      Se guarda por workspace para que no pierdas tus compromisos.
                     </p>
                   </div>
                   <Button type="button" variant="ghost" className="h-9 rounded-2xl" onClick={closePayablesModal}>
