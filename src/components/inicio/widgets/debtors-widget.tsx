@@ -22,7 +22,21 @@ export type DebtsSnapshot = {
     pendingPeople: number;
   };
   commitments: {
+    activeInstallmentDebts: number;
     monthlyCommittedTotal: number;
+    upcomingCount: number;
+    overdueCount: number;
+    nextDueDate: string | null;
+    nextDueDebtName: string | null;
+    upcomingTimeline: Array<{
+      debtId: string;
+      debtName: string;
+      reason: string;
+      dueDate: string;
+      amount: number;
+      health: "AL_DIA" | "PROXIMA" | "VENCIDA" | "PAGADA";
+      daysUntilDue: number;
+    }>;
   };
 };
 
@@ -205,4 +219,3 @@ export function DebtorsWidget({
     </SurfaceCard>
   );
 }
-

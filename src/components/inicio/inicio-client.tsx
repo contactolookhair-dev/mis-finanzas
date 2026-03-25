@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
-import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
 import { MobileHomeStack } from "@/components/inicio/mobile-home-stack";
@@ -20,28 +19,32 @@ import type { FinancialInsightsResponse } from "@/shared/types/financial-insight
 import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-panel";
 import { useDashboardHeader } from "@/components/layout/dashboard-header-context";
 import { DebtorsWidget, type DebtsSnapshot } from "@/components/inicio/widgets/debtors-widget";
+import { UpcomingInstallmentsWidget } from "@/components/inicio/widgets/upcoming-installments-widget";
+import { RecentMovementsWidget } from "@/components/inicio/widgets/recent-movements-widget";
+import { MonthFlowWidget } from "@/components/inicio/widgets/month-flow-widget";
+import { FinancialHealthWidget } from "@/components/inicio/widgets/financial-health-widget";
 
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
 
 type InicioWidgetId =
   | "debtors"
-  | "cashflow"
-  | "financialHealth"
-  | "calendar"
-  | "calculator"
+  | "upcomingInstallments"
   | "recentMovements"
+  | "financialHealth"
+  | "monthFlow"
+  | "calculator"
   | "aiFinancial";
 
 type WidgetSize = "compact" | "standard" | "featured";
 
 const defaultWidgetOrder: InicioWidgetId[] = [
   "debtors",
-  "cashflow",
-  "financialHealth",
-  "calendar",
-  "calculator",
+  "upcomingInstallments",
   "recentMovements",
+  "monthFlow",
+  "financialHealth",
+  "calculator",
   "aiFinancial"
 ];
 
@@ -50,11 +53,11 @@ const widgetMeta: Record<
   { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
 > = {
   debtors: { label: "Mis deudores", description: "Personas que te deben y cuotas del mes.", category: "Esenciales" },
-  cashflow: { label: "Flujo del mes", description: "Ingresos vs gastos del período.", category: "Esenciales" },
+  upcomingInstallments: { label: "Cuotas próximas", description: "Próximos pagos y vencimientos.", category: "Control" },
+  recentMovements: { label: "Movimientos recientes", description: "Últimos gastos e ingresos registrados.", category: "Esenciales" },
+  monthFlow: { label: "Flujo del mes", description: "Ingresos, gastos y neto del período.", category: "Esenciales" },
   financialHealth: { label: "Salud financiera", description: "Semáforo, alertas y foco del mes.", category: "Inteligencia" },
-  calendar: { label: "Calendario", description: "Selecciona días y revisa tu saldo estimado.", category: "Control" },
   calculator: { label: "Calculadora", description: "Haz cuentas rápidas sin salir de Inicio.", category: "Control" },
-  recentMovements: { label: "Movimientos", description: "Últimos gastos e ingresos registrados.", category: "Esenciales" },
   aiFinancial: { label: "IA financiera", description: "Análisis bajo demanda con tus datos reales.", category: "Planeación" }
 };
 
@@ -133,11 +136,11 @@ export function InicioClient() {
   const [hiddenWidgets, setHiddenWidgets] = useState<InicioWidgetId[]>(defaultWidgetOrder);
   const [widgetSizes, setWidgetSizes] = useState<Record<InicioWidgetId, WidgetSize>>({
     debtors: "standard",
-    cashflow: "compact",
-    financialHealth: "standard",
-    calendar: "featured",
-    calculator: "compact",
+    upcomingInstallments: "standard",
     recentMovements: "standard",
+    monthFlow: "compact",
+    financialHealth: "standard",
+    calculator: "compact",
     aiFinancial: "standard"
   });
 
@@ -219,7 +222,7 @@ export function InicioClient() {
 
   useEffect(() => {
     const activeWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
-    if (!activeWidgets.includes("debtors")) return;
+    if (!activeWidgets.includes("debtors") && !activeWidgets.includes("upcomingInstallments")) return;
     let aborted = false;
 
     async function loadDebts() {
@@ -359,15 +362,26 @@ export function InicioClient() {
         sizes?: Record<InicioWidgetId, WidgetSize>;
       };
 
-      if (parsed.order?.length) {
-        const filtered = parsed.order.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id));
-        const merged = [...filtered, ...defaultWidgetOrder.filter((id) => !filtered.includes(id))];
-        setWidgetOrder(merged);
+      const storedOrder = parsed.order?.length
+        ? parsed.order.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id))
+        : null;
+      const mergedOrder = storedOrder
+        ? [...storedOrder, ...defaultWidgetOrder.filter((id) => !storedOrder.includes(id))]
+        : defaultWidgetOrder;
+      if (storedOrder) {
+        setWidgetOrder(mergedOrder);
       }
-      if (parsed.hidden?.length) {
-        const filteredHidden = parsed.hidden.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id));
-        const mergedHidden = [...filteredHidden, ...defaultWidgetOrder.filter((id) => !filteredHidden.includes(id))];
-        setHiddenWidgets(mergedHidden);
+
+      const storedHidden = parsed.hidden
+        ? parsed.hidden.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id))
+        : null;
+      if (storedHidden !== null) {
+        const newIds = storedOrder ? mergedOrder.filter((id) => !storedOrder.includes(id)) : [];
+        setHiddenWidgets(Array.from(new Set([...storedHidden, ...newIds])));
+      } else if (storedOrder) {
+        // No hidden state stored: keep existing widgets visible and hide only newly added widgets.
+        const newIds = mergedOrder.filter((id) => !storedOrder.includes(id));
+        setHiddenWidgets(newIds);
       }
       const sizes = parsed.sizes;
       if (sizes) {
@@ -718,15 +732,115 @@ export function InicioClient() {
             );
           }
 
-          return (
-            <SurfaceCard key={id} variant="soft" padding="sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                {widgetMeta[id].label}
-              </p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">Widget en preparación</p>
-              <p className="mt-1 text-sm text-slate-600">{widgetMeta[id].description}</p>
-            </SurfaceCard>
-          );
+          if (id === "upcomingInstallments") {
+            return (
+              <UpcomingInstallmentsWidget
+                key={id}
+                data={debtsSnapshot}
+                loading={debtsLoading}
+                error={debtsError}
+                size={size}
+                onViewAll={() => (window.location.href = "/pendientes")}
+              />
+            );
+          }
+
+          if (id === "recentMovements") {
+            return (
+              <RecentMovementsWidget
+                key={id}
+                items={movements}
+                loading={loading}
+                size={size}
+                onCreate={() => setOpenModal(true)}
+              />
+            );
+          }
+
+          if (id === "monthFlow") {
+            return (
+              <MonthFlowWidget
+                key={id}
+                incomes={incomes}
+                expenses={expenses}
+                loading={loading}
+                size={size}
+              />
+            );
+          }
+
+          if (id === "financialHealth") {
+            return (
+              <FinancialHealthWidget
+                key={id}
+                data={financialHealth}
+                loading={financialHealthLoading}
+                error={financialHealthError}
+                size={size}
+                onRetry={() => void loadData()}
+              />
+            );
+          }
+
+          if (id === "calculator") {
+            return (
+              <SurfaceCard key={id} variant="soft" padding="sm" className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Calculadora</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">Haz cuentas rápido</p>
+                    <p className="mt-1 text-sm text-slate-600">No pierdes el estado al cerrar.</p>
+                  </div>
+                  <Button type="button" variant="secondary" className="rounded-full" onClick={() => setCalculatorOpen(true)}>
+                    Abrir
+                  </Button>
+                </div>
+                {size !== "compact" ? (
+                  <CalculatorWidget
+                    calculatorInput={calculatorInput}
+                    calculatorResult={calculatorResult}
+                    onAppend={appendCalculatorSymbol}
+                    onClear={handleCalculatorClear}
+                    onDelete={handleCalculatorDelete}
+                    onEquals={handleCalculatorEquals}
+                    compact
+                  />
+                ) : null}
+              </SurfaceCard>
+            );
+          }
+
+          if (id === "aiFinancial") {
+            return (
+              <div key={id} className="space-y-3">
+                <SurfaceCard variant="highlight" padding="sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">IA financiera</p>
+                      <p className="text-base font-semibold text-slate-900">
+                        Pulsa para revisar tu situación financiera
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleAnalyzeFinancials}
+                      disabled={financialInsightsLoading}
+                      className="h-11 rounded-2xl bg-primary px-4 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
+                    >
+                      {financialInsightsLoading ? "Analizando..." : "Analizar"}
+                    </Button>
+                  </div>
+                </SurfaceCard>
+                <FinancialInsightsPanel
+                  loading={financialInsightsLoading}
+                  error={financialInsightsError}
+                  response={financialInsights}
+                />
+              </div>
+            );
+          }
+
+          return null;
         })}
       </div>
 
