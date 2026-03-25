@@ -20,7 +20,7 @@ export function SurfaceCard({
   padding?: "sm" | "md" | "lg";
 }) {
   const paddingClass =
-    padding === "sm" ? "p-4" : padding === "lg" ? "p-6 sm:p-7" : "p-5 sm:p-6";
+    padding === "sm" ? "p-4 sm:p-5" : padding === "lg" ? "p-6 sm:p-7 lg:p-8" : "p-5 sm:p-6 lg:p-7";
 
   return (
     <Card
@@ -34,4 +34,3 @@ export function SurfaceCard({
     />
   );
 }
-

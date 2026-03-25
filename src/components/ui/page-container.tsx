@@ -14,7 +14,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "mx-auto w-full space-y-5 px-1 pb-24 sm:space-y-6",
+        "mx-auto w-full space-y-6 px-1 pb-24 pt-1 sm:space-y-7 lg:space-y-8",
         sizeClass,
         className
       )}
@@ -22,4 +22,3 @@ export function PageContainer({
     />
   );
 }
-

@@ -23,7 +23,7 @@ export function StatPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold tracking-[0.02em]",
+        "inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[11px] font-semibold tracking-[0.02em]",
         tones[tone],
         className
       )}
@@ -33,4 +33,3 @@ export function StatPill({
     </span>
   );
 }
-
