@@ -68,19 +68,28 @@ function buildDate(dayOfMonth: number) {
 }
 
 export async function seedDemoData(workspaceId: string) {
-  const personalUnit = await prisma.businessUnit.findFirst({
-    where: {
-      workspaceId,
-      type: "PERSONAL",
-      isActive: true
-    }
-  });
-
-  if (!personalUnit) {
-    throw new Error("No se encontró unidad de negocio Personal.");
-  }
-
   return prisma.$transaction(async (tx) => {
+    const personalUnit = await tx.businessUnit.upsert({
+      where: {
+        workspaceId_slug: {
+          workspaceId,
+          slug: "personal"
+        }
+      },
+      create: {
+        workspaceId,
+        name: "Personal",
+        slug: "personal",
+        type: "PERSONAL",
+        isActive: true
+      },
+      update: {
+        name: "Personal",
+        type: "PERSONAL",
+        isActive: true
+      }
+    });
+
     const demoEntities: DemoEntityPayload[] = [];
 
     const categoryMap: Record<string, string> = {};
