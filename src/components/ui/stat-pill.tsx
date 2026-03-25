@@ -10,10 +10,8 @@ const tones = {
     "border-amber-200/80 bg-amber-50/92 text-amber-700 shadow-[0_6px_14px_rgba(194,132,24,0.06)]",
   danger:
     "border-rose-200/80 bg-rose-50/92 text-rose-700 shadow-[0_6px_14px_rgba(220,91,103,0.06)]",
-  premium:
-    "border-primary/18 bg-gradient-to-r from-primary/10 via-secondary/10 to-accent/10 text-primary shadow-[0_8px_16px_rgba(95,99,242,0.08)]",
-  brand:
-    "border-secondary/18 bg-gradient-to-r from-secondary/10 via-primary/10 to-accent/10 text-secondary shadow-[0_8px_16px_rgba(214,91,142,0.08)]"
+  premium: "border-slate-200 bg-white/90 text-slate-700 shadow-[0_8px_16px_rgba(15,23,42,0.05)]",
+  brand: "border-slate-200 bg-white/90 text-slate-700 shadow-[0_8px_16px_rgba(15,23,42,0.05)]"
 } as const;
 
 export function StatPill({

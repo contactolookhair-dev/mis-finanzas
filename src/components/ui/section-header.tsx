@@ -26,7 +26,7 @@ export function SectionHeader({
     >
       <div className={compact ? "space-y-1.5" : "space-y-2.5"}>
         {eyebrow ? (
-          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-primary/70">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
             {eyebrow}
           </p>
         ) : null}

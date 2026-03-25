@@ -18,8 +18,8 @@ import type { DashboardSnapshot } from "@/shared/types/dashboard";
 import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
 import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-panel";
+import { useDashboardHeader } from "@/components/layout/dashboard-header-context";
 
-const accountCardGradient = "linear-gradient(135deg,#ffffff,#f8fafc,#eef2f7)";
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 
 type AccountItem = {
@@ -70,6 +70,7 @@ function keyByDate(date: Date) {
 }
 
 export function InicioClient() {
+  const { setMetric } = useDashboardHeader();
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [accountsTotal, setAccountsTotal] = useState(0);
   const [movements, setMovements] = useState<TransactionItem[]>([]);
@@ -167,7 +168,7 @@ export function InicioClient() {
 
   const incomes = Math.abs(snapshot?.kpis.incomes ?? 0);
   const expenses = Math.abs(snapshot?.kpis.expenses ?? 0);
-  const flow = (snapshot?.kpis.netFlow ?? 0) + accountsTotal;
+  const availableTotal = accountsTotal;
 
   const selectedDayAmount = useMemo(() => {
     const dailyMovements = movements.filter((item) => item.date.startsWith(selectedDate));
@@ -184,6 +185,23 @@ export function InicioClient() {
     });
   }, [selectedDate]);
   const onboardingInsightReady = Boolean(snapshot && accounts.length > 0 && movements.length > 0);
+  const totalAvailableTone = availableTotal < 0 ? "negative" : "positive";
+
+  useEffect(() => {
+    if (loading || !snapshot) {
+      setMetric(null);
+      return;
+    }
+
+    setMetric({
+      label: "Total disponible real",
+      value: formatCurrency(availableTotal),
+      detail: "Suma real de todas tus cuentas registradas.",
+      tone: totalAvailableTone
+    });
+
+    return () => setMetric(null);
+  }, [availableTotal, loading, setMetric, totalAvailableTone]);
 
   const appendCalculatorSymbol = (symbol: string) => {
     setCalculatorInput((prev) => `${prev}${symbol}`);
@@ -285,7 +303,7 @@ export function InicioClient() {
       <SectionHeader
         eyebrow="Inicio"
         title="Tu dinero en un vistazo"
-        description="Cuentas, calendario, movimientos y analisis en una sola vista clara y mobile-first."
+        description="Cuentas, calendario, movimientos y análisis en una sola vista clara y mobile-first."
         actions={
           <StatPill tone="premium" icon={<Wallet2 className="h-3.5 w-3.5" />}>
             Vista diaria
@@ -319,48 +337,57 @@ export function InicioClient() {
           <SurfaceCard
             key={account.id}
             variant="soft"
-            className="aspect-[1/1] min-h-[160px] overflow-hidden bg-white p-3.5 sm:aspect-auto sm:min-h-[176px] sm:p-5"
+            className="aspect-[1/1] min-h-[164px] overflow-hidden bg-white p-3.5 sm:aspect-auto sm:min-h-[180px] sm:p-5"
           >
-            <div className="flex h-full flex-col justify-between gap-3">
+            <div className="flex h-full flex-col">
               <div className="flex items-start justify-between gap-2.5">
                 <div className="min-w-0 space-y-1">
                   <p className="truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
                     {account.bank || account.type}
                   </p>
-                  <p className="line-clamp-2 min-h-[2.65rem] text-[13px] font-semibold leading-[1.25rem] tracking-[-0.02em] text-slate-900">
-                    {account.name}
-                  </p>
                 </div>
-                <span
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]"
-                  style={{
-                    background: account.color ? account.color : accountCardGradient
-                  }}
-                >
+                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]">
                   <span className="text-[13px]">{account.icon ?? "💳"}</span>
                 </span>
               </div>
-              <div className="space-y-1">
-                <p className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
-                  Saldo disponible
-                </p>
-                <p className="text-[1.18rem] font-semibold leading-none tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
-                  {formatCurrency(account.balance)}
-                </p>
+              <p className="mt-2 line-clamp-2 min-h-[2.4rem] text-[13px] font-semibold leading-[1.22rem] tracking-[-0.02em] text-slate-900">
+                {account.name}
+              </p>
+              <div className="flex flex-1 items-center">
+                <div className="space-y-1">
+                  <p className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
+                    Saldo disponible
+                  </p>
+                  <p
+                    className={`text-[clamp(1.4rem,4.6vw,1.85rem)] font-semibold leading-none tracking-[-0.04em] ${
+                      account.balance >= 0 ? "text-emerald-600" : "text-rose-600"
+                    }`}
+                  >
+                    {formatCurrency(account.balance)}
+                  </p>
+                </div>
               </div>
             </div>
           </SurfaceCard>
         ))}
       </section>
       <SurfaceCard className="relative overflow-hidden border-border/80 bg-white text-slate-900 shadow-[0_20px_46px_rgba(15,23,42,0.08)]">
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-primary to-emerald-500" />
+        <div
+          className={`absolute inset-x-0 top-0 h-1 ${
+            availableTotal >= 0 ? "bg-emerald-500/80" : "bg-rose-500/80"
+          }`}
+        />
         <div className="relative">
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Saldo total</p>
-          <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-900 sm:text-[44px]">
-            {loading ? "..." : formatCurrency(flow)}
+          <p
+            className={`mt-2 text-4xl font-semibold tracking-tight sm:text-[44px] ${
+              availableTotal >= 0 ? "text-emerald-600" : "text-rose-600"
+            }`}
+          >
+            {loading ? "..." : formatCurrency(availableTotal)}
           </p>
           <p className="mt-2 text-xs text-slate-500">
-            Disponible estimado entre cuentas y flujo del período.
+            Suma real de todas tus cuentas registradas.
           </p>
         </div>
       </SurfaceCard>
@@ -384,7 +411,7 @@ export function InicioClient() {
             type="button"
             onClick={handleAnalyzeFinancials}
             disabled={financialInsightsLoading}
-            className="h-11 rounded-2xl bg-gradient-to-r from-sky-600 via-cyan-600 to-emerald-500 px-4 text-sm font-semibold shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
+            className="h-11 rounded-2xl bg-primary px-4 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
           >
             {financialInsightsLoading ? "Analizando..." : "Analizar mis finanzas"}
           </Button>
@@ -449,11 +476,11 @@ export function InicioClient() {
                   onClick={() => setSelectedDate(dateKey)}
                   className={`flex h-9 items-center justify-center rounded-xl text-xs font-medium transition ${
                     isSelected
-                      ? "bg-emerald-600/90 text-white"
+                      ? "bg-primary text-white"
                       : isToday
-                        ? "bg-sky-600 text-white"
+                        ? "bg-slate-900 text-white"
                         : hasMovement
-                          ? "bg-sky-50 text-sky-700"
+                          ? "bg-slate-100 text-slate-700"
                           : "bg-slate-50 text-slate-500"
                   }`}
                 >
@@ -532,7 +559,7 @@ export function InicioClient() {
       <div className="hidden sm:block">
         <Button
           type="button"
-          className="h-11 w-full rounded-2xl bg-gradient-to-r from-sky-600 via-cyan-600 to-emerald-500 shadow-soft"
+          className="h-11 w-full rounded-2xl bg-primary text-white shadow-soft"
           onClick={() => setOpenModal(true)}
         >
           Nueva transacción

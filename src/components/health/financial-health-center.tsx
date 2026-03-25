@@ -140,15 +140,15 @@ export function FinancialHealthCenter({
       <div className="lg:hidden">
         <Card
           className={cn(
-            "relative overflow-hidden rounded-[28px] border p-4 shadow-[0_18px_44px_rgba(15,23,42,0.08)]",
+            "relative overflow-hidden rounded-[28px] border p-4 shadow-[0_18px_44px_rgba(15,23,42,0.08)] bg-white",
             data.status === "saludable"
-              ? "border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-cyan-50"
+              ? "border-emerald-100"
               : data.status === "atencion"
-                ? "border-amber-100 bg-gradient-to-br from-amber-50 via-white to-fuchsia-50"
-                : "border-rose-100 bg-gradient-to-br from-rose-50 via-white to-violet-50"
+                ? "border-amber-100"
+                : "border-rose-100"
           )}
         >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.95),transparent_45%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(15,23,42,0.03),transparent_45%)]" />
           <div className="relative space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div className="space-y-2">
@@ -242,15 +242,15 @@ export function FinancialHealthCenter({
       <div className={cn(expanded ? "block" : "hidden", "lg:block")}>
         <Card
           className={cn(
-            "relative overflow-hidden rounded-[30px] border p-5 shadow-[0_20px_50px_rgba(15,23,42,0.08)] sm:p-6",
+            "relative overflow-hidden rounded-[30px] border p-5 shadow-[0_20px_50px_rgba(15,23,42,0.08)] sm:p-6 bg-white",
             data.status === "saludable"
-              ? "border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-cyan-50"
+              ? "border-emerald-100"
               : data.status === "atencion"
-                ? "border-amber-100 bg-gradient-to-br from-amber-50 via-white to-fuchsia-50"
-                : "border-rose-100 bg-gradient-to-br from-rose-50 via-white to-violet-50"
+                ? "border-amber-100"
+                : "border-rose-100"
           )}
         >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.9),transparent_42%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(15,23,42,0.03),transparent_42%)]" />
           <div className="relative grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-2">

@@ -26,8 +26,8 @@ type OnboardingStep = {
 };
 
 const toneClasses: Record<OnboardingStep["tone"], string> = {
-  sky: "border-sky-100 bg-sky-50/70 text-sky-700",
-  cyan: "border-cyan-100 bg-cyan-50/70 text-cyan-700",
+  sky: "border-slate-200 bg-white/78 text-slate-700",
+  cyan: "border-slate-200 bg-white/78 text-slate-700",
   emerald: "border-emerald-100 bg-emerald-50/70 text-emerald-700"
 };
 
@@ -125,12 +125,12 @@ export function OnboardingBanner({
 
   return (
     <SurfaceCard variant="highlight" className="relative overflow-hidden animate-fade-up">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.08),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.07),transparent_32%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(15,23,42,0.04),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.05),transparent_32%)]" />
       <div className="relative grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
         <div className="space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-primary/70">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
                 Bienvenida
               </p>
               <h2 className="text-lg font-semibold tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
@@ -157,7 +157,7 @@ export function OnboardingBanner({
               <Button
                 type="button"
                 onClick={handleDemo}
-                className="tap-feedback h-11 rounded-2xl bg-gradient-to-r from-primary via-secondary to-accent px-4 text-sm font-semibold"
+                className="tap-feedback h-11 rounded-2xl bg-primary px-4 text-sm font-semibold text-white"
               >
                 Usar demo
               </Button>

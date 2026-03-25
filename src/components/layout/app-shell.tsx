@@ -9,12 +9,29 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { PageContainer } from "@/components/ui/page-container";
 import { StatPill } from "@/components/ui/stat-pill";
+import { DashboardHeaderProvider, useDashboardHeader } from "@/components/layout/dashboard-header-context";
 
 export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <DashboardHeaderProvider>
+      <AppShellFrame>{children}</AppShellFrame>
+    </DashboardHeaderProvider>
+  );
+}
+
+function AppShellFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const { metric } = useDashboardHeader();
   const visibleNavigationItems = navigationItems.filter((item) =>
     "hidden" in item ? !item.hidden : true
   );
+
+  const metricToneClass =
+    metric?.tone === "negative"
+      ? "text-rose-600"
+      : metric?.tone === "positive"
+        ? "text-emerald-600"
+        : "text-slate-900";
 
   return (
     <div className="min-h-screen">
@@ -30,6 +47,21 @@ export function AppShell({ children }: { children: ReactNode }) {
                       Personal
                     </StatPill>
                   </div>
+                  {metric ? (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                        {metric.label}
+                      </p>
+                      <p className={cn("text-[1.25rem] font-semibold tracking-[-0.03em] sm:text-[1.35rem]", metricToneClass)}>
+                        {metric.value}
+                      </p>
+                      {metric.detail ? (
+                        <p className="max-w-xl text-[12px] leading-5 text-slate-500">
+                          {metric.detail}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="hidden items-center gap-3 sm:flex">
                   <Link
@@ -63,9 +95,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className={cn(
                     "group flex flex-col items-center justify-center gap-1.5 rounded-[22px] px-2.5 py-3 text-[11px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
                     isActive
-                      ? "bg-gradient-to-br from-primary via-secondary to-accent text-white shadow-[0_8px_18px_rgba(37,99,235,0.28)]"
+                      ? "bg-primary text-white shadow-[0_8px_18px_rgba(37,99,235,0.28)]"
                       : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                )}
+                  )}
                 >
                   <span
                     className={cn(

@@ -51,7 +51,7 @@ export function MobileHomeStack({ onOpenCalculator, onOpenTransaction }: Props) 
         )}
         aria-label="Abrir calculadora"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-2xl bg-white/80 text-sky-600">
+        <span className="flex h-7 w-7 items-center justify-center rounded-2xl bg-white/80 text-primary">
           <Calculator className="h-4 w-4" />
         </span>
         <span>Calculadora</span>

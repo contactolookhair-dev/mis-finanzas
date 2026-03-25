@@ -14,12 +14,12 @@ function severityStyles(severity: "info" | "warning" | "critical") {
   if (severity === "warning") {
     return "border-amber-200 bg-amber-50 text-amber-800";
   }
-  return "border-sky-200 bg-sky-50 text-sky-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
 function priorityStyles(priority: "high" | "medium" | "low") {
   if (priority === "high") {
-    return "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700";
+    return "border-rose-200 bg-rose-50 text-rose-700";
   }
   if (priority === "medium") {
     return "border-amber-200 bg-amber-50 text-amber-800";
@@ -41,7 +41,7 @@ export function FinancialInsightsPanel({
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <BrainCircuit className="h-5 w-5 text-violet-600" />
+            <BrainCircuit className="h-5 w-5 text-slate-700" />
             <h3 className="text-lg font-semibold text-slate-900">IA Financiera</h3>
           </div>
           <p className="max-w-2xl text-sm text-slate-500">
@@ -78,7 +78,7 @@ export function FinancialInsightsPanel({
         <div className="space-y-4">
           <SurfaceCard
             variant="dark"
-            className="rounded-[26px] border border-violet-100 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 p-5 text-white"
+            className="rounded-[26px] border border-slate-700/10 bg-slate-900 p-5 text-white"
           >
             <p className="text-xs uppercase tracking-[0.22em] text-white/70">Resumen IA</p>
             <p className="mt-3 text-base leading-7 text-white/90">{response.summary}</p>
@@ -102,7 +102,7 @@ export function FinancialInsightsPanel({
                       </div>
                       <div className="h-2 rounded-full bg-slate-100">
                         <div
-                          className="h-2 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-emerald-500"
+                          className="h-2 rounded-full bg-gradient-to-r from-slate-900 via-slate-700 to-emerald-500"
                           style={{ width: `${Math.min(item.percentage, 100)}%` }}
                         />
                       </div>
@@ -117,7 +117,7 @@ export function FinancialInsightsPanel({
 
             <SurfaceCard variant="soft" padding="sm" className="rounded-[26px]">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-fuchsia-600" />
+                <Sparkles className="h-4 w-4 text-amber-600" />
                 <h4 className="text-sm font-semibold text-slate-900">Gastos hormiga</h4>
               </div>
               <div className="mt-4 space-y-3">
@@ -131,7 +131,7 @@ export function FinancialInsightsPanel({
                           <p className="text-sm font-semibold text-slate-900">{item.description}</p>
                           <p className="text-xs text-slate-500">{item.category} · {item.count} veces</p>
                         </div>
-                        <p className="text-sm font-semibold text-fuchsia-600">{formatCurrency(item.amount)}</p>
+                        <p className="text-sm font-semibold text-amber-600">{formatCurrency(item.amount)}</p>
                       </div>
                       <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
                         Promedio {formatCurrency(item.average)}
@@ -163,7 +163,7 @@ export function FinancialInsightsPanel({
 
             <SurfaceCard variant="soft" padding="sm" className="rounded-[26px]">
               <div className="flex items-center gap-2">
-                <BrainCircuit className="h-4 w-4 text-violet-600" />
+                <BrainCircuit className="h-4 w-4 text-slate-700" />
                 <h4 className="text-sm font-semibold text-slate-900">Recomendaciones</h4>
               </div>
               <div className="mt-4 space-y-3">
