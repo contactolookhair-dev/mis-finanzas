@@ -21,6 +21,8 @@ import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-p
 import { useDashboardHeader } from "@/components/layout/dashboard-header-context";
 import { DebtorsWidget, type DebtsSnapshot } from "@/components/inicio/widgets/debtors-widget";
 import { UpcomingInstallmentsWidget } from "@/components/inicio/widgets/upcoming-installments-widget";
+import { UpcomingPayablesWidget, type PayablesSnapshot } from "@/components/inicio/widgets/upcoming-payables-widget";
+import { OverduePendingsWidget } from "@/components/inicio/widgets/overdue-pendings-widget";
 import { RecentMovementsWidget } from "@/components/inicio/widgets/recent-movements-widget";
 import { MonthFlowWidget } from "@/components/inicio/widgets/month-flow-widget";
 import { FinancialHealthWidget } from "@/components/inicio/widgets/financial-health-widget";
@@ -31,6 +33,8 @@ const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
 type InicioWidgetId =
   | "debtors"
   | "upcomingInstallments"
+  | "upcomingPayables"
+  | "overduePendings"
   | "recentMovements"
   | "financialHealth"
   | "monthFlow"
@@ -42,6 +46,8 @@ type WidgetSize = "compact" | "standard" | "featured";
 const defaultWidgetOrder: InicioWidgetId[] = [
   "debtors",
   "upcomingInstallments",
+  "upcomingPayables",
+  "overduePendings",
   "recentMovements",
   "monthFlow",
   "financialHealth",
@@ -54,7 +60,9 @@ const widgetMeta: Record<
   { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
 > = {
   debtors: { label: "Mis deudores", description: "Personas que te deben y cuotas del mes.", category: "Esenciales" },
-  upcomingInstallments: { label: "Cuotas próximas", description: "Próximos pagos y vencimientos.", category: "Control" },
+  upcomingInstallments: { label: "Cobros próximos", description: "Cuotas por cobrar y vencimientos.", category: "Control" },
+  upcomingPayables: { label: "Cuotas próximas", description: "Pagos por hacer y próximos vencimientos.", category: "Control" },
+  overduePendings: { label: "Vencidos", description: "Pendientes vencidos: por cobrar y por pagar.", category: "Control" },
   recentMovements: { label: "Movimientos recientes", description: "Últimos gastos e ingresos registrados.", category: "Esenciales" },
   monthFlow: { label: "Flujo del mes", description: "Ingresos, gastos y neto del período.", category: "Esenciales" },
   financialHealth: { label: "Salud financiera", description: "Semáforo, alertas y foco del mes.", category: "Inteligencia" },
@@ -133,12 +141,17 @@ export function InicioClient() {
   const [debtsSnapshot, setDebtsSnapshot] = useState<DebtsSnapshot | null>(null);
   const [debtsLoading, setDebtsLoading] = useState(false);
   const [debtsError, setDebtsError] = useState<string | null>(null);
+  const [payablesSnapshot, setPayablesSnapshot] = useState<PayablesSnapshot | null>(null);
+  const [payablesLoading, setPayablesLoading] = useState(false);
+  const [payablesError, setPayablesError] = useState<string | null>(null);
   const [widgetPanelOpen, setWidgetPanelOpen] = useState(false);
   const [widgetOrder, setWidgetOrder] = useState<InicioWidgetId[]>(defaultWidgetOrder);
   const [hiddenWidgets, setHiddenWidgets] = useState<InicioWidgetId[]>(defaultWidgetOrder);
   const [widgetSizes, setWidgetSizes] = useState<Record<InicioWidgetId, WidgetSize>>({
     debtors: "standard",
     upcomingInstallments: "standard",
+    upcomingPayables: "standard",
+    overduePendings: "compact",
     recentMovements: "standard",
     monthFlow: "compact",
     financialHealth: "standard",
@@ -224,7 +237,12 @@ export function InicioClient() {
 
   useEffect(() => {
     const activeWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
-    if (!activeWidgets.includes("debtors") && !activeWidgets.includes("upcomingInstallments")) return;
+    if (
+      !activeWidgets.includes("debtors") &&
+      !activeWidgets.includes("upcomingInstallments") &&
+      !activeWidgets.includes("overduePendings")
+    )
+      return;
     let aborted = false;
 
     async function loadDebts() {
@@ -249,6 +267,40 @@ export function InicioClient() {
     }
 
     void loadDebts();
+    return () => {
+      aborted = true;
+    };
+  }, [hiddenWidgets, widgetOrder]);
+
+  useEffect(() => {
+    const activeWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
+    if (!activeWidgets.includes("upcomingPayables") && !activeWidgets.includes("overduePendings")) return;
+    let aborted = false;
+
+    async function loadPayables() {
+      try {
+        setPayablesLoading(true);
+        setPayablesError(null);
+        const response = await fetch("/api/payables", { cache: "no-store" });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as { message?: string };
+          throw new Error(payload.message ?? "No se pudieron cargar tus cuotas por pagar.");
+        }
+        const payload = (await response.json()) as PayablesSnapshot;
+        if (!aborted) setPayablesSnapshot(payload);
+      } catch (loadError) {
+        if (!aborted) {
+          setPayablesSnapshot(null);
+          setPayablesError(
+            loadError instanceof Error ? loadError.message : "No se pudieron cargar tus cuotas por pagar."
+          );
+        }
+      } finally {
+        if (!aborted) setPayablesLoading(false);
+      }
+    }
+
+    void loadPayables();
     return () => {
       aborted = true;
     };
@@ -752,6 +804,35 @@ export function InicioClient() {
                 data={debtsSnapshot}
                 loading={debtsLoading}
                 error={debtsError}
+                size={size}
+                onViewAll={() => (window.location.href = "/pendientes")}
+              />
+            );
+          }
+
+          if (id === "upcomingPayables") {
+            return (
+              <UpcomingPayablesWidget
+                key={id}
+                data={payablesSnapshot}
+                loading={payablesLoading}
+                error={payablesError}
+                size={size}
+                onViewAll={() => (window.location.href = "/pendientes?tab=debo-pagar")}
+              />
+            );
+          }
+
+          if (id === "overduePendings") {
+            return (
+              <OverduePendingsWidget
+                key={id}
+                debts={debtsSnapshot}
+                debtsLoading={debtsLoading}
+                debtsError={debtsError}
+                payables={payablesSnapshot}
+                payablesLoading={payablesLoading}
+                payablesError={payablesError}
                 size={size}
                 onViewAll={() => (window.location.href = "/pendientes")}
               />
