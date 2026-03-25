@@ -224,12 +224,16 @@ export function MovimientosClient() {
       )}
 
       {clearOpen ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
-          <SurfaceCard variant="soft" padding="lg" className="max-w-xl space-y-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <SurfaceCard
+            variant="soft"
+            padding="lg"
+            className="max-w-xl space-y-4 bg-white/95 shadow-[0_30px_70px_rgba(15,23,42,0.25)] ring-1 ring-slate-100"
+          >
             <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-rose-500">Eliminar movimientos</p>
-              <h3 className="text-lg font-semibold text-slate-900">Borrar todo el historial</h3>
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Eliminar movimientos</p>
+              <h3 className="text-lg font-semibold tracking-tight text-slate-900">Borrar todo el historial</h3>
+              <p className="mt-2 text-sm text-slate-600">
                 Esta acción eliminará todos los movimientos registrados. Las cuentas, pendientes,
                 widgets y configuraciones no se verán afectadas.
               </p>
@@ -242,6 +246,7 @@ export function MovimientosClient() {
               value={clearInput}
               onChange={(event) => setClearInput(event.target.value.toUpperCase())}
               autoFocus
+              className="bg-white border-slate-200 text-slate-900 placeholder:text-slate-400"
             />
             {clearError ? <p className="text-xs text-rose-600">{clearError}</p> : null}
             <div className="flex flex-wrap justify-end gap-3">
