@@ -24,9 +24,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/80">
-                    Mis Finanzas · Manual
-                  </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <h1 className="text-[1.35rem] font-semibold leading-tight tracking-[-0.03em] text-slate-900 sm:text-[1.45rem]">Tu dinero hoy</h1>
                     <StatPill tone="brand" className="px-2.5 py-1 text-[10px]">

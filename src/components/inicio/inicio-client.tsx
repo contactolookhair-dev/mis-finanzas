@@ -5,9 +5,10 @@ import { Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
+import { CalculatorWidget } from "@/components/inicio/calculator-widget";
+import { MobileHomeStack } from "@/components/inicio/mobile-home-stack";
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
-import { MobileStickyAction } from "@/components/ui/mobile-sticky-action";
 import { SectionHeader } from "@/components/ui/section-header";
 import { StatPill } from "@/components/ui/stat-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -20,6 +21,7 @@ import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-p
 
 const accountCardGradient = "linear-gradient(135deg,#2563eb,#06b6d4,#10b981)";
 const heroGradient = "from-sky-600 via-cyan-600 to-emerald-500";
+const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 
 type AccountItem = {
   id: string;
@@ -80,6 +82,7 @@ export function InicioClient() {
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [calculatorInput, setCalculatorInput] = useState("");
   const [calculatorResult, setCalculatorResult] = useState<number | null>(null);
+  const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [financialInsights, setFinancialInsights] = useState<FinancialInsightsResponse | null>(null);
   const [financialInsightsLoading, setFinancialInsightsLoading] = useState(false);
   const [financialInsightsError, setFinancialInsightsError] = useState<string | null>(null);
@@ -187,6 +190,37 @@ export function InicioClient() {
     setCalculatorInput((prev) => `${prev}${symbol}`);
   };
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CALCULATOR_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        input?: string;
+        result?: number | null;
+      };
+      if (typeof parsed.input === "string") setCalculatorInput(parsed.input);
+      if (typeof parsed.result === "number" || parsed.result === null) {
+        setCalculatorResult(parsed.result ?? null);
+      }
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        CALCULATOR_STORAGE_KEY,
+        JSON.stringify({
+          input: calculatorInput,
+          result: calculatorResult
+        })
+      );
+    } catch {
+      // noop
+    }
+  }, [calculatorInput, calculatorResult]);
+
   const evaluateExpression = (value: string) => {
     if (!value.trim()) return null;
     const sanitized = value.replace(/[^0-9.+\-*/() ]/g, "");
@@ -260,45 +294,59 @@ export function InicioClient() {
         }
       />
 
+      <MobileHomeStack onOpenCalculator={() => setCalculatorOpen(true)} />
+
       <OnboardingBanner
         accountsCount={accounts.length}
         movementsCount={movements.length}
         insightsReady={onboardingInsightReady}
       />
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {accounts.length === 0 ? (
-          <EmptyStateCard
-            title="Aún no tienes cuentas"
-            description="Crea tu primera billetera o tarjeta para registrar movimientos."
-            actionLabel="Crear cuenta"
-            onAction={() => (window.location.href = "/cuentas")}
-          />
+          <div className="col-span-2 sm:col-span-1 lg:col-span-1">
+            <EmptyStateCard
+              title="Aún no tienes cuentas"
+              description="Crea tu primera billetera o tarjeta para registrar movimientos."
+              actionLabel="Crear cuenta"
+              onAction={() => (window.location.href = "/cuentas")}
+            />
+          </div>
         ) : null}
         {accounts.map((account) => (
           <SurfaceCard
             key={account.id}
             variant="soft"
-            className="bg-gradient-to-br from-white/80 to-white/30"
+            className="aspect-[1/1] min-h-[148px] overflow-hidden bg-gradient-to-br from-white/84 to-white/28 p-4 sm:aspect-auto sm:min-h-[176px] sm:p-5"
           >
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  {account.bank}
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{account.name}</p>
+            <div className="flex h-full flex-col justify-between gap-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                    {account.bank || account.type}
+                  </p>
+                  <p className="truncate text-[13px] font-semibold tracking-[-0.02em] text-slate-900">
+                    {account.name}
+                  </p>
+                </div>
+                <span
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-white shadow"
+                  style={{
+                    background: account.color ? account.color : accountCardGradient
+                  }}
+                >
+                  <span className="text-[15px]">{account.icon ?? "💳"}</span>
+                </span>
               </div>
-              <span
-                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow"
-                style={{
-                  background: account.color ? account.color : accountCardGradient
-                }}
-              >
-                {account.icon ?? "💳"}
-              </span>
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">
+                  Saldo disponible
+                </p>
+                <p className="mt-1 text-[1.15rem] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
+                  {formatCurrency(account.balance)}
+                </p>
+              </div>
             </div>
-            <p className="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">Saldo disponible</p>
-            <p className="text-2xl font-semibold text-slate-900">{formatCurrency(account.balance)}</p>
           </SurfaceCard>
         ))}
       </section>
@@ -409,72 +457,23 @@ export function InicioClient() {
                 >
                   {day}
                 </button>
-              );
-            })}
+            );
+          })}
           </div>
         </SurfaceCard>
-        <SurfaceCard variant="soft" padding="sm">
-          <div>
+        <SurfaceCard variant="soft" padding="sm" className="hidden lg:block">
+          <div className="mb-4">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calculadora dinámica</p>
             <p className="text-lg font-semibold text-slate-900">Haz cuentas sin salir del dashboard</p>
           </div>
-          <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-right text-2xl font-semibold text-slate-900">
-            {calculatorInput || "0"}
-          </div>
-          <p className="mt-1 text-[11px] text-slate-500">
-            Resultado: {calculatorResult !== null ? calculatorResult.toLocaleString("es-CL", { maximumFractionDigits: 2 }) : "-"}
-          </p>
-          <div className="mt-4 grid grid-cols-4 gap-2 text-sm">
-            {[
-              "7",
-              "8",
-              "9",
-              "/",
-              "4",
-              "5",
-              "6",
-              "*",
-              "1",
-              "2",
-              "3",
-              "-",
-              "0",
-              ".",
-              "⌫",
-              "+"
-            ].map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => {
-                  if (key === "⌫") {
-                    handleCalculatorDelete();
-                    return;
-                  }
-                  appendCalculatorSymbol(key);
-                }}
-                className="rounded-2xl border border-slate-200 bg-white/60 py-3 font-semibold text-slate-900 transition hover:scale-[1.01]"
-              >
-                {key}
-              </button>
-            ))}
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={handleCalculatorClear}
-              className="flex-1 rounded-2xl border border-rose-200 bg-rose-50/70 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
-            >
-              Limpiar
-            </button>
-            <button
-              type="button"
-              onClick={handleCalculatorEquals}
-              className="flex-1 rounded-2xl border border-emerald-300 bg-emerald-50/70 py-3 text-sm font-semibold text-emerald-600 transition hover:bg-emerald-100"
-            >
-              =
-            </button>
-          </div>
+          <CalculatorWidget
+            calculatorInput={calculatorInput}
+            calculatorResult={calculatorResult}
+            onAppend={appendCalculatorSymbol}
+            onClear={handleCalculatorClear}
+            onDelete={handleCalculatorDelete}
+            onEquals={handleCalculatorEquals}
+          />
         </SurfaceCard>
       </section>
 
@@ -528,11 +527,6 @@ export function InicioClient() {
         response={financialInsights}
       />
 
-      <MobileStickyAction type="button" onClick={() => setOpenModal(true)} aria-label="Nueva transacción">
-        <Plus className="mr-2 h-5 w-5" />
-        Nueva transacción
-      </MobileStickyAction>
-
       <div className="hidden sm:block">
         <Button
           type="button"
@@ -550,6 +544,38 @@ export function InicioClient() {
           void loadData();
         }}
       />
+
+      {calculatorOpen ? (
+        <div className="fixed inset-0 z-[72] flex items-end justify-center bg-slate-950/36 p-0 sm:items-center sm:p-4">
+          <div className="glass-surface safe-pb w-full max-h-[88vh] overflow-y-auto rounded-t-[28px] p-4 animate-fade-up ring-1 ring-white/35 sm:max-w-md sm:rounded-[32px] sm:p-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Calculadora
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-900">Calcula sin salir de Inicio</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCalculatorOpen(false)}
+                className="tap-feedback rounded-full bg-slate-100 p-2 text-slate-500 transition hover:bg-slate-200"
+                aria-label="Cerrar calculadora"
+              >
+                <Plus className="h-4 w-4 rotate-45" />
+              </button>
+            </div>
+            <CalculatorWidget
+              calculatorInput={calculatorInput}
+              calculatorResult={calculatorResult}
+              onAppend={appendCalculatorSymbol}
+              onClear={handleCalculatorClear}
+              onDelete={handleCalculatorDelete}
+              onEquals={handleCalculatorEquals}
+              compact
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
