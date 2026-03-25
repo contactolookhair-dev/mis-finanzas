@@ -2,6 +2,10 @@ import { DebtorStatus, ExpenseFrequency, ReimbursementStatus } from "@prisma/cli
 import { prisma } from "@/server/db/prisma";
 import { toAmountNumber } from "@/server/lib/amounts";
 import { buildDebtInstallmentPlan } from "@/server/services/debt-installments";
+import {
+  buildDebtCommitmentsSummary,
+  deriveInstallmentHealth
+} from "@/server/services/debt-commitments-service";
 
 export type CompanyDebtItem = {
   id: string;
@@ -40,6 +44,9 @@ export type PersonDebtItem = {
   installmentsPending: number;
   installmentProgress: number;
   installmentRemainingAmount: number;
+  installmentStatus: "AL_DIA" | "PROXIMA" | "VENCIDA" | "PAGADA";
+  installmentStatusLabel: string;
+  installmentDaysUntilDue: number | null;
   notes: string | null;
   payments: Array<{
     id: string;
@@ -113,6 +120,12 @@ export async function getDebtsSnapshot(workspaceId: string) {
       totalAmount: debtor.totalAmount,
       paidAmount
     });
+    const installmentHealth = deriveInstallmentHealth({
+      pendingInstallments: installmentPlan.pendingInstallments,
+      pendingAmount: Math.max(0, totalAmount - paidAmount),
+      nextInstallmentDate: installmentPlan.nextInstallmentDate,
+      status: debtor.status
+    });
     return {
       id: debtor.id,
       name: debtor.name,
@@ -132,6 +145,9 @@ export async function getDebtsSnapshot(workspaceId: string) {
       installmentsPending: installmentPlan.pendingInstallments,
       installmentProgress: installmentPlan.progressPercent,
       installmentRemainingAmount: installmentPlan.remainingAmount,
+      installmentStatus: installmentHealth.health,
+      installmentStatusLabel: installmentHealth.label,
+      installmentDaysUntilDue: installmentHealth.daysUntilDue,
       notes: debtor.notes ?? null,
       payments: debtor.payments
         .slice()
@@ -150,6 +166,19 @@ export async function getDebtsSnapshot(workspaceId: string) {
   const pendingPeople = people.reduce((acc, item) => acc + item.pendingAmount, 0);
   const collectedPeople = people.reduce((acc, item) => acc + item.paidAmount, 0);
   const collectedCompanies = companies.reduce((acc, item) => acc + item.paidAmount, 0);
+  const commitments = buildDebtCommitmentsSummary(
+    people.map((item) => ({
+      id: item.id,
+      name: item.name,
+      reason: item.reason,
+      installmentValue: item.installmentValue,
+      pendingAmount: item.pendingAmount,
+      pendingInstallments: item.installmentsPending,
+      nextInstallmentDate: item.nextInstallmentDate,
+      installmentFrequency: item.installmentFrequency,
+      status: item.status
+    }))
+  );
 
   return {
     companies,
@@ -159,6 +188,7 @@ export async function getDebtsSnapshot(workspaceId: string) {
       pendingPeople,
       pendingTotal: pendingCompanies + pendingPeople,
       collectedTotal: collectedPeople + collectedCompanies
-    }
+    },
+    commitments
   };
 }

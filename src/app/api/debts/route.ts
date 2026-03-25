@@ -33,6 +33,15 @@ export async function GET(request: NextRequest) {
         pendingPeople: 0,
         pendingTotal: 0,
         collectedTotal: 0
+      },
+      commitments: {
+        activeInstallmentDebts: 0,
+        monthlyCommittedTotal: 0,
+        upcomingCount: 0,
+        overdueCount: 0,
+        nextDueDate: null,
+        nextDueDebtName: null,
+        upcomingTimeline: []
       }
     });
   }

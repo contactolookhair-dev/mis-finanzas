@@ -10,10 +10,20 @@ type DebtsTotals = {
   collectedTotal: number;
 };
 
+type DebtsCommitments = {
+  activeInstallmentDebts: number;
+  monthlyCommittedTotal: number;
+  upcomingCount: number;
+  overdueCount: number;
+  nextDueDate: string | null;
+  nextDueDebtName: string | null;
+};
+
 export function ResumenClient() {
   const [spent, setSpent] = useState<number | null>(null);
   const [collected, setCollected] = useState<number | null>(null);
   const [pending, setPending] = useState<number | null>(null);
+  const [commitments, setCommitments] = useState<DebtsCommitments | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,11 +40,15 @@ export function ResumenClient() {
         }
 
         const dashboard = (await dashboardResponse.json()) as DashboardSnapshot;
-        const debts = (await debtsResponse.json()) as { totals: DebtsTotals };
+        const debts = (await debtsResponse.json()) as {
+          totals: DebtsTotals;
+          commitments: DebtsCommitments;
+        };
 
         setSpent(Math.abs(dashboard.kpis.expenses));
         setCollected(Math.abs(debts.totals.collectedTotal));
         setPending(Math.abs(debts.totals.pendingTotal));
+        setCommitments(debts.commitments);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Error cargando resumen.");
       }
@@ -66,7 +80,45 @@ export function ResumenClient() {
           <p className="mt-2 text-xl font-semibold">{pending === null ? "..." : formatCurrency(pending)}</p>
         </Card>
       </section>
+
+      {commitments && commitments.activeInstallmentDebts > 0 ? (
+        <section className="grid gap-3 lg:grid-cols-2">
+          <Card className="rounded-[24px] border border-violet-100 bg-violet-50/50 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-violet-500">
+              Compromisos del mes
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">
+              {formatCurrency(commitments.monthlyCommittedTotal)}
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              {commitments.activeInstallmentDebts} deudas activas con cuotas pendientes.
+            </p>
+          </Card>
+          <Card className="rounded-[24px] border border-slate-200 bg-white p-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-neutral-500">Proximos</p>
+                <p className="mt-2 text-xl font-semibold">{commitments.upcomingCount}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500">Vencidas</p>
+                <p className="mt-2 text-xl font-semibold">{commitments.overdueCount}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500">Siguiente</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {commitments.nextDueDate
+                    ? new Date(commitments.nextDueDate).toLocaleDateString("es-CL")
+                    : "Sin fecha"}
+                </p>
+                <p className="text-xs text-neutral-500">
+                  {commitments.nextDueDebtName ?? "Sin deuda prioritaria"}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </section>
+      ) : null}
     </div>
   );
 }
-

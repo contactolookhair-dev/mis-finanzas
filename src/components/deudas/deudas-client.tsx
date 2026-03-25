@@ -46,6 +46,9 @@ type PersonDebt = {
   installmentsPending: number;
   installmentProgress: number;
   installmentRemainingAmount: number;
+  installmentStatus: "AL_DIA" | "PROXIMA" | "VENCIDA" | "PAGADA";
+  installmentStatusLabel: string;
+  installmentDaysUntilDue: number | null;
   notes: string | null;
   payments: Array<{
     id: string;
@@ -68,6 +71,23 @@ type DebtsPayload = {
     pendingTotal: number;
     collectedTotal: number;
   };
+  commitments: {
+    activeInstallmentDebts: number;
+    monthlyCommittedTotal: number;
+    upcomingCount: number;
+    overdueCount: number;
+    nextDueDate: string | null;
+    nextDueDebtName: string | null;
+    upcomingTimeline: Array<{
+      debtId: string;
+      debtName: string;
+      reason: string;
+      dueDate: string;
+      amount: number;
+      health: "AL_DIA" | "PROXIMA" | "VENCIDA" | "PAGADA";
+      daysUntilDue: number;
+    }>;
+  };
 };
 
 const statusLabel: Record<PersonDebt["status"], string> = {
@@ -83,6 +103,36 @@ const installmentFrequencyLabel: Record<PersonDebt["installmentFrequency"], stri
   MENSUAL: "Mensual",
   ANUAL: "Anual"
 };
+
+const installmentTone: Record<
+  PersonDebt["installmentStatus"],
+  { chip: string; bar: string }
+> = {
+  AL_DIA: {
+    chip: "bg-emerald-50 text-emerald-700",
+    bar: "from-emerald-400 via-teal-400 to-cyan-400"
+  },
+  PROXIMA: {
+    chip: "bg-amber-50 text-amber-700",
+    bar: "from-amber-400 via-orange-400 to-fuchsia-400"
+  },
+  VENCIDA: {
+    chip: "bg-rose-50 text-rose-700",
+    bar: "from-rose-400 via-fuchsia-400 to-violet-400"
+  },
+  PAGADA: {
+    chip: "bg-slate-100 text-slate-700",
+    bar: "from-slate-300 via-slate-300 to-slate-300"
+  }
+};
+
+function relativeInstallmentText(daysUntilDue: number | null) {
+  if (daysUntilDue === null) return "Sin fecha";
+  if (daysUntilDue < 0) return `${Math.abs(daysUntilDue)} dias de atraso`;
+  if (daysUntilDue === 0) return "Vence hoy";
+  if (daysUntilDue === 1) return "Vence manana";
+  return `Vence en ${daysUntilDue} dias`;
+}
 
 function todayDate() {
   const now = new Date();
@@ -604,6 +654,13 @@ export function DeudasClient({
                 <p>
                   Estado: {selectedPerson?.status ?? selectedCompany?.status ?? "Sin estado"}
                 </p>
+                {selectedPerson?.isInstallmentDebt ? (
+                  <>
+                    <p>Cuotas: {selectedPerson.paidInstallments}/{selectedPerson.installmentCount}</p>
+                    <p>Proxima cuota: {selectedInstallmentNextLabel}</p>
+                    <p>Seguimiento: {selectedPerson.installmentStatusLabel}</p>
+                  </>
+                ) : null}
                 {selectedPerson?.notes ? <p>Notas: {selectedPerson.notes}</p> : null}
               </div>
             </div>
@@ -804,6 +861,76 @@ export function DeudasClient({
             </div>
           </div>
 
+          {payload.commitments.activeInstallmentDebts > 0 ? (
+            <div className="mb-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-[20px] border border-violet-100 bg-violet-50/60 px-3 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-violet-500">Compromisos del mes</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    {formatCurrency(payload.commitments.monthlyCommittedTotal)}
+                  </p>
+                </div>
+                <div className="rounded-[20px] border border-amber-100 bg-amber-50/60 px-3 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-amber-500">Proximos vencimientos</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    {payload.commitments.upcomingCount}
+                  </p>
+                </div>
+                <div className="rounded-[20px] border border-rose-100 bg-rose-50/60 px-3 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-rose-500">Cuotas vencidas</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    {payload.commitments.overdueCount}
+                  </p>
+                </div>
+                <div className="rounded-[20px] border border-emerald-100 bg-emerald-50/60 px-3 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-500">Deudas activas</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-900">
+                    {payload.commitments.activeInstallmentDebts}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-[22px] border border-slate-200 bg-slate-50/70 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">
+                  Timeline de vencimientos
+                </p>
+                <div className="mt-3 space-y-2">
+                  {payload.commitments.upcomingTimeline.map((entry) => (
+                    <button
+                      key={`${entry.debtId}-${entry.dueDate}`}
+                      type="button"
+                      onClick={() => setSelectedDebt({ kind: "person", id: entry.debtId })}
+                      className="flex w-full items-center justify-between rounded-[18px] border border-white bg-white/90 px-3 py-3 text-left transition hover:border-violet-200"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{entry.debtName}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {formatDate(entry.dueDate)} · {entry.reason}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${installmentTone[entry.health].chip}`}
+                        >
+                          {entry.health === "VENCIDA"
+                            ? "Vencida"
+                            : entry.health === "PROXIMA"
+                              ? "Proxima"
+                              : entry.health === "PAGADA"
+                                ? "Pagada"
+                                : "Al dia"}
+                        </span>
+                        <p className="mt-1 text-sm font-semibold text-slate-900">
+                          {formatCurrency(entry.amount)}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {tab === "empresas" ? (
             <div className="space-y-2">
               {payload.companies.length === 0 ? (
@@ -888,21 +1015,30 @@ export function DeudasClient({
                         <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
                           {item.isInstallmentDebt ? "Cuotas" : "Modalidad"}
                         </p>
-                        <p className="text-xs font-medium text-neutral-600">
-                          {item.isInstallmentDebt ? `${item.paidInstallments}/${item.installmentCount}` : "Pago único"}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          {item.isInstallmentDebt ? (
+                            <span
+                              className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold ${installmentTone[item.installmentStatus].chip}`}
+                            >
+                              {item.installmentStatusLabel}
+                            </span>
+                          ) : null}
+                          <p className="text-xs font-medium text-neutral-600">
+                            {item.isInstallmentDebt ? `${item.paidInstallments}/${item.installmentCount}` : "Pago único"}
+                          </p>
+                        </div>
                       </div>
                       {item.isInstallmentDebt ? (
                         <>
                           <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
                             <div
-                              className="h-full rounded-full bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400"
+                              className={`h-full rounded-full bg-gradient-to-r ${installmentTone[item.installmentStatus].bar}`}
                               style={{ width: `${Math.max(0, Math.min(100, item.installmentProgress))}%` }}
                             />
                           </div>
                           <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-500">
                             <span>Cuota: {formatCurrency(item.installmentValue)}</span>
-                            <span>Restan: {item.installmentsPending}</span>
+                            <span>{relativeInstallmentText(item.installmentDaysUntilDue)}</span>
                           </div>
                         </>
                       ) : null}

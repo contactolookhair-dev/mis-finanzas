@@ -38,6 +38,38 @@ type TransactionsPayload = {
   items: TransactionItem[];
 };
 
+type DebtsCommitmentsPayload = {
+  commitments: {
+    activeInstallmentDebts: number;
+    monthlyCommittedTotal: number;
+    upcomingCount: number;
+    overdueCount: number;
+    nextDueDate: string | null;
+    nextDueDebtName: string | null;
+    upcomingTimeline: Array<{
+      debtId: string;
+      debtName: string;
+      reason: string;
+      dueDate: string;
+      amount: number;
+      health: "AL_DIA" | "PROXIMA" | "VENCIDA" | "PAGADA";
+      daysUntilDue: number;
+    }>;
+  };
+};
+
+function dueStatusLabel(
+  health: "AL_DIA" | "PROXIMA" | "VENCIDA" | "PAGADA",
+  daysUntilDue: number
+) {
+  if (health === "VENCIDA") return `${Math.abs(daysUntilDue)} dias atrasada`;
+  if (health === "PROXIMA" && daysUntilDue === 0) return "Vence hoy";
+  if (health === "PROXIMA" && daysUntilDue === 1) return "Vence manana";
+  if (health === "PROXIMA") return `Vence en ${daysUntilDue} dias`;
+  if (health === "PAGADA") return "Pagada";
+  return "Al dia";
+}
+
 function buildMonthGrid(baseDate = new Date()) {
   const year = baseDate.getFullYear();
   const month = baseDate.getMonth();
@@ -63,6 +95,8 @@ export function InicioClient() {
   const [accountsTotal, setAccountsTotal] = useState(0);
   const [movements, setMovements] = useState<TransactionItem[]>([]);
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
+  const [debtCommitments, setDebtCommitments] =
+    useState<DebtsCommitmentsPayload["commitments"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openModal, setOpenModal] = useState(false);
@@ -85,19 +119,21 @@ export function InicioClient() {
       setLoading(true);
       setError(null);
 
-      const [dashboardResponse, accountsResponse, transactionsResponse] = await Promise.all([
+      const [dashboardResponse, accountsResponse, transactionsResponse, debtsResponse] = await Promise.all([
         fetch("/api/dashboard", { cache: "no-store" }),
         fetch("/api/accounts", { cache: "no-store" }),
-        fetch("/api/transactions?take=12", { cache: "no-store" })
+        fetch("/api/transactions?take=12", { cache: "no-store" }),
+        fetch("/api/debts", { cache: "no-store" })
       ]);
 
-      if (!dashboardResponse.ok || !accountsResponse.ok || !transactionsResponse.ok) {
+      if (!dashboardResponse.ok || !accountsResponse.ok || !transactionsResponse.ok || !debtsResponse.ok) {
         throw new Error("No se pudo cargar la vista de inicio.");
       }
 
       const dashboardPayload = (await dashboardResponse.json()) as DashboardSnapshot;
       const accountsPayload = (await accountsResponse.json()) as AccountsPayload;
       const transactionsPayload = (await transactionsResponse.json()) as TransactionsPayload;
+      const debtsPayload = (await debtsResponse.json()) as DebtsCommitmentsPayload;
 
       setSnapshot(dashboardPayload);
       setAccountsTotal(
@@ -105,6 +141,7 @@ export function InicioClient() {
       );
       setAccounts(accountsPayload.items ?? []);
       setMovements(transactionsPayload.items ?? []);
+      setDebtCommitments(debtsPayload.commitments);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Error cargando inicio.");
     } finally {
@@ -247,6 +284,78 @@ export function InicioClient() {
           </p>
         </div>
       </Card>
+
+      {debtCommitments && debtCommitments.activeInstallmentDebts > 0 ? (
+        <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Compromisos de deuda</p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-900">Tus cuotas y vencimientos del mes</h3>
+              </div>
+              <div className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                {debtCommitments.activeInstallmentDebts} activas
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-[20px] border border-violet-100 bg-violet-50/70 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-violet-500">Total mensual comprometido</p>
+                <p className="mt-2 text-xl font-semibold text-slate-900">
+                  {formatCurrency(debtCommitments.monthlyCommittedTotal)}
+                </p>
+              </div>
+              <div className="rounded-[20px] border border-amber-100 bg-amber-50/70 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-amber-500">Proximos vencimientos</p>
+                <p className="mt-2 text-xl font-semibold text-slate-900">
+                  {debtCommitments.upcomingCount}
+                </p>
+              </div>
+              <div className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-rose-500">Cuotas vencidas</p>
+                <p className="mt-2 text-xl font-semibold text-slate-900">
+                  {debtCommitments.overdueCount}
+                </p>
+              </div>
+              <div className="rounded-[20px] border border-emerald-100 bg-emerald-50/70 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-500">Proximo vencimiento</p>
+                <p className="mt-2 text-base font-semibold text-slate-900">
+                  {debtCommitments.nextDueDate ? formatDate(debtCommitments.nextDueDate) : "Sin fecha"}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {debtCommitments.nextDueDebtName ?? "Sin deuda prioritaria"}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Mini timeline</p>
+            <div className="mt-3 space-y-2">
+              {debtCommitments.upcomingTimeline.length === 0 ? (
+                <p className="text-sm text-slate-500">No hay cuotas proximas para este periodo.</p>
+              ) : (
+                debtCommitments.upcomingTimeline.map((item) => (
+                  <div
+                    key={`${item.debtId}-${item.dueDate}`}
+                    className="rounded-[18px] border border-slate-100 bg-slate-50/70 px-3 py-3"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{item.debtName}</p>
+                        <p className="text-[11px] text-slate-500">{formatDate(item.dueDate)}</p>
+                      </div>
+                      <p className="text-sm font-semibold text-slate-900">{formatCurrency(item.amount)}</p>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {dueStatusLabel(item.health, item.daysUntilDue)}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </section>
+      ) : null}
 
       <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
