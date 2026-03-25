@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { PageContainer } from "@/components/ui/page-container";
 import { StatPill } from "@/components/ui/stat-pill";
+import { DashboardHeaderLoader } from "@/components/layout/dashboard-header-loader";
 import { DashboardHeaderProvider, useDashboardHeader } from "@/components/layout/dashboard-header-context";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -35,6 +36,7 @@ function AppShellFrame({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
+      <DashboardHeaderLoader />
       <div className="screen-shell">
         <div className="lg:pl-[120px]">
           <header className="glass-surface sticky top-2 z-20 mb-4 rounded-[18px] px-3.5 py-2.5 ring-1 ring-white/35 sm:top-3 sm:mb-5 sm:px-4 sm:py-3">

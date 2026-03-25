@@ -619,7 +619,7 @@ export function CuentasClient() {
       <div
         className="fixed right-4 z-40 sm:hidden"
         style={{
-          bottom: "calc(100px + env(safe-area-inset-bottom))"
+          bottom: "calc(112px + env(safe-area-inset-bottom))"
         }}
       >
         <Button
