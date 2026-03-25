@@ -79,9 +79,9 @@ const accountTypeMap: Record<
   },
   OTRO: {
     label: "Cuenta digital",
-    gradient: "from-violet-50 via-white/90 to-slate-50",
+    gradient: "from-sky-50 via-white/90 to-slate-50",
     icon: ShieldCheck,
-    accent: "text-violet-700",
+    accent: "text-sky-700",
     secondary: "Disponible"
   }
 };
@@ -116,7 +116,7 @@ function AccountCard({ account }: { account: AccountItem }) {
               <span>{formatCurrency(account.balance * 0.18)}</span>
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/30">
-              <div className="h-full bg-gradient-to-r from-rose-500 via-fuchsia-500 to-rose-400" style={{ width: "40%" }} />
+              <div className="h-full bg-gradient-to-r from-sky-500 via-cyan-500 to-emerald-400" style={{ width: "40%" }} />
             </div>
             <p className="text-[11px] text-white/80">Cupo 40% usado</p>
           </div>

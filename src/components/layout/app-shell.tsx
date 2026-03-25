@@ -75,7 +75,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className={cn(
                     "group flex flex-col items-center justify-center gap-1.5 rounded-[22px] px-2.5 py-3 text-[11px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
                     isActive
-                      ? "bg-gradient-to-br from-primary via-secondary to-accent text-white shadow-[0_8px_18px_rgba(95,99,242,0.28)]"
+                      ? "bg-gradient-to-br from-primary via-secondary to-accent text-white shadow-[0_8px_18px_rgba(37,99,235,0.28)]"
                       : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                 )}
                 >

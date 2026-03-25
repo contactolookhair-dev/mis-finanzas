@@ -17,6 +17,9 @@ import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
 import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-panel";
 
+const accountCardGradient = "linear-gradient(135deg,#2563eb,#06b6d4,#10b981)";
+const heroGradient = "from-sky-600 via-cyan-600 to-emerald-500";
+
 type AccountItem = {
   id: string;
   balance: number;
@@ -280,9 +283,7 @@ export function InicioClient() {
               <span
                 className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow"
                 style={{
-                  background: account.color
-                    ? account.color
-                    : "linear-gradient(135deg,#8b5cf6,#ec4899,#14b8a6)"
+                  background: account.color ? account.color : accountCardGradient
                 }}
               >
                 {account.icon ?? "💳"}
@@ -293,7 +294,7 @@ export function InicioClient() {
           </SurfaceCard>
         ))}
       </section>
-      <SurfaceCard className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white shadow-[0_28px_56px_rgba(124,58,237,0.32)]">
+      <SurfaceCard className={`relative overflow-hidden bg-gradient-to-br ${heroGradient} text-white shadow-[0_28px_56px_rgba(37,99,235,0.24)]`}>
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_40%)]" />
         <div className="relative">
           <p className="text-xs uppercase tracking-[0.2em] text-white/75">Saldo total</p>
@@ -325,7 +326,7 @@ export function InicioClient() {
             type="button"
             onClick={handleAnalyzeFinancials}
             disabled={financialInsightsLoading}
-            className="h-11 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500 px-4 text-sm font-semibold shadow-[0_16px_32px_rgba(124,58,237,0.22)]"
+            className="h-11 rounded-2xl bg-gradient-to-r from-sky-600 via-cyan-600 to-emerald-500 px-4 text-sm font-semibold shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
           >
             {financialInsightsLoading ? "Analizando..." : "Analizar mis finanzas"}
           </Button>
@@ -337,15 +338,15 @@ export function InicioClient() {
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2">
-        <SurfaceCard variant="soft" padding="sm" className="border-violet-100">
+        <SurfaceCard variant="soft" padding="sm" className="border-sky-100">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Ingresos</p>
           <p className="mt-2 text-2xl font-semibold text-emerald-600">
             {loading ? "..." : formatCurrency(incomes)}
           </p>
         </SurfaceCard>
-        <SurfaceCard variant="soft" padding="sm" className="border-fuchsia-100">
+        <SurfaceCard variant="soft" padding="sm" className="border-cyan-100">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Gastos</p>
-          <p className="mt-2 text-2xl font-semibold text-fuchsia-600">
+          <p className="mt-2 text-2xl font-semibold text-sky-600">
             {loading ? "..." : formatCurrency(expenses)}
           </p>
         </SurfaceCard>
@@ -392,9 +393,9 @@ export function InicioClient() {
                     isSelected
                       ? "bg-emerald-600/90 text-white"
                       : isToday
-                        ? "bg-violet-600 text-white"
+                        ? "bg-sky-600 text-white"
                         : hasMovement
-                          ? "bg-fuchsia-50 text-fuchsia-700"
+                          ? "bg-sky-50 text-sky-700"
                           : "bg-slate-50 text-slate-500"
                   }`}
                 >
@@ -527,7 +528,7 @@ export function InicioClient() {
       <div className="hidden sm:block">
         <Button
           type="button"
-          className="h-11 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500 shadow-soft"
+          className="h-11 w-full rounded-2xl bg-gradient-to-r from-sky-600 via-cyan-600 to-emerald-500 shadow-soft"
           onClick={() => setOpenModal(true)}
         >
           Nueva transacción

@@ -13,7 +13,7 @@ export default function AppLoading() {
         </div>
       </div>
 
-      <div className="rounded-[28px] border border-white/70 bg-gradient-to-br from-violet-600/90 via-fuchsia-600/80 to-emerald-500/75 p-6 shadow-[0_28px_56px_rgba(124,58,237,0.24)]">
+      <div className="rounded-[28px] border border-white/70 bg-gradient-to-br from-sky-600/90 via-cyan-600/80 to-emerald-500/75 p-6 shadow-[0_28px_56px_rgba(37,99,235,0.24)]">
         <Skeleton className="h-3 w-32 bg-white/25" />
         <Skeleton className="mt-3 h-12 w-72 bg-white/25" />
         <Skeleton className="mt-2 h-3 w-56 bg-white/20" />
@@ -29,4 +29,3 @@ export default function AppLoading() {
     </div>
   );
 }
-

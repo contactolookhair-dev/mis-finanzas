@@ -12,6 +12,8 @@ import { StatPill } from "@/components/ui/stat-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 
+const cardFallbackGradient = "linear-gradient(135deg, #2563eb 0%, #06b6d4 60%, #10b981 100%)";
+
 type AccountItem = {
   id: string;
   name: string;
@@ -135,7 +137,7 @@ export function CuentasClient() {
         }
       />
 
-      <SurfaceCard variant="dark" className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white animate-fade-up">
+      <SurfaceCard variant="dark" className="relative overflow-hidden bg-gradient-to-br from-sky-600 via-cyan-600 to-emerald-500 text-white animate-fade-up">
         <p className="text-xs uppercase tracking-[0.2em] text-white/70">Total disponible</p>
         <p className="mt-2 text-4xl font-semibold tracking-tight">{formatCurrency(totalAvailable)}</p>
         <p className="mt-2 text-xs text-white/80">Suma de todas tus carteras y efectivo.</p>
@@ -224,7 +226,7 @@ export function CuentasClient() {
             <Button
               type="submit"
               disabled={saving || form.name.trim().length < 2}
-              className="tap-feedback h-11 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500"
+              className="tap-feedback h-11 w-full rounded-2xl bg-gradient-to-r from-sky-600 via-cyan-600 to-emerald-500"
             >
               {saving ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear cartera"}
             </Button>
@@ -286,14 +288,12 @@ export function CuentasClient() {
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white"
-                    style={{
-                      background: account.color
-                        ? account.color
-                        : "linear-gradient(135deg, #7c3aed 0%, #ec4899 60%, #10b981 100%)"
-                    }}
-                  >
+                <span
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white"
+                  style={{
+                    background: account.color ? account.color : cardFallbackGradient
+                  }}
+                >
                     {account.icon ? <span>{account.icon}</span> : <Icon className="h-5 w-5" />}
                   </span>
                   <div>
