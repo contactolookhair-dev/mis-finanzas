@@ -120,7 +120,9 @@ export function UpcomingPayablesWidget({
             <p className="text-xs font-semibold uppercase tracking-[0.2em]">Cuotas próximas</p>
           </div>
           <p className="mt-1 text-base font-semibold text-slate-900">Por pagar pronto</p>
-          <p className="mt-1 text-sm text-slate-600">Vencidas y próximos 14 días.</p>
+          {size === "compact" ? null : (
+            <p className="mt-1 text-sm text-slate-600">Vencidas y próximos 14 días.</p>
+          )}
         </div>
         {size === "featured" && onViewAll ? (
           <button
@@ -154,9 +156,13 @@ export function UpcomingPayablesWidget({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-900">{item.origin}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    {badge.key === "PAGADO" && item.paidAt ? `Pagado: ${formatDate(item.paidAt)}` : formatDate(item.dueDate)}
-                  </p>
+                  {size === "compact" ? null : (
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {badge.key === "PAGADO" && item.paidAt
+                        ? `Pagado: ${formatDate(item.paidAt)}`
+                        : formatDate(item.dueDate)}
+                    </p>
+                  )}
                 </div>
                 <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${badge.className}`}>
                   {badge.label}
@@ -164,7 +170,7 @@ export function UpcomingPayablesWidget({
               </div>
               <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
                 <span className="text-sm font-semibold text-slate-900">{formatCurrency(item.amount)}</span>
-                <span>{badge.key === "PAGADO" ? "Listo" : "Pendiente"}</span>
+                <span>{badge.key === "PAGADO" ? "Listo" : size === "compact" ? formatDate(item.dueDate) : "Pendiente"}</span>
               </div>
             </div>
           );
@@ -184,4 +190,3 @@ export function UpcomingPayablesWidget({
     </SurfaceCard>
   );
 }
-

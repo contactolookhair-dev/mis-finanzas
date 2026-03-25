@@ -121,7 +121,9 @@ export function OverduePendingsWidget({
             <p className="text-xs font-semibold uppercase tracking-[0.2em]">Vencidos</p>
           </div>
           <p className="mt-1 text-base font-semibold text-slate-900">Lo atrasado primero</p>
-          <p className="mt-1 text-sm text-slate-600">Pendientes vencidos por cobrar y por pagar.</p>
+          {size === "compact" ? null : (
+            <p className="mt-1 text-sm text-slate-600">Pendientes vencidos por cobrar y por pagar.</p>
+          )}
         </div>
         {onViewAll ? (
           <button
@@ -181,4 +183,3 @@ export function OverduePendingsWidget({
     </SurfaceCard>
   );
 }
-

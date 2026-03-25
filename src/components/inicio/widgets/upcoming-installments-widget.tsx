@@ -79,8 +79,10 @@ export function UpcomingInstallmentsWidget({
             <CalendarClock className="h-4 w-4" />
             <p className="text-xs font-semibold uppercase tracking-[0.2em]">Cuotas próximas</p>
           </div>
-          <p className="mt-1 text-base font-semibold text-slate-900">Compromisos del mes</p>
-          <p className="mt-1 text-sm text-slate-600">Lo que viene pronto y lo vencido.</p>
+          <p className="mt-1 text-base font-semibold text-slate-900">Cobros próximos</p>
+          {size === "compact" ? null : (
+            <p className="mt-1 text-sm text-slate-600">Lo que viene pronto y lo vencido.</p>
+          )}
         </div>
         {size === "featured" && onViewAll ? (
           <button
@@ -94,26 +96,42 @@ export function UpcomingInstallmentsWidget({
         ) : null}
       </div>
 
-      <div className={size === "compact" ? "grid gap-2" : "grid gap-3 sm:grid-cols-3"}>
-        <div className="rounded-2xl border border-slate-100 bg-white/80 p-3 sm:col-span-2">
+      {size === "compact" ? (
+        <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            Total comprometido (mes)
+            Total por cobrar (mes)
           </p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-            {loading ? "..." : formatCurrency(monthlyCommitted)}
-          </p>
-        </div>
-        <div className="grid gap-2">
-          <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Próximas</p>
-            <p className="mt-1 text-lg font-semibold text-slate-900">{loading ? "…" : upcomingCount}</p>
-          </div>
-          <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Vencidas</p>
-            <p className="mt-1 text-lg font-semibold text-rose-600">{loading ? "…" : overdueCount}</p>
+          <div className="mt-2 flex items-baseline justify-between gap-3">
+            <p className="text-2xl font-semibold tracking-tight text-slate-900">
+              {loading ? "..." : formatCurrency(monthlyCommitted)}
+            </p>
+            <p className="text-sm font-semibold text-slate-600">
+              Vencidas: <span className="text-rose-600">{loading ? "…" : overdueCount}</span>
+            </p>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-100 bg-white/80 p-3 sm:col-span-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Total por cobrar (mes)
+            </p>
+            <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+              {loading ? "..." : formatCurrency(monthlyCommitted)}
+            </p>
+          </div>
+          <div className="grid gap-2">
+            <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Próximas</p>
+              <p className="mt-1 text-lg font-semibold text-slate-900">{loading ? "…" : upcomingCount}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Vencidas</p>
+              <p className="mt-1 text-lg font-semibold text-rose-600">{loading ? "…" : overdueCount}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         {items.map((item) => {

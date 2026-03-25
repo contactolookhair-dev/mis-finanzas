@@ -45,9 +45,9 @@ type WidgetSize = "compact" | "standard" | "featured";
 
 const defaultWidgetOrder: InicioWidgetId[] = [
   "debtors",
-  "upcomingInstallments",
   "upcomingPayables",
   "overduePendings",
+  "upcomingInstallments",
   "recentMovements",
   "monthFlow",
   "financialHealth",
