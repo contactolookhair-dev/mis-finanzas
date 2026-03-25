@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText } from "lucide-react";
 import { ActionButton } from "@/components/ui/action-button";
-import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
+import { ErrorStateCard } from "@/components/ui/states";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import type { AuthSessionResponse } from "@/shared/types/auth";
 import type { DashboardFilters } from "@/shared/types/dashboard";
@@ -106,14 +107,14 @@ export function ExportActions({
   }
 
   return (
-    <Card className={compact ? "space-y-3" : "space-y-4"}>
+    <SurfaceCard variant="soft" padding="sm" className={compact ? "space-y-3" : "space-y-4"}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <Download className="h-4 w-4 text-primary" />
-            <p className="text-sm font-semibold">Exportar reportes</p>
+            <Download className="h-4 w-4 text-slate-500" />
+            <p className="text-sm font-semibold text-slate-900">Exportar reportes</p>
           </div>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-slate-600">
             PDF profesional o Excel tabular respetando los filtros activos.
           </p>
         </div>
@@ -131,7 +132,7 @@ export function ExportActions({
         ))}
       </Select>
 
-      <div className="rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-xs text-neutral-500">
+      <div className="rounded-2xl border border-slate-100 bg-white/80 px-4 py-3 text-xs text-slate-600">
         {summary}
       </div>
 
@@ -156,10 +157,12 @@ export function ExportActions({
         </ActionButton>
       </div>
 
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {error ? <ErrorStateCard title="No se pudo exportar" description={error} className="shadow-none" /> : null}
       {!authLoading && !canExport ? (
-        <p className="text-sm text-neutral-500">Tu rol actual puede ver datos, pero no exportar reportes.</p>
+        <p className="text-sm text-slate-600">
+          Tu rol actual puede ver datos, pero no exportar reportes.
+        </p>
       ) : null}
-    </Card>
+    </SurfaceCard>
   );
 }
