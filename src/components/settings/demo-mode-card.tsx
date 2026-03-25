@@ -84,7 +84,7 @@ export function DemoModeCard() {
   }
 
   return (
-    <SurfaceCard variant="highlight" padding="sm" className="space-y-4 border-dashed">
+    <SurfaceCard id="demo" variant="highlight" padding="sm" className="space-y-4 border-dashed">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-neutral-500">Modo demo</p>

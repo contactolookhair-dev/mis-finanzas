@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
+import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
 import { MobileStickyAction } from "@/components/ui/mobile-sticky-action";
@@ -180,6 +181,7 @@ export function InicioClient() {
       year: "numeric"
     });
   }, [selectedDate]);
+  const onboardingInsightReady = Boolean(snapshot && accounts.length > 0 && movements.length > 0);
 
   const appendCalculatorSymbol = (symbol: string) => {
     setCalculatorInput((prev) => `${prev}${symbol}`);
@@ -256,6 +258,12 @@ export function InicioClient() {
             Vista diaria
           </StatPill>
         }
+      />
+
+      <OnboardingBanner
+        accountsCount={accounts.length}
+        movementsCount={movements.length}
+        insightsReady={onboardingInsightReady}
       />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
