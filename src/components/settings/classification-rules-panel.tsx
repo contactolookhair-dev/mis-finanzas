@@ -6,6 +6,7 @@ import type { AuthSessionResponse } from "@/shared/types/auth";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import type { ClassificationRulePayload } from "@/shared/types/classification-rules";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -344,10 +345,10 @@ export function ClassificationRulesPanel() {
                 </div>
               </div>
               {canEdit ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
+                <ActionButton
+                  icon={Sparkles}
+                  tone="neutral"
+                  className="h-8 px-3 text-xs"
                   onClick={() => {
                     setEditingId(rule.id);
                     setDraft({
@@ -365,7 +366,7 @@ export function ClassificationRulesPanel() {
                   }}
                 >
                   Editar
-                </Button>
+                </ActionButton>
               ) : null}
             </div>
           </SurfaceCard>

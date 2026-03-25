@@ -10,6 +10,7 @@ import type {
 } from "@/shared/types/import-templates";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { SurfaceCard } from "@/components/ui/surface-card";
@@ -350,52 +351,48 @@ export function ImportTemplatesPanel() {
 
               <div className="flex flex-wrap gap-2">
                 {template.sourceType === "workspace" ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="rounded-full"
+                  <ActionButton
+                    icon={Pencil}
+                    tone="neutral"
+                    className="h-8 px-3 text-xs"
                     disabled={!canEdit || saving}
                     onClick={() => {
                       setEditingId(template.id);
                       setDraft(payloadFromTemplate(template));
                     }}
                   >
-                    <Pencil className="mr-2 h-4 w-4" />
                     Editar
-                  </Button>
+                  </ActionButton>
                 ) : null}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
+                <ActionButton
+                  icon={Copy}
+                  tone="premium"
+                  className="h-8 px-3 text-xs"
                   disabled={!canEdit || saving}
                   onClick={() => duplicateTemplate(template.id)}
                 >
-                  <Copy className="mr-2 h-4 w-4" />
                   Duplicar
-                </Button>
+                </ActionButton>
                 {template.sourceType === "workspace" ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="rounded-full"
+                  <ActionButton
+                    tone="neutral"
+                    className="h-8 px-3 text-xs"
                     disabled={!canEdit || saving}
                     onClick={() => toggleTemplate(template)}
                   >
                     {template.isActive ? "Desactivar" : "Activar"}
-                  </Button>
+                  </ActionButton>
                 ) : null}
                 {template.sourceType === "workspace" ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full text-danger hover:text-danger"
+                  <ActionButton
+                    icon={Trash2}
+                    tone="danger"
+                    className="h-8 px-3 text-xs"
                     disabled={!canEdit || saving}
                     onClick={() => deleteTemplate(template.id)}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
                     Eliminar
-                  </Button>
+                  </ActionButton>
                 ) : null}
               </div>
             </SurfaceCard>

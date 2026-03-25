@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, PencilLine, Clock3, CreditCard, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
 import { MobileStickyAction } from "@/components/ui/mobile-sticky-action";
@@ -556,7 +557,7 @@ export function DeudasClient({
                   "Exportando..."
                 ) : (
                   <>
-                    <Download className="mr-2 h-4 w-4" />
+                    <Download className="mr-2 h-4 w-4 shrink-0" />
                     Exportar PDF
                   </>
                 )}
@@ -577,17 +578,17 @@ export function DeudasClient({
                   </>
                 )}
               </Button>
-              {selectedDebt.kind === "person" ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="tap-feedback h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
-                  onClick={() => setFormMode("editar")}
-                >
-                  <PencilLine className="mr-2 h-4 w-4" />
-                  Editar
-                </Button>
-              ) : null}
+                {selectedDebt.kind === "person" ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="tap-feedback h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
+                    onClick={() => setFormMode("editar")}
+                  >
+                    <PencilLine className="mr-2 h-4 w-4 shrink-0" />
+                    Editar
+                  </Button>
+                ) : null}
             </div>
           </div>
 
@@ -1158,41 +1159,41 @@ export function DeudasClient({
                       {item.isInstallmentDebt && item.nextInstallmentDate ? `· Próxima: ${formatDate(item.nextInstallmentDate)}` : ""}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        variant="secondary"
-                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
+                      <ActionButton
+                        icon={Eye}
+                        tone="neutral"
+                        className="h-8 px-3 text-xs"
                         onClick={() => setSelectedDebt({ kind: "person", id: item.id })}
                       >
-                        <Eye className="mr-2 h-4 w-4" />
                         Ver detalle
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
+                      </ActionButton>
+                      <ActionButton
+                        tone="premium"
+                        className="h-8 px-3 text-xs"
                         onClick={() => {
                           setFormMode("abono");
                           setPaymentForm((current) => ({ ...current, debtorId: item.id }));
                         }}
                       >
                         Registrar abono
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
+                      </ActionButton>
+                      <ActionButton
+                        icon={PencilLine}
+                        tone="neutral"
+                        className="h-8 px-3 text-xs"
                         onClick={() => openEdit(item)}
                       >
-                        <PencilLine className="mr-2 h-4 w-4" />
                         Editar
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
+                      </ActionButton>
+                      <ActionButton
+                        icon={Download}
+                        tone="neutral"
+                        className="h-8 px-3 text-xs"
+                        loading={exportingDebt === item.id}
                         onClick={() => exportDebt({ kind: "person", id: item.id })}
-                        disabled={exportingDebt === item.id}
                       >
-                        <Download className="mr-2 h-4 w-4" />
                         Exportar PDF
-                      </Button>
+                      </ActionButton>
                     </div>
                   </div>
                 ))

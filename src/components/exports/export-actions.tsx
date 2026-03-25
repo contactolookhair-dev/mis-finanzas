@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Download, FileSpreadsheet, FileText } from "lucide-react";
+import { ActionButton } from "@/components/ui/action-button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
@@ -136,39 +136,24 @@ export function ExportActions({
       </div>
 
       <div className="flex flex-wrap gap-3">
-        <Button
-          variant="secondary"
+        <ActionButton
+          icon={FileText}
+          tone="neutral"
+          loading={loadingFormat === "pdf"}
           disabled={authLoading || !canExport || loadingFormat !== null}
           onClick={() => handleExport("pdf")}
         >
-          {loadingFormat === "pdf" ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generando PDF
-            </>
-          ) : (
-            <>
-              <FileText className="mr-2 h-4 w-4" />
-              Exportar PDF
-            </>
-          )}
-        </Button>
-        <Button
+          Exportar PDF
+        </ActionButton>
+        <ActionButton
+          icon={FileSpreadsheet}
+          tone="premium"
+          loading={loadingFormat === "xlsx"}
           disabled={authLoading || !canExport || loadingFormat !== null}
           onClick={() => handleExport("xlsx")}
         >
-          {loadingFormat === "xlsx" ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generando Excel
-            </>
-          ) : (
-            <>
-              <FileSpreadsheet className="mr-2 h-4 w-4" />
-              Exportar Excel
-            </>
-          )}
-        </Button>
+          Exportar Excel
+        </ActionButton>
       </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { Building2, CircleDollarSign, CreditCard, Edit2, Landmark, Trash2, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
@@ -313,10 +314,9 @@ export function CuentasClient() {
                 <StatPill tone="neutral">{typeLabel[account.type]}</StatPill>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="tap-feedback rounded-full border border-slate-200 text-xs font-semibold"
+                <ActionButton
+                  icon={Edit2}
+                  tone="neutral"
                   onClick={() => {
                     setEditingId(account.id);
                     setForm({
@@ -331,13 +331,11 @@ export function CuentasClient() {
                     setError(null);
                   }}
                 >
-                  <Edit2 className="mr-2 h-4 w-4" />
                   Editar
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="tap-feedback rounded-full text-xs font-semibold text-rose-600"
+                </ActionButton>
+                <ActionButton
+                  icon={Trash2}
+                  tone="danger"
                   onClick={async () => {
                     if (!window.confirm("¿Eliminar esta cuenta?")) return;
                     setSaving(true);
@@ -368,9 +366,8 @@ export function CuentasClient() {
                     }
                   }}
                 >
-                  <Trash2 className="mr-2 h-4 w-4" />
                   Eliminar
-                </Button>
+                </ActionButton>
               </div>
             </SurfaceCard>
           );
