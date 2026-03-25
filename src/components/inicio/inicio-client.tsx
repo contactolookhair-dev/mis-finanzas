@@ -8,6 +8,8 @@ import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
+import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
+import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-panel";
 
 type AccountItem = {
   id: string;
@@ -68,6 +70,9 @@ export function InicioClient() {
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [calculatorInput, setCalculatorInput] = useState("");
   const [calculatorResult, setCalculatorResult] = useState<number | null>(null);
+  const [financialInsights, setFinancialInsights] = useState<FinancialInsightsResponse | null>(null);
+  const [financialInsightsLoading, setFinancialInsightsLoading] = useState(false);
+  const [financialInsightsError, setFinancialInsightsError] = useState<string | null>(null);
 
   const monthGrid = useMemo(() => buildMonthGrid(new Date()), []);
   const movementDateKeys = useMemo(
@@ -163,6 +168,37 @@ export function InicioClient() {
     setCalculatorInput((prev) => prev.slice(0, -1));
   };
 
+  async function handleAnalyzeFinancials() {
+    try {
+      setFinancialInsightsLoading(true);
+      setFinancialInsightsError(null);
+
+      const response = await fetch("/api/ai/financial-insights", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          filters: snapshot?.filters ?? undefined
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? "No se pudo generar el análisis.");
+      }
+
+      const payload = (await response.json()) as FinancialInsightsResponse;
+      setFinancialInsights(payload);
+    } catch (submitError) {
+      setFinancialInsightsError(
+        submitError instanceof Error ? submitError.message : "No se pudo generar el análisis."
+      );
+    } finally {
+      setFinancialInsightsLoading(false);
+    }
+  }
+
   return (
     <div className="space-y-4 pb-20 sm:space-y-5">
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -209,6 +245,23 @@ export function InicioClient() {
           <p className="mt-2 text-xs text-white/85">
             Disponible estimado entre cuentas y flujo del período.
           </p>
+        </div>
+      </Card>
+
+      <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Análisis inteligente</p>
+            <p className="text-base font-semibold text-slate-900">Pulsa para revisar tu situación financiera con IA</p>
+          </div>
+          <Button
+            type="button"
+            onClick={handleAnalyzeFinancials}
+            disabled={financialInsightsLoading}
+            className="h-11 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500 px-4 text-sm font-semibold shadow-[0_16px_32px_rgba(124,58,237,0.22)]"
+          >
+            {financialInsightsLoading ? "Analizando..." : "Analizar mis finanzas"}
+          </Button>
         </div>
       </Card>
 
@@ -379,6 +432,12 @@ export function InicioClient() {
           ))}
         </div>
       </Card>
+
+      <FinancialInsightsPanel
+        loading={financialInsightsLoading}
+        error={financialInsightsError}
+        response={financialInsights}
+      />
 
       <button
         type="button"
