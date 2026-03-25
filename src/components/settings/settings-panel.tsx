@@ -15,14 +15,14 @@ export function SettingsPanel() {
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           {SETTINGS_SECTIONS.map((section) => (
-            <div key={section.title} className="rounded-[24px] border border-white/70 bg-white/72 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            <div key={section.title} className="rounded-[24px] border border-border/70 bg-white/76 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <div className="flex items-center justify-between gap-3">
                 <p className="font-medium text-slate-900">{section.title}</p>
-                <StatPill tone="premium" className="px-2.5 py-1 text-[10px]">
+                <StatPill tone="brand" className="px-2.5 py-1 text-[10px]">
                   Interno
                 </StatPill>
               </div>
-              <p className="mt-2 text-sm text-neutral-600">{section.description}</p>
+              <p className="mt-2 text-sm leading-6 text-neutral-600">{section.description}</p>
             </div>
           ))}
         </div>

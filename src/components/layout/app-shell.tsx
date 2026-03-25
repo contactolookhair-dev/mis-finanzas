@@ -73,14 +73,26 @@ export function AppShell({ children }: { children: ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex flex-col items-center justify-center gap-2 rounded-[22px] px-2 py-3 text-[11px] font-medium transition-colors",
+                    "group flex flex-col items-center justify-center gap-1.5 rounded-[22px] px-2.5 py-3 text-[11px] font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
                     isActive
                       ? "bg-gradient-to-br from-primary via-secondary to-accent text-white shadow-[0_8px_18px_rgba(95,99,242,0.28)]"
                       : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                 )}
                 >
-                  <Icon className="h-4 w-4" />
-                  <span className="truncate">{item.label}</span>
+                  <span
+                    className={cn(
+                      "flex h-8 w-8 items-center justify-center rounded-2xl transition-all duration-200",
+                      isActive
+                        ? "bg-white/15 text-white shadow-[0_6px_14px_rgba(15,23,42,0.08)]"
+                        : "bg-slate-100/80 text-slate-500 group-hover:bg-white group-hover:text-primary"
+                    )}
+                  >
+                    <Icon className="h-[15px] w-[15px]" strokeWidth={1.9} />
+                  </span>
+                  <span className="truncate tracking-[0.01em]">{item.label}</span>
+                  {isActive ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-white/90 shadow-[0_0_0_3px_rgba(255,255,255,0.15)]" />
+                  ) : null}
                 </Link>
               );
             })}
