@@ -56,3 +56,36 @@ export async function PATCH(
     return NextResponse.json({ message: "No se pudo actualizar la cuenta." }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { accountId: string } }
+) {
+  const context = await getWorkspaceContextFromRequest(request);
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json(
+      { message: "No se pudo resolver el contexto de trabajo." },
+      { status: 400 }
+    );
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
+    return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+  }
+
+  try {
+    const updated = await updateManualAccount({
+      workspaceId: context.workspaceId,
+      accountId: params.accountId,
+      isActive: false
+    });
+
+    if (!updated) {
+      return NextResponse.json({ message: "Cuenta no encontrada." }, { status: 404 });
+    }
+
+    const items = await listManualAccountsWithBalances(context.workspaceId);
+    return NextResponse.json({ items });
+  } catch {
+    return NextResponse.json({ message: "No se pudo eliminar la cuenta." }, { status: 500 });
+  }
+}

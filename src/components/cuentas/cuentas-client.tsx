@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { Building2, CircleDollarSign, CreditCard } from "lucide-react";
+import { Building2, CircleDollarSign, CreditCard, Edit2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,11 +48,23 @@ export function CuentasClient() {
     color: "",
     icon: ""
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const totalAvailable = useMemo(
     () => accounts.reduce((acc, account) => acc + account.balance, 0),
     [accounts]
   );
+  const isEditing = Boolean(editingId);
+  const resetForm = () => {
+    setForm({
+      name: "",
+      bank: "",
+      type: "DEBITO",
+      openingBalance: "",
+      color: "",
+      icon: ""
+    });
+  };
 
   async function loadAccounts() {
     try {
@@ -79,30 +91,26 @@ export function CuentasClient() {
     setError(null);
     setSuccess(null);
     try {
-      const response = await fetch("/api/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name,
-          bank: form.bank || null,
-          type: form.type,
-          openingBalance: form.openingBalance === "" ? undefined : Number(form.openingBalance),
-          color: form.color || undefined,
-          icon: form.icon || undefined
-        })
+      const response = await fetch(
+        editingId ? `/api/accounts/${editingId}` : "/api/accounts",
+        {
+          method: editingId ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: form.name,
+            bank: form.bank || null,
+            type: form.type,
+            openingBalance: form.openingBalance === "" ? undefined : Number(form.openingBalance),
+            color: form.color || undefined,
+            icon: form.icon || undefined
+          })
       });
       const body = (await response.json()) as AccountsPayload & { message?: string };
       if (!response.ok) throw new Error(body.message ?? "No se pudo crear la cuenta.");
       setAccounts(body.items);
-      setForm({
-        name: "",
-        bank: "",
-        type: "DEBITO",
-        openingBalance: "",
-        color: "",
-        icon: ""
-      });
-      setSuccess("Cuenta creada correctamente.");
+      resetForm();
+      setEditingId(null);
+      setSuccess(editingId ? "Cuenta actualizada correctamente." : "Cuenta creada correctamente.");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "No se pudo crear la cuenta.");
     } finally {
@@ -121,7 +129,9 @@ export function CuentasClient() {
       <Card className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Nueva cartera</p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-900">Agregar tarjeta o efectivo</h2>
+          <h2 className="mt-1 text-lg font-semibold text-slate-900">
+            {isEditing ? "Editar tarjeta o efectivo" : "Agregar tarjeta o efectivo"}
+          </h2>
         </div>
         <form className="grid gap-2.5 sm:grid-cols-2" onSubmit={handleCreate}>
           <Input
@@ -162,14 +172,27 @@ export function CuentasClient() {
             value={form.icon}
             onChange={(event) => setForm((current) => ({ ...current, icon: event.target.value }))}
           />
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
             <Button
               type="submit"
               disabled={saving || form.name.trim().length < 2}
               className="h-11 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500"
             >
-              {saving ? "Guardando..." : "Crear cartera"}
+              {saving ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear cartera"}
             </Button>
+            {isEditing ? (
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-11 rounded-2xl border border-slate-200 text-slate-700"
+                onClick={() => {
+                  setEditingId(null);
+                  resetForm();
+                }}
+              >
+                Cancelar edición
+              </Button>
+            ) : null}
           </div>
         </form>
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
@@ -210,6 +233,66 @@ export function CuentasClient() {
                 <p className={`text-base font-semibold ${account.balance >= 0 ? "text-emerald-600" : "text-fuchsia-600"}`}>
                   {formatCurrency(account.balance)}
                 </p>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs font-semibold border border-slate-200"
+                  onClick={() => {
+                    setEditingId(account.id);
+                    setForm({
+                      name: account.name,
+                      bank: account.bank,
+                      type: account.type,
+                      openingBalance: account.balance.toString(),
+                      color: account.color ?? "",
+                      icon: account.icon ?? ""
+                    });
+                    setSuccess(null);
+                    setError(null);
+                  }}
+                >
+                  <Edit2 className="mr-2 h-4 w-4" />
+                  Editar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs font-semibold text-rose-600"
+                  onClick={async () => {
+                    if (!window.confirm("¿Eliminar esta cuenta?")) return;
+                    setSaving(true);
+                    setError(null);
+                    try {
+                      const response = await fetch(`/api/accounts/${account.id}`, {
+                        method: "DELETE"
+                      });
+                      const body = (await response.json()) as AccountsPayload & { message?: string };
+                      if (!response.ok) throw new Error(body.message ?? "No se pudo eliminar.");
+                      setAccounts(body.items);
+                      setSuccess("Cuenta eliminada.");
+                      if (editingId === account.id) {
+                        setEditingId(null);
+                        setForm({
+                          name: "",
+                          bank: "",
+                          type: "DEBITO",
+                          openingBalance: "",
+                          color: "",
+                          icon: ""
+                        });
+                      }
+                    } catch (deleteError) {
+                      setError(deleteError instanceof Error ? deleteError.message : "No se pudo eliminar.");
+                    } finally {
+                      setSaving(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Eliminar
+                </Button>
               </div>
             </Card>
           );
