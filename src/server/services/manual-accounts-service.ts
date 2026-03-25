@@ -229,3 +229,46 @@ export async function updateManualAccount(input: {
 
   return prisma.account.findUnique({ where: { id: account.id } });
 }
+
+export async function resetAccountBaseTransaction(params: {
+  workspaceId: string;
+  accountId: string;
+  desiredBalance: number;
+}) {
+  const { workspaceId, accountId, desiredBalance } = params;
+  await prisma.transaction.deleteMany({
+    where: {
+      workspaceId,
+      accountId,
+      description: BASE_TRANSACTION_MARKER
+    }
+  });
+
+  const aggregate = await prisma.transaction.aggregate({
+    where: {
+      workspaceId,
+      accountId,
+      description: { not: BASE_TRANSACTION_MARKER }
+    },
+    _sum: { amount: true }
+  });
+
+  const net = toAmountNumber(aggregate._sum.amount ?? 0);
+  const delta = desiredBalance - net;
+  if (Math.abs(delta) < 0.01) return null;
+
+  const transactionType = delta >= 0 ? TransactionType.INGRESO : TransactionType.EGRESO;
+  return prisma.transaction.create({
+    data: {
+      workspaceId,
+      accountId,
+      amount: delta,
+      type: transactionType,
+      date: new Date(),
+      description: BASE_TRANSACTION_MARKER,
+      financialOrigin: FinancialOrigin.PERSONAL,
+      reviewStatus: "REVISADO"
+    }
+  });
+}
+import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";

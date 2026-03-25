@@ -33,6 +33,16 @@ type AccountItem = {
   icon: string | null;
 };
 
+type AccountFormState = {
+  name: string;
+  bank: string;
+  type: AccountItem["type"];
+  openingBalance: string;
+  currentBalance: string;
+  color: string;
+  icon: string;
+};
+
 type AccountsPayload = {
   items: AccountItem[];
 };
@@ -115,6 +125,7 @@ function AccountUpsertModal({
     bank: string;
     type: AccountItem["type"];
     openingBalance: string;
+    currentBalance: string;
     color: string;
     icon: string;
   };
@@ -197,7 +208,18 @@ function AccountUpsertModal({
                     onChange={(event) => onChange({ openingBalance: event.target.value })}
                   />
                 </label>
-              ) : null}
+              ) : (
+                <label className="space-y-2 sm:col-span-2">
+                  <span className={fieldLabelClass}>Saldo actual</span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={form.currentBalance}
+                    onChange={(event) => onChange({ currentBalance: event.target.value })}
+                  />
+                </label>
+              )}
             </div>
           </SurfaceCard>
 
@@ -343,11 +365,12 @@ export function CuentasClient() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<AccountFormState>({
     name: "",
     bank: "",
     type: "DEBITO" as AccountItem["type"],
     openingBalance: "",
+    currentBalance: "",
     color: "",
     icon: ""
   });
@@ -374,6 +397,7 @@ export function CuentasClient() {
       bank: "",
       type: "DEBITO",
       openingBalance: "",
+      currentBalance: "",
       color: "",
       icon: ""
     });
@@ -394,6 +418,7 @@ export function CuentasClient() {
       bank: account.bank ?? "",
       type: account.type,
       openingBalance: "",
+      currentBalance: account.balance.toString(),
       color: account.color ?? "",
       icon: account.icon ?? ""
     });
@@ -435,6 +460,8 @@ export function CuentasClient() {
     try {
       const openingBalance =
         editingId || form.openingBalance === "" ? undefined : Number(form.openingBalance);
+      const currentBalance =
+        editingId && form.currentBalance !== "" ? Number(form.currentBalance) : undefined;
       const response = await fetch(
         editingId ? `/api/accounts/${editingId}` : "/api/accounts",
         {
@@ -445,6 +472,7 @@ export function CuentasClient() {
             bank: form.bank || null,
             type: form.type,
             openingBalance,
+            currentBalance,
             color: form.color || undefined,
             icon: form.icon || undefined
           })

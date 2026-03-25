@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import {
   listManualAccountsWithBalances,
+  resetAccountBaseTransaction,
   updateManualAccount
 } from "@/server/services/manual-accounts-service";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
@@ -14,7 +15,8 @@ const updateAccountSchema = z.object({
   type: z.enum(["CREDITO", "DEBITO", "EFECTIVO"]).optional(),
   isActive: z.boolean().optional(),
   color: z.string().optional(),
-  icon: z.string().optional()
+  icon: z.string().optional(),
+  currentBalance: z.number().optional()
 });
 
 export async function PATCH(
@@ -42,6 +44,14 @@ export async function PATCH(
 
     if (!updated) {
       return NextResponse.json({ message: "Cuenta no encontrada." }, { status: 404 });
+    }
+
+    if (payload.currentBalance !== undefined) {
+      await resetAccountBaseTransaction({
+        workspaceId: context.workspaceId,
+        accountId: params.accountId,
+        desiredBalance: payload.currentBalance
+      });
     }
 
     const items = await listManualAccountsWithBalances(context.workspaceId);
