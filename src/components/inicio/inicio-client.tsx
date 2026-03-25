@@ -64,6 +64,10 @@ export function InicioClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openModal, setOpenModal] = useState(false);
+  const todayKey = keyByDate(new Date());
+  const [selectedDate, setSelectedDate] = useState(todayKey);
+  const [calculatorInput, setCalculatorInput] = useState("");
+  const [calculatorResult, setCalculatorResult] = useState<number | null>(null);
 
   const monthGrid = useMemo(() => buildMonthGrid(new Date()), []);
   const movementDateKeys = useMemo(
@@ -111,7 +115,53 @@ export function InicioClient() {
   const expenses = Math.abs(snapshot?.kpis.expenses ?? 0);
   const flow = (snapshot?.kpis.netFlow ?? 0) + accountsTotal;
 
-  const todayKey = keyByDate(new Date());
+  const selectedDayAmount = useMemo(() => {
+    const dailyMovements = movements.filter((item) => item.date.startsWith(selectedDate));
+    return dailyMovements.reduce((sum, item) => sum + item.amount, 0);
+  }, [movements, selectedDate]);
+  const selectedDayTotal = accountsTotal + selectedDayAmount;
+  const selectedDateLabel = useMemo(() => {
+    const parsed = new Date(selectedDate);
+    return parsed.toLocaleDateString("es-CL", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric"
+    });
+  }, [selectedDate]);
+
+  const appendCalculatorSymbol = (symbol: string) => {
+    setCalculatorInput((prev) => `${prev}${symbol}`);
+  };
+
+  const evaluateExpression = (value: string) => {
+    if (!value.trim()) return null;
+    const sanitized = value.replace(/[^0-9.+\-*/() ]/g, "");
+    try {
+      // eslint-disable-next-line no-new-func
+      const result = new Function(`return ${sanitized}`)();
+      return typeof result === "number" && Number.isFinite(result) ? result : null;
+    } catch (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      error
+    ) {
+      return null;
+    }
+  };
+
+  const handleCalculatorEquals = () => {
+    const result = evaluateExpression(calculatorInput);
+    setCalculatorResult(result);
+  };
+
+  const handleCalculatorClear = () => {
+    setCalculatorInput("");
+    setCalculatorResult(null);
+  };
+
+  const handleCalculatorDelete = () => {
+    setCalculatorInput((prev) => prev.slice(0, -1));
+  };
 
   return (
     <div className="space-y-4 pb-20 sm:space-y-5">
@@ -183,43 +233,123 @@ export function InicioClient() {
         </Card>
       </section>
 
-      <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-slate-900">Calendario mensual</h3>
-          <span className="text-xs text-slate-500">
-            {new Date(monthGrid.year, monthGrid.month, 1).toLocaleString("es-CL", { month: "long", year: "numeric" })}
-          </span>
-        </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
-          {["L", "M", "M", "J", "V", "S", "D"].map((label) => (
-            <span key={label}>{label}</span>
-          ))}
-        </div>
-        <div className="mt-2 grid grid-cols-7 gap-1.5">
-          {monthGrid.cells.map((day, index) => {
-            if (!day) {
-              return <span key={`empty-${index}`} className="h-9 rounded-xl bg-slate-50" />;
-            }
-            const dateKey = `${monthGrid.year}-${`${monthGrid.month + 1}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
-            const isToday = dateKey === todayKey;
-            const hasMovement = movementDateKeys.has(dateKey);
-            return (
-              <div
-                key={dateKey}
-                className={`flex h-9 items-center justify-center rounded-xl text-xs font-medium ${
-                  isToday
-                    ? "bg-violet-600 text-white"
-                    : hasMovement
-                      ? "bg-fuchsia-50 text-fuchsia-700"
-                      : "bg-slate-50 text-slate-500"
-                }`}
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+        <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="mb-2 flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calendario mensual</p>
+              <p className="text-lg font-semibold text-slate-900">
+                {new Date(monthGrid.year, monthGrid.month, 1).toLocaleString("es-CL", {
+                  month: "long",
+                  year: "numeric"
+                })}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Saldo del día</p>
+              <p className="text-lg font-semibold text-emerald-600">{formatCurrency(selectedDayTotal)}</p>
+              <p className="text-[11px] text-slate-400">{selectedDateLabel}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
+            {["L", "M", "M", "J", "V", "S", "D"].map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+          <div className="mt-2 grid grid-cols-7 gap-1.5">
+            {monthGrid.cells.map((day, index) => {
+              if (!day) {
+                return <span key={`empty-${index}`} className="h-9 rounded-xl bg-slate-50" />;
+              }
+              const dateKey = `${monthGrid.year}-${`${monthGrid.month + 1}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
+              const isToday = dateKey === todayKey;
+              const isSelected = dateKey === selectedDate;
+              const hasMovement = movementDateKeys.has(dateKey);
+              return (
+                <button
+                  key={dateKey}
+                  type="button"
+                  onClick={() => setSelectedDate(dateKey)}
+                  className={`flex h-9 items-center justify-center rounded-xl text-xs font-medium transition ${
+                    isSelected
+                      ? "bg-emerald-600/90 text-white"
+                      : isToday
+                        ? "bg-violet-600 text-white"
+                        : hasMovement
+                          ? "bg-fuchsia-50 text-fuchsia-700"
+                          : "bg-slate-50 text-slate-500"
+                  }`}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+        <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calculadora dinámica</p>
+            <p className="text-lg font-semibold text-slate-900">Haz cuentas sin salir del dashboard</p>
+          </div>
+          <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3 text-right text-2xl font-semibold text-slate-900">
+            {calculatorInput || "0"}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Resultado: {calculatorResult !== null ? calculatorResult.toLocaleString("es-CL", { maximumFractionDigits: 2 }) : "-"}
+          </p>
+          <div className="mt-4 grid grid-cols-4 gap-2 text-sm">
+            {[
+              "7",
+              "8",
+              "9",
+              "/",
+              "4",
+              "5",
+              "6",
+              "*",
+              "1",
+              "2",
+              "3",
+              "-",
+              "0",
+              ".",
+              "⌫",
+              "+"
+            ].map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  if (key === "⌫") {
+                    handleCalculatorDelete();
+                    return;
+                  }
+                  appendCalculatorSymbol(key);
+                }}
+                className="rounded-2xl border border-slate-200 bg-white/60 py-3 font-semibold text-slate-900 transition hover:scale-[1.01]"
               >
-                {day}
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+                {key}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={handleCalculatorClear}
+              className="flex-1 rounded-2xl border border-rose-200 bg-rose-50/70 py-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-100"
+            >
+              Limpiar
+            </button>
+            <button
+              type="button"
+              onClick={handleCalculatorEquals}
+              className="flex-1 rounded-2xl border border-emerald-300 bg-emerald-50/70 py-3 text-sm font-semibold text-emerald-600 transition hover:bg-emerald-100"
+            >
+              =
+            </button>
+          </div>
+        </Card>
+      </section>
 
       <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
         <div className="mb-3 flex items-center justify-between">
