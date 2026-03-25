@@ -19,11 +19,13 @@ import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
 import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-panel";
 import { useDashboardHeader } from "@/components/layout/dashboard-header-context";
+import { DebtorsWidget, type DebtsSnapshot } from "@/components/inicio/widgets/debtors-widget";
 
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
 
 type InicioWidgetId =
+  | "debtors"
   | "cashflow"
   | "financialHealth"
   | "calendar"
@@ -34,6 +36,7 @@ type InicioWidgetId =
 type WidgetSize = "compact" | "standard" | "featured";
 
 const defaultWidgetOrder: InicioWidgetId[] = [
+  "debtors",
   "cashflow",
   "financialHealth",
   "calendar",
@@ -46,6 +49,7 @@ const widgetMeta: Record<
   InicioWidgetId,
   { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
 > = {
+  debtors: { label: "Mis deudores", description: "Personas que te deben y cuotas del mes.", category: "Esenciales" },
   cashflow: { label: "Flujo del mes", description: "Ingresos vs gastos del período.", category: "Esenciales" },
   financialHealth: { label: "Salud financiera", description: "Semáforo, alertas y foco del mes.", category: "Inteligencia" },
   calendar: { label: "Calendario", description: "Selecciona días y revisa tu saldo estimado.", category: "Control" },
@@ -121,10 +125,14 @@ export function InicioClient() {
   const [financialHealth, setFinancialHealth] = useState<FinancialHealthResponse | null>(null);
   const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
   const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
+  const [debtsSnapshot, setDebtsSnapshot] = useState<DebtsSnapshot | null>(null);
+  const [debtsLoading, setDebtsLoading] = useState(false);
+  const [debtsError, setDebtsError] = useState<string | null>(null);
   const [widgetPanelOpen, setWidgetPanelOpen] = useState(false);
   const [widgetOrder, setWidgetOrder] = useState<InicioWidgetId[]>(defaultWidgetOrder);
   const [hiddenWidgets, setHiddenWidgets] = useState<InicioWidgetId[]>(defaultWidgetOrder);
   const [widgetSizes, setWidgetSizes] = useState<Record<InicioWidgetId, WidgetSize>>({
+    debtors: "standard",
     cashflow: "compact",
     financialHealth: "standard",
     calendar: "featured",
@@ -208,6 +216,38 @@ export function InicioClient() {
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    const activeWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
+    if (!activeWidgets.includes("debtors")) return;
+    let aborted = false;
+
+    async function loadDebts() {
+      try {
+        setDebtsLoading(true);
+        setDebtsError(null);
+        const response = await fetch("/api/debts", { cache: "no-store" });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as { message?: string };
+          throw new Error(payload.message ?? "No se pudieron cargar los deudores.");
+        }
+        const payload = (await response.json()) as DebtsSnapshot;
+        if (!aborted) setDebtsSnapshot(payload);
+      } catch (loadError) {
+        if (!aborted) {
+          setDebtsSnapshot(null);
+          setDebtsError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los deudores.");
+        }
+      } finally {
+        if (!aborted) setDebtsLoading(false);
+      }
+    }
+
+    void loadDebts();
+    return () => {
+      aborted = true;
+    };
+  }, [hiddenWidgets, widgetOrder]);
 
   const incomes = Math.abs(snapshot?.kpis.incomes ?? 0);
   const expenses = Math.abs(snapshot?.kpis.expenses ?? 0);
@@ -320,10 +360,14 @@ export function InicioClient() {
       };
 
       if (parsed.order?.length) {
-        setWidgetOrder(parsed.order.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id)));
+        const filtered = parsed.order.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id));
+        const merged = [...filtered, ...defaultWidgetOrder.filter((id) => !filtered.includes(id))];
+        setWidgetOrder(merged);
       }
       if (parsed.hidden?.length) {
-        setHiddenWidgets(parsed.hidden.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id)));
+        const filteredHidden = parsed.hidden.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id));
+        const mergedHidden = [...filteredHidden, ...defaultWidgetOrder.filter((id) => !filteredHidden.includes(id))];
+        setHiddenWidgets(mergedHidden);
       }
       const sizes = parsed.sizes;
       if (sizes) {
@@ -658,14 +702,32 @@ export function InicioClient() {
           />
         ) : null}
 
-        {visibleWidgets.length > 0 ? (
-          <SurfaceCard variant="soft" padding="sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Widgets activos</p>
-            <pre className="mt-2 overflow-x-auto rounded-2xl bg-slate-50 p-3 text-xs text-slate-700">
-              {JSON.stringify({ marker: "INICIO_WIDGETS_ONLY_V1", visibleWidgets }, null, 2)}
-            </pre>
-          </SurfaceCard>
-        ) : null}
+        {visibleWidgets.map((id) => {
+          const size = widgetSizes[id] ?? "standard";
+
+          if (id === "debtors") {
+            return (
+              <DebtorsWidget
+                key={id}
+                data={debtsSnapshot}
+                loading={debtsLoading}
+                error={debtsError}
+                size={size}
+                onViewAll={() => (window.location.href = "/pendientes")}
+              />
+            );
+          }
+
+          return (
+            <SurfaceCard key={id} variant="soft" padding="sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                {widgetMeta[id].label}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">Widget en preparación</p>
+              <p className="mt-1 text-sm text-slate-600">{widgetMeta[id].description}</p>
+            </SurfaceCard>
+          );
+        })}
       </div>
 
       <NewTransactionModal
