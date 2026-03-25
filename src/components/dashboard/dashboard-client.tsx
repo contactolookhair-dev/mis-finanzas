@@ -22,6 +22,7 @@ import {
   createMonthlyReportHistoryEntry,
   downloadMonthlyReportPdf
 } from "@/shared/lib/monthly-report";
+import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import type { DashboardFilters, DashboardSnapshot } from "@/shared/types/dashboard";
@@ -51,6 +52,34 @@ type AccountItem = {
   type: string;
   balance: number;
 };
+
+type WidgetId =
+  | "hero"
+  | "quickActions"
+  | "summary"
+  | "health"
+  | "accounts"
+  | "goals"
+  | "trend"
+  | "recent"
+  | "reports"
+  | "insights"
+  | "filters";
+
+const DASHBOARD_WIDGET_STORAGE = "mis-finanzas.dashboard.widgets.v1";
+const defaultWidgetOrder: WidgetId[] = [
+  "hero",
+  "quickActions",
+  "summary",
+  "health",
+  "accounts",
+  "goals",
+  "trend",
+  "recent",
+  "reports",
+  "insights",
+  "filters"
+];
 
 const accountTypeMap: Record<
   string,
@@ -522,6 +551,9 @@ export function DashboardClient() {
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
   const initializedRef = useRef(false);
   const skipNextFilteredFetchRef = useRef(false);
+  const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(defaultWidgetOrder);
+  const [hiddenWidgets, setHiddenWidgets] = useState<WidgetId[]>([]);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   function openQuickTransaction(kind: "GASTO" | "INGRESO") {
     try {
@@ -630,6 +662,29 @@ export function DashboardClient() {
   }, []);
 
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(DASHBOARD_WIDGET_STORAGE);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { order?: WidgetId[]; hidden?: WidgetId[] };
+      if (parsed.order?.length) setWidgetOrder(parsed.order.filter((id): id is WidgetId => defaultWidgetOrder.includes(id)));
+      if (parsed.hidden) setHiddenWidgets(parsed.hidden.filter((id): id is WidgetId => defaultWidgetOrder.includes(id)));
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        DASHBOARD_WIDGET_STORAGE,
+        JSON.stringify({ order: widgetOrder, hidden: hiddenWidgets })
+      );
+    } catch {
+      // noop
+    }
+  }, [widgetOrder, hiddenWidgets]);
+
+  useEffect(() => {
     if (!initializedRef.current || !filters) return;
     if (skipNextFilteredFetchRef.current) {
       skipNextFilteredFetchRef.current = false;
@@ -705,6 +760,131 @@ export function DashboardClient() {
     [accounts]
   );
 
+  const widgetElements: Partial<Record<WidgetId, JSX.Element | null>> = {
+    hero:
+      snapshot && kpis ? (
+        <DashboardHero
+          snapshot={snapshot}
+          filters={filters ?? getDefaultRange()}
+          displayBalance={accountsTotal}
+          financialHealth={financialHealth}
+          onMonthlyReport={handleMonthlyReportExport}
+          monthlyReportLoading={monthlyReportLoading}
+          onRefresh={() => setRefreshKey((value) => value + 1)}
+          loading={loading}
+        />
+      ) : null,
+    quickActions: snapshot ? (
+      <DashboardQuickActions
+        onExpense={() => openQuickTransaction("GASTO")}
+        onIncome={() => openQuickTransaction("INGRESO")}
+        onDebt={() => router.push("/pendientes")}
+        onReports={handleMonthlyReportExport}
+      />
+    ) : null,
+    summary:
+      snapshot && kpis ? (
+        <section className="space-y-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+              Resumen financiero
+            </p>
+            <h2 className="text-lg font-semibold text-slate-900">Lo importante del mes</h2>
+          </div>
+          <SummaryGrid kpis={kpis} snapshot={snapshot} />
+        </section>
+      ) : null,
+    health: snapshot ? (
+      <section className="space-y-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+            Salud financiera
+          </p>
+          <h2 className="text-lg font-semibold text-slate-900">Tu semáforo y foco</h2>
+        </div>
+        <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
+        {financialHealthError ? (
+          <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
+            {financialHealthError}
+          </Card>
+        ) : null}
+      </section>
+    ) : null,
+    accounts: snapshot ? (
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+              Tus cuentas
+            </p>
+            <h2 className="text-lg font-semibold text-slate-900">Dónde está tu dinero</h2>
+          </div>
+          <p className="text-sm font-semibold text-slate-500">{accounts.length} cuentas</p>
+        </div>
+        <AccountList accounts={accounts} loading={accountsLoading} />
+      </section>
+    ) : null,
+    goals:
+      snapshot && financialHealth ? (
+        <GoalsCard snapshot={snapshot} financialHealth={financialHealth} />
+      ) : snapshot ? (
+        <GoalsCard snapshot={snapshot} financialHealth={null} />
+      ) : null,
+    trend: snapshot ? (
+      <section className="grid gap-3.5 lg:grid-cols-[1.45fr_0.55fr] lg:gap-4">
+        <LineChartCard
+          title="Tendencia mensual"
+          description="6 meses para seguir ingresos, egresos y flujo neto."
+          data={snapshot.charts.trend}
+        />
+        <ComparisonSummary snapshot={snapshot} />
+      </section>
+    ) : null,
+    recent: snapshot ? <RecentTransactionsList items={snapshot.recentTransactions} /> : null,
+    reports: snapshot ? (
+      <section className="space-y-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">Reportes</p>
+          <h2 className="text-lg font-semibold text-slate-900">Exporta cuando lo necesites</h2>
+        </div>
+        <ExportActions filters={filters ?? getDefaultRange()} defaultReportType="dashboard_summary" />
+      </section>
+    ) : null,
+    insights: snapshot ? (
+      <section className="space-y-4">
+        <InsightList insights={snapshot.insights} />
+      </section>
+    ) : null,
+    filters: snapshot ? (
+      <FiltersRow
+        filters={filters ?? getDefaultRange()}
+        onChange={(patch) => setFilters((current) => ({ ...(current ?? {}), ...patch }))}
+        onReset={() => setFilters(getDefaultRange())}
+        snapshot={snapshot}
+      />
+    ) : null
+  };
+
+  const visibleWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
+
+  const moveWidget = (id: WidgetId, direction: "up" | "down") => {
+    setWidgetOrder((current) => {
+      const idx = current.indexOf(id);
+      if (idx === -1) return current;
+      const target = direction === "up" ? Math.max(0, idx - 1) : Math.min(current.length - 1, idx + 1);
+      const next = [...current];
+      const [item] = next.splice(idx, 1);
+      next.splice(target, 0, item);
+      return next;
+    });
+  };
+
+  const toggleWidget = (id: WidgetId) => {
+    setHiddenWidgets((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    );
+  };
+
   return (
     <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
       {error ? (
@@ -719,103 +899,99 @@ export function DashboardClient() {
         <SkeletonCard lines={4} />
       ) : null}
 
-      {snapshot && kpis ? (
-        <>
-          <DashboardHero
-            snapshot={snapshot}
-            filters={filters ?? getDefaultRange()}
-            displayBalance={accountsTotal}
-            financialHealth={financialHealth}
-            onMonthlyReport={handleMonthlyReportExport}
-            monthlyReportLoading={monthlyReportLoading}
-            onRefresh={() => setRefreshKey((value) => value + 1)}
-            loading={loading}
-          />
-
-          {monthlyReportError ? (
-            <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
-              {monthlyReportError}
-            </Card>
-          ) : null}
-
-          <DashboardQuickActions
-            onExpense={() => openQuickTransaction("GASTO")}
-            onIncome={() => openQuickTransaction("INGRESO")}
-            onDebt={() => router.push("/pendientes")}
-            onReports={handleMonthlyReportExport}
-          />
-
-          <section className="space-y-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
-                Resumen financiero
-              </p>
-              <h2 className="text-lg font-semibold text-slate-900">Lo importante del mes</h2>
-            </div>
-            <SummaryGrid kpis={kpis} snapshot={snapshot} />
-          </section>
-
-          <section className="space-y-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
-                Salud financiera
-              </p>
-              <h2 className="text-lg font-semibold text-slate-900">Tu semáforo y foco</h2>
-            </div>
-            <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
-            {financialHealthError ? (
-              <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
-                {financialHealthError}
-              </Card>
-            ) : null}
-          </section>
-
-          <section className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
-                  Tus cuentas
-                </p>
-                <h2 className="text-lg font-semibold text-slate-900">Dónde está tu dinero</h2>
-              </div>
-              <p className="text-sm font-semibold text-slate-500">{accounts.length} cuentas</p>
-            </div>
-            <AccountList accounts={accounts} loading={accountsLoading} />
-          </section>
-
-          <GoalsCard snapshot={snapshot} financialHealth={financialHealth} />
-
-          <section className="grid gap-3.5 lg:grid-cols-[1.45fr_0.55fr] lg:gap-4">
-            <LineChartCard
-              title="Tendencia mensual"
-              description="6 meses para seguir ingresos, egresos y flujo neto."
-              data={snapshot.charts.trend}
-            />
-            <ComparisonSummary snapshot={snapshot} />
-          </section>
-
-          <RecentTransactionsList items={snapshot.recentTransactions} />
-
-          <section className="space-y-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">Reportes</p>
-              <h2 className="text-lg font-semibold text-slate-900">Exporta cuando lo necesites</h2>
-            </div>
-            <ExportActions filters={filters ?? getDefaultRange()} defaultReportType="dashboard_summary" />
-          </section>
-
-          <section className="space-y-4">
-            <InsightList insights={snapshot.insights} />
-          </section>
-
-          <FiltersRow
-            filters={filters ?? getDefaultRange()}
-            onChange={(patch) => setFilters((current) => ({ ...(current ?? {}), ...patch }))}
-            onReset={() => setFilters(getDefaultRange())}
-            snapshot={snapshot}
-          />
-        </>
+      {snapshot ? (
+        <Card className="flex items-start justify-between gap-3 rounded-[20px] border border-slate-200 bg-white/92 p-3 sm:p-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
+              Personalizar dashboard
+            </p>
+            <p className="text-sm text-slate-600">Elige qué widgets ver y en qué orden.</p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-9 rounded-full px-3 text-xs font-semibold"
+            onClick={() => setCustomizeOpen((v) => !v)}
+          >
+            {customizeOpen ? "Cerrar" : "Agregar widgets"}
+          </Button>
+        </Card>
       ) : null}
+
+      {customizeOpen ? (
+        <Card className="space-y-3 rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-900">Widgets disponibles</h3>
+            <span className="text-[11px] text-slate-500">Ordena y muestra solo lo que necesitas</span>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {defaultWidgetOrder.map((id) => {
+              const isHidden = hiddenWidgets.includes(id);
+              const labelMap: Record<WidgetId, string> = {
+                hero: "Saldo total",
+                quickActions: "Acciones rápidas",
+                summary: "Resumen financiero",
+                health: "Semáforo financiero",
+                accounts: "Cuentas",
+                goals: "Metas de ahorro",
+                trend: "Tendencia mensual",
+                recent: "Movimientos recientes",
+                reports: "Reportes",
+                insights: "Alertas / Insights",
+                filters: "Filtros"
+              };
+              return (
+                <div
+                  key={id}
+                  className={cn(
+                    "flex items-center justify-between rounded-[16px] border px-3 py-2 text-sm",
+                    isHidden ? "border-slate-200 bg-slate-50/80 text-slate-500" : "border-slate-200 bg-white text-slate-900"
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleWidget(id)}
+                    className="flex-1 text-left"
+                  >
+                    {labelMap[id]}
+                    <span className="ml-2 text-[11px] text-slate-500">{isHidden ? "(oculto)" : ""}</span>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 px-0 text-slate-500"
+                      onClick={() => moveWidget(id, "up")}
+                      aria-label="Subir"
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 px-0 text-slate-500"
+                      onClick={() => moveWidget(id, "down")}
+                      aria-label="Bajar"
+                    >
+                      ↓
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
+
+      {snapshot
+        ? visibleWidgets.map((id) =>
+            widgetElements[id] ? (
+              <div key={id} className="animate-fade-up space-y-3">
+                {widgetElements[id]}
+              </div>
+            ) : null
+          )
+        : null}
 
       <Button
         variant="secondary"
