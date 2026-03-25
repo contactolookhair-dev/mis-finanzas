@@ -75,7 +75,17 @@ export function useTransactionsWithFilters() {
   const [rows, setRows] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [accounts, setAccounts] = useState<
+    {
+      id: string;
+      name: string;
+      bank: string;
+      type: "CREDITO" | "DEBITO" | "EFECTIVO";
+      color: string | null;
+      icon: string | null;
+      appearanceMode: "auto" | "manual";
+    }[]
+  >([]);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
 
   const query = useMemo(() => buildTransactionQuery(filters), [filters]);
@@ -116,7 +126,17 @@ export function useTransactionsWithFilters() {
       try {
         const response = await fetch("/api/accounts", { cache: "no-store" });
         if (!response.ok) throw new Error();
-        const payload = (await response.json()) as { items: { id: string; name: string }[] };
+        const payload = (await response.json()) as {
+          items: {
+            id: string;
+            name: string;
+            bank: string;
+            type: "CREDITO" | "DEBITO" | "EFECTIVO";
+            color: string | null;
+            icon: string | null;
+            appearanceMode: "auto" | "manual";
+          }[];
+        };
         if (active) setAccounts(payload.items);
       } catch {
         if (active) setAccounts([]);

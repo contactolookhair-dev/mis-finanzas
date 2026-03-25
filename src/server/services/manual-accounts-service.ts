@@ -7,6 +7,7 @@ const ACCOUNT_META_KEY = "manualAccountMeta";
 type AccountMeta = {
   color?: string;
   icon?: string;
+  appearanceMode?: "auto" | "manual";
 };
 
 type AccountMetaMap = Record<string, AccountMeta>;
@@ -19,9 +20,16 @@ function readAccountMeta(raw: unknown): AccountMetaMap {
   Object.entries(map).forEach(([accountId, value]) => {
     if (!value || typeof value !== "object") return;
     const candidate = value as Record<string, unknown>;
+    const appearanceMode =
+      candidate.appearanceMode === "auto"
+        ? "auto"
+        : candidate.appearanceMode === "manual"
+          ? "manual"
+          : undefined;
     parsed[accountId] = {
       color: typeof candidate.color === "string" ? candidate.color : undefined,
-      icon: typeof candidate.icon === "string" ? candidate.icon : undefined
+      icon: typeof candidate.icon === "string" ? candidate.icon : undefined,
+      appearanceMode
     };
   });
 
@@ -144,7 +152,8 @@ export async function listManualAccountsWithBalances(workspaceId: string) {
           : "EFECTIVO",
     balance: byAccountId.get(account.id) ?? 0,
     color: metaMap[account.id]?.color ?? null,
-    icon: metaMap[account.id]?.icon ?? null
+    icon: metaMap[account.id]?.icon ?? null,
+    appearanceMode: metaMap[account.id]?.appearanceMode ?? "manual"
   }));
 }
 
@@ -156,6 +165,7 @@ export async function createManualAccount(input: {
   openingBalance?: number;
   color?: string;
   icon?: string;
+  appearanceMode?: "auto" | "manual";
 }) {
   const created = await prisma.account.create({
     data: {
@@ -185,11 +195,12 @@ export async function createManualAccount(input: {
     });
   }
 
-  if (input.color || input.icon) {
-    await upsertAccountMeta(input.workspaceId, created.id, {
-      color: input.color,
-      icon: input.icon
-    });
+  const metaPatch: AccountMeta = {};
+  if (input.color) metaPatch.color = input.color;
+  if (input.icon) metaPatch.icon = input.icon;
+  if (input.appearanceMode) metaPatch.appearanceMode = input.appearanceMode;
+  if (Object.keys(metaPatch).length) {
+    await upsertAccountMeta(input.workspaceId, created.id, metaPatch);
   }
 
   return created;
@@ -204,6 +215,7 @@ export async function updateManualAccount(input: {
   isActive?: boolean;
   color?: string;
   icon?: string;
+  appearanceMode?: "auto" | "manual";
 }) {
   const account = await prisma.account.findFirst({
     where: { id: input.accountId, workspaceId: input.workspaceId }
@@ -220,11 +232,12 @@ export async function updateManualAccount(input: {
     }
   });
 
-  if (input.color !== undefined || input.icon !== undefined) {
-    await upsertAccountMeta(input.workspaceId, account.id, {
-      color: input.color,
-      icon: input.icon
-    });
+  const metaPatch: AccountMeta = {};
+  if (input.color !== undefined) metaPatch.color = input.color;
+  if (input.icon !== undefined) metaPatch.icon = input.icon;
+  if (input.appearanceMode !== undefined) metaPatch.appearanceMode = input.appearanceMode;
+  if (Object.keys(metaPatch).length) {
+    await upsertAccountMeta(input.workspaceId, account.id, metaPatch);
   }
 
   return prisma.account.findUnique({ where: { id: account.id } });

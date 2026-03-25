@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
@@ -13,6 +13,7 @@ import { StatPill } from "@/components/ui/stat-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
@@ -69,6 +70,7 @@ type AccountItem = {
   type: "CREDITO" | "DEBITO" | "EFECTIVO";
   color: string | null;
   icon: string | null;
+  appearanceMode: "auto" | "manual";
 };
 
 type AccountsPayload = {
@@ -150,40 +152,7 @@ export function InicioClient() {
     [movements]
   );
 
-  async function loadData() {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const [dashboardResponse, accountsResponse, transactionsResponse] = await Promise.all([
-        fetch("/api/dashboard", { cache: "no-store" }),
-        fetch("/api/accounts", { cache: "no-store" }),
-        fetch("/api/transactions?take=12", { cache: "no-store" })
-      ]);
-
-      if (!dashboardResponse.ok || !accountsResponse.ok || !transactionsResponse.ok) {
-        throw new Error("No se pudo cargar la vista de inicio.");
-      }
-
-      const dashboardPayload = (await dashboardResponse.json()) as DashboardSnapshot;
-      const accountsPayload = (await accountsResponse.json()) as AccountsPayload;
-      const transactionsPayload = (await transactionsResponse.json()) as TransactionsPayload;
-
-      setSnapshot(dashboardPayload);
-      setAccountsTotal(
-        (accountsPayload.items ?? []).reduce((acc, account) => acc + account.balance, 0)
-      );
-      setAccounts(accountsPayload.items ?? []);
-      setMovements(transactionsPayload.items ?? []);
-      void loadFinancialHealth(dashboardPayload.filters);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Error cargando inicio.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadFinancialHealth(filters: DashboardSnapshot["filters"]) {
+  const loadFinancialHealth = useCallback(async (filters: DashboardSnapshot["filters"]) => {
     try {
       setFinancialHealthLoading(true);
       setFinancialHealthError(null);
@@ -214,11 +183,44 @@ export function InicioClient() {
     } finally {
       setFinancialHealthLoading(false);
     }
-  }
+  }, []);
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [dashboardResponse, accountsResponse, transactionsResponse] = await Promise.all([
+        fetch("/api/dashboard", { cache: "no-store" }),
+        fetch("/api/accounts", { cache: "no-store" }),
+        fetch("/api/transactions?take=12", { cache: "no-store" })
+      ]);
+
+      if (!dashboardResponse.ok || !accountsResponse.ok || !transactionsResponse.ok) {
+        throw new Error("No se pudo cargar la vista de inicio.");
+      }
+
+      const dashboardPayload = (await dashboardResponse.json()) as DashboardSnapshot;
+      const accountsPayload = (await accountsResponse.json()) as AccountsPayload;
+      const transactionsPayload = (await transactionsResponse.json()) as TransactionsPayload;
+
+      setSnapshot(dashboardPayload);
+      setAccountsTotal(
+        (accountsPayload.items ?? []).reduce((acc, account) => acc + account.balance, 0)
+      );
+      setAccounts(accountsPayload.items ?? []);
+      setMovements(transactionsPayload.items ?? []);
+      void loadFinancialHealth(dashboardPayload.filters);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Error cargando inicio.");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadFinancialHealth]);
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
 
   useEffect(() => {
     const activeWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
@@ -315,6 +317,56 @@ export function InicioClient() {
     setWidgetSizes((current) => ({ ...current, [id]: size }));
   };
 
+  const renderAccountCard = (account: AccountItem) => {
+    const appearance = resolveAccountAppearance(account);
+
+    return (
+      <SurfaceCard
+        key={account.id}
+        variant="soft"
+        className="aspect-[1/1] min-h-[164px] overflow-hidden bg-white p-3.5 sm:aspect-auto sm:min-h-[180px] sm:p-5"
+      >
+        <div className="flex h-full flex-col">
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="min-w-0 space-y-1">
+              <p className="truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                {appearance.bankLabel || account.type}
+              </p>
+            </div>
+            <span
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl border text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]"
+              style={{
+                borderColor: appearance.accentColor,
+                backgroundColor: appearance.accentBackground
+              }}
+            >
+              <span className="text-[13px]" style={{ color: appearance.accentColor }}>
+                {appearance.glyph}
+              </span>
+            </span>
+          </div>
+          <p className="mt-2 line-clamp-2 min-h-[2.4rem] text-[13px] font-semibold leading-[1.22rem] tracking-[-0.02em] text-slate-900">
+            {account.name}
+          </p>
+          <div className="flex flex-1 items-center">
+            <div className="space-y-1">
+              <p className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
+                Saldo disponible
+              </p>
+              <p
+                className={`text-[clamp(1.4rem,4.6vw,1.85rem)] font-semibold leading-none tracking-[-0.04em] ${
+                  account.balance >= 0 ? "text-emerald-600" : "text-rose-600"
+                }`}
+              >
+                {formatCurrency(account.balance)}
+              </p>
+            </div>
+          </div>
+        </div>
+      </SurfaceCard>
+    );
+  };
+
   useEffect(() => {
     if (loading || !snapshot) {
       setMetric(null);
@@ -329,7 +381,7 @@ export function InicioClient() {
     });
 
     return () => setMetric(null);
-  }, [availableTotal, loading, setMetric, totalAvailableTone]);
+  }, [availableTotal, loading, setMetric, totalAvailableTone, snapshot]);
 
   const appendCalculatorSymbol = (symbol: string) => {
     setCalculatorInput((prev) => `${prev}${symbol}`);
@@ -433,10 +485,7 @@ export function InicioClient() {
       // eslint-disable-next-line no-new-func
       const result = new Function(`return ${sanitized}`)();
       return typeof result === "number" && Number.isFinite(result) ? result : null;
-    } catch (
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      error
-    ) {
+    } catch {
       return null;
     }
   };
@@ -525,43 +574,7 @@ export function InicioClient() {
             />
           </div>
         ) : null}
-        {accounts.map((account) => (
-          <SurfaceCard
-            key={account.id}
-            variant="soft"
-            className="aspect-[1/1] min-h-[164px] overflow-hidden bg-white p-3.5 sm:aspect-auto sm:min-h-[180px] sm:p-5"
-          >
-            <div className="flex h-full flex-col">
-              <div className="flex items-start justify-between gap-2.5">
-                <div className="min-w-0 space-y-1">
-                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    {account.bank || account.type}
-                  </p>
-                </div>
-                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]">
-                  <span className="text-[13px]">{account.icon ?? "💳"}</span>
-                </span>
-              </div>
-              <p className="mt-2 line-clamp-2 min-h-[2.4rem] text-[13px] font-semibold leading-[1.22rem] tracking-[-0.02em] text-slate-900">
-                {account.name}
-              </p>
-              <div className="flex flex-1 items-center">
-                <div className="space-y-1">
-                  <p className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
-                    Saldo disponible
-                  </p>
-                  <p
-                    className={`text-[clamp(1.4rem,4.6vw,1.85rem)] font-semibold leading-none tracking-[-0.04em] ${
-                      account.balance >= 0 ? "text-emerald-600" : "text-rose-600"
-                    }`}
-                  >
-                    {formatCurrency(account.balance)}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </SurfaceCard>
-        ))}
+        {accounts.map((account) => renderAccountCard(account))}
       </section>
       <SurfaceCard className="relative overflow-hidden border-border/80 bg-white text-slate-900 shadow-[0_20px_46px_rgba(15,23,42,0.08)]">
         <div
@@ -752,6 +765,7 @@ export function InicioClient() {
                 items={movements}
                 loading={loading}
                 size={size}
+                accounts={accounts}
                 onCreate={() => setOpenModal(true)}
               />
             );

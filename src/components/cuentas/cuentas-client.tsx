@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
+  Check,
   CreditCard,
   Landmark,
   Pencil,
@@ -31,6 +32,7 @@ type AccountItem = {
   balance: number;
   color: string | null;
   icon: string | null;
+  appearanceMode: "auto" | "manual";
 };
 
 type AccountFormState = {
@@ -41,6 +43,7 @@ type AccountFormState = {
   currentBalance: string;
   color: string;
   icon: string;
+  appearanceMode: "auto" | "manual";
 };
 
 type AccountsPayload = {
@@ -53,6 +56,72 @@ const typeLabel: Record<AccountItem["type"], string> = {
   EFECTIVO: "Efectivo"
 };
 
+const INSTITUTION_PRESETS = [
+  { label: "Banco de Chile", keywords: ["banco de chile", "bch"], color: "#0039a6", icon: "🏦" },
+  { label: "BancoEstado", keywords: ["bancoestado", "banco estado"], color: "#024e9c", icon: "🏛️" },
+  { label: "Santander", keywords: ["santander"], color: "#da1212", icon: "🎯" },
+  { label: "BCI", keywords: ["bci"], color: "#0057a0", icon: "🌐" },
+  { label: "Scotiabank", keywords: ["scotiabank"], color: "#b21f24", icon: "🛡️" },
+  { label: "Itaú", keywords: ["itau"], color: "#ff7c23", icon: "⚡" },
+  { label: "Falabella", keywords: ["falabella"], color: "#5c2e91", icon: "💳" },
+  { label: "MACH", keywords: ["mach"], color: "#6c63ff", icon: "📱" },
+  { label: "Tenpo", keywords: ["tenpo"], color: "#0d9488", icon: "🧭" },
+  { label: "Mercado Pago", keywords: ["mercado", "mercadopago"], color: "#009ee6", icon: "🛒" }
+];
+
+const COLOR_PALETTE = [
+  "#2563eb",
+  "#0f766e",
+  "#f97316",
+  "#14b8a6",
+  "#a855f7",
+  "#ec4899",
+  "#0ea5e9",
+  "#22c55e",
+  "#f59e0b"
+];
+
+const ICON_CATALOG = ["💳", "🏦", "💰", "🧾", "📱", "🌟"];
+
+const DEFAULT_ACCOUNT_ACCENT: Record<AccountItem["type"], string> = {
+  CREDITO: "#9333ea",
+  DEBITO: "#2563eb",
+  EFECTIVO: "#f59e0b"
+};
+
+function normalizeHexColor(value?: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const withoutHash = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  if (!/^[0-9a-fA-F]{3}$/.test(withoutHash) && !/^[0-9a-fA-F]{6}$/.test(withoutHash)) {
+    return null;
+  }
+  const expanded = withoutHash.length === 3
+    ? withoutHash.split("").map((char) => char + char).join("")
+    : withoutHash;
+  return `#${expanded.toLowerCase()}`;
+}
+
+function hexToRgba(hex: string, alpha = 0.12) {
+  const normalized = normalizeHexColor(hex) ?? "#cbd5f5";
+  const r = parseInt(normalized.slice(1, 3), 16);
+  const g = parseInt(normalized.slice(3, 5), 16);
+  const b = parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function detectInstitutionPreset(value: string | null | undefined) {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  return (
+    INSTITUTION_PRESETS.find((preset) =>
+      preset.keywords.some((keyword) => normalized.includes(keyword))
+    ) ?? null
+  );
+}
+
+
 type AccountVisualKind = "TARJETA" | "BANCO" | "EFECTIVO" | "AHORRO";
 
 function resolveAccountVisual(account: AccountItem): {
@@ -60,7 +129,6 @@ function resolveAccountVisual(account: AccountItem): {
   icon: ComponentType<{ className?: string }>;
   label: string;
   chipClassName: string;
-  iconWrapClassName: string;
 } {
   const looksLikeSavings = /ahorro|savings|saving/i.test(`${account.name} ${account.bank ?? ""}`);
 
@@ -94,16 +162,7 @@ function resolveAccountVisual(account: AccountItem): {
           ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
           : "bg-blue-50 text-blue-700 ring-blue-100";
 
-  const iconWrapClassName =
-    kind === "EFECTIVO"
-      ? "bg-amber-50 text-amber-700 ring-amber-100"
-      : kind === "TARJETA"
-        ? "bg-slate-50 text-slate-700 ring-slate-200"
-        : kind === "AHORRO"
-          ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
-          : "bg-blue-50 text-blue-700 ring-blue-100";
-
-  return { kind, icon, label, chipClassName, iconWrapClassName };
+  return { kind, icon, label, chipClassName };
 }
 
 function AccountUpsertModal({
@@ -120,23 +179,29 @@ function AccountUpsertModal({
 }: {
   open: boolean;
   mode: "create" | "edit";
-  form: {
-    name: string;
-    bank: string;
-    type: AccountItem["type"];
-    openingBalance: string;
-    currentBalance: string;
-    color: string;
-    icon: string;
-  };
+  form: AccountFormState;
   saving: boolean;
   error: string | null;
   showSuccess: boolean;
   successMessage: string | null;
   onClose: () => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
-  onChange: (patch: Partial<typeof form>) => void;
+  onChange: (patch: Partial<AccountFormState>) => void;
 }) {
+  const matchedInstitution = detectInstitutionPreset(form.bank);
+  const isAutoMode = form.appearanceMode === "auto" && Boolean(matchedInstitution);
+  const previewColor = form.color || matchedInstitution?.color || "#e2e8f0";
+  const previewIcon = form.icon || matchedInstitution?.icon || "💳";
+  const previewName = form.name.trim() || matchedInstitution?.label || "Cuenta";
+
+  useEffect(() => {
+    if (!open || form.appearanceMode !== "auto") return;
+    const match = detectInstitutionPreset(form.bank);
+    if (!match) return;
+    if (form.color === match.color && form.icon === match.icon) return;
+    onChange({ color: match.color, icon: match.icon });
+  }, [open, form.bank, form.appearanceMode, form.color, form.icon, onChange]);
+
   if (!open) return null;
 
   return (
@@ -227,24 +292,107 @@ function AccountUpsertModal({
             <summary className="tap-feedback cursor-pointer select-none rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm font-semibold text-slate-800 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               Opciones de apariencia (opcional)
             </summary>
-            <SurfaceCard variant="soft" padding="sm" className="mt-3 space-y-4">
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                <label className="space-y-2">
-                  <span className={fieldLabelClass}>Color</span>
-                  <Input
-                    placeholder="Ej: #2563EB"
-                    value={form.color}
-                    onChange={(event) => onChange({ color: event.target.value })}
-                  />
-                </label>
-                <label className="space-y-2">
-                  <span className={fieldLabelClass}>Ícono</span>
-                  <Input
-                    placeholder="Ej: 💳"
-                    value={form.icon}
-                    onChange={(event) => onChange({ icon: event.target.value })}
-                  />
-                </label>
+            <SurfaceCard variant="soft" padding="sm" className="mt-3">
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Apariencia</p>
+                    <p className="text-sm text-slate-500">
+                      {isAutoMode && matchedInstitution
+                        ? `Sugerido por ${matchedInstitution.label}.`
+                        : "Personaliza color e icono manualmente."}
+                    </p>
+                  </div>
+                  {matchedInstitution && form.appearanceMode !== "auto" ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-full"
+                      onClick={() => onChange({ appearanceMode: "auto" })}
+                    >
+                      Usar sugerencia automática
+                    </Button>
+                  ) : null}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-[1.05fr_0.95fr]">
+                  <div className="space-y-3">
+                    <div
+                      className="rounded-[26px] border border-slate-200/80 p-4 shadow-sm"
+                      style={{
+                        borderColor: previewColor,
+                        backgroundImage: `linear-gradient(180deg, ${previewColor}20, ${previewColor}08)`
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Vista previa</p>
+                          <p className="text-lg font-semibold text-slate-900 line-clamp-2">{previewName}</p>
+                        </div>
+                        <span className="text-3xl">{previewIcon}</span>
+                      </div>
+                      <p className="mt-3 text-xs text-slate-500">
+                        {form.appearanceMode === "auto"
+                          ? "Los colores se ajustan automáticamente al banco detectado."
+                          : "La vista previa refleja tu personalización manual."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <p className={fieldLabelClass}>Color</p>
+                      <div className="mt-2 grid grid-cols-5 gap-2">
+                        {COLOR_PALETTE.map((option) => {
+                          const isActive = option.toLowerCase() === form.color.toLowerCase();
+                          return (
+                            <button
+                              key={option}
+                              type="button"
+                              style={{ backgroundColor: option }}
+                              className={`relative h-10 w-10 rounded-2xl border transition ${
+                                isActive ? "border-slate-900 shadow-lg" : "border-slate-200"
+                              }`}
+                              onClick={() => onChange({ color: option, appearanceMode: "manual" })}
+                              aria-label={`Color ${option}`}
+                            >
+                              {isActive ? (
+                                <Check className="absolute right-1 top-1 h-4 w-4 text-white" />
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <p className={fieldLabelClass}>Icono</p>
+                      <div className="mt-2 grid grid-cols-6 gap-2">
+                        {ICON_CATALOG.map((option) => {
+                          const isActive = option === form.icon;
+                          return (
+                            <button
+                              key={option}
+                              type="button"
+                              className={`relative flex h-10 w-10 items-center justify-center rounded-2xl border bg-white text-2xl transition ${
+                                isActive ? "border-slate-900 shadow-lg" : "border-slate-200"
+                              }`}
+                              onClick={() => onChange({ icon: option, appearanceMode: "manual" })}
+                              aria-label={`Icono ${option}`}
+                            >
+                              {option}
+                              {isActive ? (
+                                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-white">
+                                  <Check className="h-3 w-3" />
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </SurfaceCard>
           </details>
@@ -304,14 +452,23 @@ function AccountDetailModal({
   const visual = resolveAccountVisual(account);
   const Icon = visual.icon;
   const balanceTone = account.balance >= 0 ? "text-emerald-700" : "text-rose-700";
+  const accentColor = normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type];
+  const accentBackground = hexToRgba(accentColor, 0.12);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
       <div className="glass-surface safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.94)_0%,rgba(248,250,252,0.92)_100%)] p-4 animate-fade-up ring-1 ring-white/35 sm:max-w-lg sm:rounded-[32px] sm:p-6">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ring-1 ${visual.iconWrapClassName}`}>
-              <Icon className="h-5 w-5" />
+            <div
+              className="flex h-12 w-12 items-center justify-center rounded-2xl border text-2xl font-semibold"
+              style={{ borderColor: accentColor, backgroundColor: accentBackground }}
+            >
+              {account.icon ? (
+                <span className="text-2xl leading-none">{account.icon}</span>
+              ) : (
+                <Icon className="h-5 w-5 text-slate-900" />
+              )}
             </div>
             <div className="min-w-0 space-y-1">
               <p className="text-sm font-semibold text-slate-900">{account.name}</p>
@@ -337,6 +494,9 @@ function AccountDetailModal({
           <p className={fieldLabelClass}>Saldo</p>
           <p className={`text-3xl font-semibold tracking-tight ${balanceTone}`}>{formatCurrency(account.balance)}</p>
           <p className="text-sm text-slate-500">Tipo: {typeLabel[account.type]}</p>
+          <p className="text-xs text-slate-500">
+            Apariencia: {account.appearanceMode === "auto" ? "Automática" : "Manual"}
+          </p>
         </SurfaceCard>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -372,7 +532,8 @@ export function CuentasClient() {
     openingBalance: "",
     currentBalance: "",
     color: "",
-    icon: ""
+    icon: "",
+    appearanceMode: "auto"
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isUpsertOpen, setIsUpsertOpen] = useState(false);
@@ -399,7 +560,8 @@ export function CuentasClient() {
       openingBalance: "",
       currentBalance: "",
       color: "",
-      icon: ""
+      icon: "",
+      appearanceMode: "auto"
     });
   };
 
@@ -420,7 +582,8 @@ export function CuentasClient() {
       openingBalance: "",
       currentBalance: account.balance.toString(),
       color: account.color ?? "",
-      icon: account.icon ?? ""
+      icon: account.icon ?? "",
+      appearanceMode: account.appearanceMode ?? "manual"
     });
     setSuccess(null);
     setError(null);
@@ -474,7 +637,8 @@ export function CuentasClient() {
             openingBalance,
             currentBalance,
             color: form.color || undefined,
-            icon: form.icon || undefined
+            icon: form.icon || undefined,
+            appearanceMode: form.appearanceMode
           })
       });
       const body = (await response.json()) as AccountsPayload & { message?: string };
@@ -547,6 +711,13 @@ export function CuentasClient() {
               const Icon = visual.icon;
               const balanceTone = account.balance >= 0 ? "text-emerald-700" : "text-rose-700";
               const bankOrType = account.bank?.trim() ? account.bank : visual.label;
+              const accentColor = normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type];
+              const accentBackground = hexToRgba(accentColor, 0.16);
+              const accountGlyph = account.icon ? (
+                <span className="text-2xl leading-none">{account.icon}</span>
+              ) : (
+                <Icon className="h-5 w-5 text-slate-900" />
+              );
 
               return (
                 <SurfaceCard
@@ -574,9 +745,12 @@ export function CuentasClient() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ring-1 ${visual.iconWrapClassName}`}>
-                        {account.icon ? <span className="text-base leading-none">{account.icon}</span> : <Icon className="h-5 w-5" />}
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl border text-2xl font-semibold shadow-sm"
+                        style={{ borderColor: accentColor, backgroundColor: accentBackground }}
+                      >
+                        {accountGlyph}
                       </div>
 
                       <div className="flex items-center gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">

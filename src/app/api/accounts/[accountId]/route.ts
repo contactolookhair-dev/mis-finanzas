@@ -16,7 +16,8 @@ const updateAccountSchema = z.object({
   isActive: z.boolean().optional(),
   color: z.string().optional(),
   icon: z.string().optional(),
-  currentBalance: z.number().optional()
+  currentBalance: z.number().optional(),
+  appearanceMode: z.enum(["auto", "manual"]).optional()
 });
 
 export async function PATCH(

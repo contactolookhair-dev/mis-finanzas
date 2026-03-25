@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { Skeleton } from "@/components/ui/states";
 import { StatPill } from "@/components/ui/stat-pill";
+import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 
 type AccountItem = {
@@ -16,6 +17,9 @@ type AccountItem = {
   bank: string;
   type: "CREDITO" | "DEBITO" | "EFECTIVO";
   balance: number;
+  color: string | null;
+  icon: string | null;
+  appearanceMode: "auto" | "manual";
 };
 
 type CategoryItem = {
@@ -90,6 +94,14 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const resolvedOwedAmount = useMemo(
     () => Math.max(1, Number(owedAmount || amount || 0)),
     [owedAmount, amount]
+  );
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === accountId) ?? null,
+    [accounts, accountId]
+  );
+  const selectedAccountAppearance = useMemo(
+    () => (selectedAccount ? resolveAccountAppearance(selectedAccount) : null),
+    [selectedAccount]
   );
 
   function resetForm() {
@@ -292,10 +304,19 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
               <StatPill tone="premium">
                 {kind === "GASTO" ? "Gasto" : kind === "INGRESO" ? "Ingreso" : "Transferencia"}
               </StatPill>
-              {accountId ? (
-                <StatPill tone="neutral">
-                  {accounts.find((account) => account.id === accountId)?.name ?? "Cuenta seleccionada"}
-                </StatPill>
+              {selectedAccountAppearance ? (
+                <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold text-slate-700 shadow-[0_6px_14px_rgba(15,23,42,0.04)]">
+                  <span
+                    className="flex h-5 w-5 items-center justify-center rounded-full text-[11px]"
+                    style={{
+                      color: selectedAccountAppearance.accentColor,
+                      backgroundColor: selectedAccountAppearance.accentBackground
+                    }}
+                  >
+                    {selectedAccountAppearance.glyph}
+                  </span>
+                  {selectedAccount?.name ?? "Cuenta seleccionada"}
+                </div>
               ) : null}
             </div>
           </div>
@@ -370,10 +391,32 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
                   <option value="">Selecciona cuenta</option>
                   {accounts.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name} · {account.bank}
+                      {`${resolveAccountAppearance(account).glyph} ${account.name} · ${account.bank}`}
                     </option>
                   ))}
                 </Select>
+                {selectedAccountAppearance ? (
+                  <div
+                    className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700"
+                    style={{ borderColor: selectedAccountAppearance.accentColor }}
+                  >
+                    <span
+                      className="flex h-7 w-7 items-center justify-center rounded-full text-sm"
+                      style={{
+                        color: selectedAccountAppearance.accentColor,
+                        backgroundColor: selectedAccountAppearance.accentBackground
+                      }}
+                    >
+                      {selectedAccountAppearance.glyph}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate">{selectedAccountAppearance.bankLabel}</p>
+                      <p className="text-[11px] font-medium text-slate-500">
+                        Apariencia {selectedAccountAppearance.appearanceMode === "auto" ? "automática" : "manual"}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
               </label>
 
               <label className="space-y-2">

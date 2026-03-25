@@ -35,17 +35,17 @@ export function UpcomingInstallmentsWidget({
   error: string | null;
   size: DebtorsWidgetSize;
   onViewAll?: () => void;
-}) {
-  const timeline = data?.commitments.upcomingTimeline ?? [];
-
+  }) {
   const items = useMemo(() => {
+    const timeline = data?.commitments.upcomingTimeline ?? [];
     const sorted = timeline
       .slice()
       .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     const max = size === "compact" ? 3 : size === "featured" ? 8 : 5;
     return sorted.slice(0, max);
-  }, [timeline, size]);
+  }, [data?.commitments.upcomingTimeline, size]);
 
+  const timeline = data?.commitments.upcomingTimeline ?? [];
   const monthlyCommitted = data?.commitments.monthlyCommittedTotal ?? 0;
   const upcomingCount = data?.commitments.upcomingCount ?? 0;
   const overdueCount = data?.commitments.overdueCount ?? 0;
@@ -154,4 +154,3 @@ export function UpcomingInstallmentsWidget({
     </SurfaceCard>
   );
 }
-

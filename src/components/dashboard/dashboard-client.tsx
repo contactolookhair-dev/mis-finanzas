@@ -9,7 +9,6 @@ import { DashboardQuickActions } from "@/components/dashboard/dashboard-quick-ac
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { InsightList } from "@/components/dashboard/insight-list";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { Building, CreditCard, ShieldCheck, Wallet } from "lucide-react";
 import { ExportActions } from "@/components/exports/export-actions";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { Button } from "@/components/ui/button";
@@ -17,6 +16,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
+import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
 import {
   appendMonthlyReportHistory,
   createMonthlyReportHistoryEntry,
@@ -49,8 +49,12 @@ function getDefaultRange() {
 type AccountItem = {
   id: string;
   name: string;
-  type: string;
+  bank: string;
+  type: "CREDITO" | "DEBITO" | "EFECTIVO";
   balance: number;
+  color: string | null;
+  icon: string | null;
+  appearanceMode: "auto" | "manual";
 };
 
 type WidgetId =
@@ -98,62 +102,42 @@ const widgetMeta: Record<
   filters: { label: "Filtros", description: "Acota rango, unidad y categoría.", category: "Esenciales" }
 };
 
-const accountTypeMap: Record<
-  string,
-  { label: string; gradient: string; icon: typeof Wallet; accent: string; secondary: string }
-> = {
-  EFECTIVO: {
-    label: "Billetera",
-    gradient: "from-amber-50 via-amber-100 to-white/90",
-    icon: Wallet,
-    accent: "text-amber-700",
-    secondary: "Saldo disponible"
-  },
-  DEBITO: {
-    label: "Cuenta débito",
-    gradient: "from-white via-slate-50 to-slate-100",
-    icon: Building,
-    accent: "text-slate-900",
-    secondary: "Saldo actual"
-  },
-  CREDITO: {
-    label: "Tarjeta crédito",
-    gradient: "from-slate-900 via-slate-800 to-slate-900",
-    icon: CreditCard,
-    accent: "text-white",
-    secondary: "Cupo disponible"
-  },
-  OTRO: {
-    label: "Cuenta digital",
-    gradient: "from-sky-50 via-white/90 to-slate-50",
-    icon: ShieldCheck,
-    accent: "text-sky-700",
-    secondary: "Disponible"
-  }
-};
-
 function AccountCard({ account }: { account: AccountItem }) {
-  const meta = accountTypeMap[account.type] ?? accountTypeMap.OTRO;
-  const Icon = meta.icon;
+  const appearance = resolveAccountAppearance(account);
+  const accentTone = account.balance >= 0 ? "text-emerald-600" : "text-rose-600";
 
   return (
-    <div className="relative rounded-[30px] border border-white/80 bg-white/90 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.12)] transition hover:-translate-y-1">
-      <div className="absolute inset-0 rounded-[30px] bg-gradient-to-br opacity-50" style={{ background: meta.gradient }} />
+    <div
+      className="relative rounded-[30px] border border-slate-200 bg-white/92 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.10)] transition hover:-translate-y-1"
+      style={{ borderColor: appearance.accentColor }}
+    >
+      <div
+        className="absolute inset-0 rounded-[30px] opacity-60"
+        style={{
+          background: `linear-gradient(180deg, ${appearance.accentBackground}, rgba(255,255,255,0.92))`
+        }}
+      />
       <div className="relative space-y-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className={`text-[10px] font-semibold uppercase tracking-[0.4em] ${meta.accent}`}>
-              {meta.label}
+            <p className="text-[10px] font-semibold uppercase tracking-[0.4em] text-slate-500">
+              {appearance.bankLabel}
             </p>
             <p className="mt-2 text-base font-semibold text-slate-900">{account.name}</p>
           </div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.1)]">
-            <Icon className="h-5 w-5" />
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-2xl border bg-white/85 text-sm shadow-[0_8px_20px_rgba(15,23,42,0.1)]"
+            style={{
+              borderColor: appearance.accentColor,
+              color: appearance.accentColor
+            }}
+          >
+            {appearance.glyph}
           </div>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{meta.secondary}</p>
-          <p className="mt-1 text-3xl font-semibold text-slate-900">{formatCurrency(account.balance)}</p>
+          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Saldo disponible</p>
+          <p className={`mt-1 text-3xl font-semibold ${accentTone}`}>{formatCurrency(account.balance)}</p>
         </div>
         {account.type === "CREDITO" ? (
           <div className="space-y-2 rounded-[20px] bg-slate-900/80 p-3 text-white">
@@ -467,7 +451,11 @@ function SummaryGrid({ kpis, snapshot }: { kpis: DashboardSnapshot["kpis"]; snap
   );
 }
 
-function RecentTransactionsList({ items }: { items: DashboardSnapshot["recentTransactions"] }) {
+function RecentTransactionsList({
+  items
+}: {
+  items: DashboardSnapshot["recentTransactions"];
+}) {
   return (
     <Card className="space-y-4 rounded-[28px] border border-white/75 bg-white/88 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
       <div>

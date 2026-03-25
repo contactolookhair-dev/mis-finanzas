@@ -12,7 +12,8 @@ const createAccountSchema = z.object({
   type: z.enum(["CREDITO", "DEBITO", "EFECTIVO"]),
   openingBalance: z.coerce.number().optional(),
   color: z.string().optional(),
-  icon: z.string().optional()
+  icon: z.string().optional(),
+  appearanceMode: z.enum(["auto", "manual"]).optional()
 });
 
 export async function GET(request: NextRequest) {

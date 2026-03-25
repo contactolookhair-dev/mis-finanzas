@@ -11,6 +11,7 @@ import { SkeletonCard, ErrorStateCard, EmptyStateCard } from "@/components/ui/st
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
+import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
 import {
   buildTransactionQuery,
   TransactionRow,
@@ -53,6 +54,26 @@ export function MovimientosClient() {
   } = useTransactionsWithFilters();
 
   const quickRange = filters.range ?? "today";
+  const accountByName = useMemo(() => {
+    return new Map(
+      accounts.map((account) => [
+        account.name.trim().toLowerCase(),
+        account
+      ])
+    );
+  }, [accounts]);
+  const selectedAccount = useMemo(() => {
+    if (!filters.accountId) return null;
+    return accounts.find((account) => account.id === filters.accountId) ?? null;
+  }, [accounts, filters.accountId]);
+  const selectedAccountAppearance = useMemo(
+    () => (selectedAccount ? resolveAccountAppearance(selectedAccount) : null),
+    [selectedAccount]
+  );
+  const getAccountAppearance = (accountName: string) => {
+    const matchedAccount = accountByName.get(accountName.trim().toLowerCase()) ?? null;
+    return matchedAccount ? resolveAccountAppearance(matchedAccount) : null;
+  };
 
   const totalIncome = useMemo(
     () => rows.filter((row) => row.amount > 0).reduce((sum, row) => sum + row.amount, 0),
@@ -63,6 +84,7 @@ export function MovimientosClient() {
     () => rows.filter((row) => row.amount < 0).reduce((sum, row) => sum + Math.abs(row.amount), 0),
     [rows]
   );
+  const hasRows = rows.length > 0;
 
   return (
     <div className="space-y-5 pb-16">
@@ -132,10 +154,30 @@ export function MovimientosClient() {
             <option value="">Todas las cuentas</option>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
-                {account.name}
+                {`${resolveAccountAppearance(account).glyph} ${account.name} · ${account.bank}`}
               </option>
             ))}
           </Select>
+          {selectedAccountAppearance ? (
+            <div
+              className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700"
+              style={{ borderColor: selectedAccountAppearance.accentColor }}
+            >
+              <span
+                className="flex h-7 w-7 items-center justify-center rounded-full text-sm"
+                style={{
+                  color: selectedAccountAppearance.accentColor,
+                  backgroundColor: selectedAccountAppearance.accentBackground
+                }}
+              >
+                {selectedAccountAppearance.glyph}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate">{selectedAccountAppearance.bankLabel}</p>
+                <p className="text-[11px] font-medium text-slate-500">Filtro de cuenta activo</p>
+              </div>
+            </div>
+          ) : null}
           <Select
             value={filters.categoryId}
             onChange={(event) => setFilters((prev) => ({ ...prev, categoryId: event.target.value }))}
@@ -162,7 +204,7 @@ export function MovimientosClient() {
         <SkeletonCard lines={4} />
       ) : error ? (
         <ErrorStateCard title="No se pudieron cargar los movimientos" details={error} onRetry={refresh} />
-      ) : rows.length === 0 ? (
+      ) : !hasRows ? (
         <EmptyStateCard
           title="Sin movimientos"
           description="Registra un gasto o ingreso para que esta pantalla muestre tu actividad."
@@ -170,86 +212,26 @@ export function MovimientosClient() {
           onAction={() => setOpenModal(true)}
         />
       ) : (
-        <div className="space-y-3">
-          <div className="mt-0 grid gap-3 md:hidden">
-            {rows.map((transaction) => (
-              <SurfaceCard key={transaction.id} variant="soft" padding="sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{transaction.description}</p>
-                    <p className="text-xs text-slate-500">
-                      {transaction.category} · {transaction.account}
-                    </p>
-                    <p className="text-xs text-slate-400">{formatDate(transaction.date)}</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="mb-1 inline-flex text-[0.65rem]">
-                      <Badge tone={(TYPE_TONE[transaction.type] as "success" | "danger" | "warning" | "neutral") ?? "neutral"}>
-                        {transaction.type}
-                      </Badge>
-                    </span>
-                    <p className={`text-xl font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                      {formatCurrency(transaction.amount)}
-                    </p>
-                    {transaction.description !== BASE_TRANSACTION_MARKER ? (
-                      <button
-                        type="button"
-                        className="mt-2 text-[0.65rem] text-rose-500 underline"
-                        onClick={() => {
-                          setSelectedTransaction(transaction);
-                          setDeleteError(null);
-                          setDeleteOpen(true);
-                        }}
-                      >
-                        Eliminar
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </SurfaceCard>
-            ))}
+        <div className="grid gap-3">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <MovementMetric label="Ingresos" value={formatCurrency(totalIncome)} tone="text-emerald-600" />
+            <MovementMetric label="Gastos" value={formatCurrency(totalExpense)} tone="text-rose-600" />
+            <MovementMetric label="Saldo" value={formatCurrency(totalIncome - totalExpense)} tone="text-slate-900" />
           </div>
-          <div className="hidden divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white/80 shadow-[0_10px_30px_rgba(15,23,42,0.05)] md:block">
-            <div className="grid gap-1 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 md:grid-cols-[2fr_1fr_1fr_1fr]">
-              <span className="md:col-span-1">Descripción</span>
-              <span className="text-right">Categoría · Cuenta</span>
-              <span className="text-right">Monto</span>
-              <span className="text-right">Fecha</span>
-            </div>
+
+          <div className="grid gap-3">
             {rows.map((transaction) => (
-              <div
+              <MovementRow
                 key={transaction.id}
-                className="grid gap-1 px-4 py-3 hover:bg-slate-50 md:grid-cols-[2fr_1fr_1fr_1fr]"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">{transaction.description}</p>
-                  <span className="mt-1 inline-flex text-[0.6rem]">
-                    <Badge tone="neutral">{transaction.type}</Badge>
-                  </span>
-                </div>
-                <div className="text-right text-sm text-slate-600">
-                  {transaction.category}
-                  <br />
-                  <span className="text-xs text-slate-400">{transaction.account}</span>
-                </div>
-                <div className={`text-right text-lg font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                  {formatCurrency(transaction.amount)}
-                </div>
-               <div className="text-right text-xs text-slate-500">{formatDate(transaction.date)}</div>
-                {transaction.description !== BASE_TRANSACTION_MARKER ? (
-                  <button
-                    type="button"
-                    className="text-[0.65rem] text-rose-500 underline"
-                    onClick={() => {
-                      setSelectedTransaction(transaction);
-                      setDeleteError(null);
-                      setDeleteOpen(true);
-                    }}
-                  >
-                    Eliminar
-                  </button>
-                ) : null}
-              </div>
+                transaction={transaction}
+                getAccountAppearance={getAccountAppearance}
+                onDelete={() => {
+                  if (transaction.description === BASE_TRANSACTION_MARKER) return;
+                  setSelectedTransaction(transaction);
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                }}
+              />
             ))}
           </div>
         </div>
@@ -375,5 +357,93 @@ export function MovimientosClient() {
 
       <NewTransactionModal open={openModal} onOpenChange={setOpenModal} onSuccess={refresh} />
     </div>
+  );
+}
+
+function MovementMetric({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/88 px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{label}</p>
+      <p className={`mt-1 text-lg font-semibold ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
+function MovementRow({
+  transaction,
+  getAccountAppearance,
+  onDelete
+}: {
+  transaction: TransactionRow;
+  getAccountAppearance: (accountName: string) => ReturnType<typeof resolveAccountAppearance> | null;
+  onDelete: () => void;
+}) {
+  const appearance = getAccountAppearance(transaction.account);
+  const badgeTone = (TYPE_TONE[transaction.type] as "success" | "danger" | "warning" | "neutral") ?? "neutral";
+
+  return (
+    <SurfaceCard
+      variant="soft"
+      padding="sm"
+      className="overflow-hidden border border-slate-200/80 bg-white/92 shadow-[0_10px_30px_rgba(15,23,42,0.06)]"
+    >
+      <div className="flex items-start justify-between gap-3 sm:items-center">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={badgeTone}>{transaction.type === "INGRESO" ? "Ingreso" : transaction.type === "EGRESO" ? "Egreso" : "Transferencia"}</Badge>
+            <span className={`text-lg font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              {formatCurrency(transaction.amount)}
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-slate-900">{transaction.description}</p>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>{transaction.category}</span>
+              <span>·</span>
+              {appearance ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 font-semibold text-slate-700"
+                  style={{ borderColor: appearance.accentColor }}
+                >
+                  <span
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-[10px]"
+                    style={{
+                      color: appearance.accentColor,
+                      backgroundColor: appearance.accentBackground
+                    }}
+                  >
+                    {appearance.glyph}
+                  </span>
+                  {transaction.account}
+                </span>
+              ) : (
+                <span>{transaction.account}</span>
+              )}
+              <span>·</span>
+              <span>{formatDate(transaction.date)}</span>
+            </div>
+          </div>
+        </div>
+
+        {transaction.description !== BASE_TRANSACTION_MARKER ? (
+          <button
+            type="button"
+            className="tap-feedback shrink-0 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
+            onClick={onDelete}
+          >
+            Eliminar
+          </button>
+        ) : null}
+      </div>
+    </SurfaceCard>
   );
 }

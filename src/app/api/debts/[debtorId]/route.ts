@@ -83,3 +83,41 @@ export async function PATCH(
     return NextResponse.json({ message: "No se pudo editar la deuda." }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { debtorId: string } }
+) {
+  const context = await getWorkspaceContextFromRequest(request);
+  if (!context.workspaceId && DEV_MODE) {
+    return NextResponse.json(
+      { message: "No se pudo resolver el contexto de trabajo." },
+      { status: 400 }
+    );
+  }
+  if (!context.workspaceId || (!context.userKey && !DEV_MODE)) {
+    return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+  }
+
+  try {
+    const existing = await prisma.debtor.findFirst({
+      where: {
+        id: params.debtorId,
+        workspaceId: context.workspaceId
+      }
+    });
+
+    if (!existing) {
+      return NextResponse.json({ message: "Deuda no encontrada." }, { status: 404 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.debtorPayment.deleteMany({ where: { debtorId: existing.id } });
+      await tx.debtor.delete({ where: { id: existing.id } });
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ message: "No se pudo eliminar la deuda." }, { status: 500 });
+  }
+}
