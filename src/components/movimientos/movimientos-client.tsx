@@ -13,8 +13,10 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import {
   buildTransactionQuery,
+  TransactionRow,
   useTransactionsWithFilters
 } from "@/hooks/use-transactions-with-filters";
+import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
 const QUICK_RANGE_LABELS: Record<string, string> = {
   today: "Hoy",
@@ -30,6 +32,10 @@ const TYPE_TONE: Record<string, "success" | "danger" | "warning" | "neutral"> = 
 
 export function MovimientosClient() {
   const [openModal, setOpenModal] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionRow | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearInput, setClearInput] = useState("");
   const [clearing, setClearing] = useState(false);
@@ -185,6 +191,19 @@ export function MovimientosClient() {
                     <p className={`text-xl font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                       {formatCurrency(transaction.amount)}
                     </p>
+                    {transaction.description !== BASE_TRANSACTION_MARKER ? (
+                      <button
+                        type="button"
+                        className="mt-2 text-[0.65rem] text-rose-500 underline"
+                        onClick={() => {
+                          setSelectedTransaction(transaction);
+                          setDeleteError(null);
+                          setDeleteOpen(true);
+                        }}
+                      >
+                        Eliminar
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </SurfaceCard>
@@ -216,12 +235,71 @@ export function MovimientosClient() {
                 <div className={`text-right text-lg font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                   {formatCurrency(transaction.amount)}
                 </div>
-                <div className="text-right text-xs text-slate-500">{formatDate(transaction.date)}</div>
+               <div className="text-right text-xs text-slate-500">{formatDate(transaction.date)}</div>
+                {transaction.description !== BASE_TRANSACTION_MARKER ? (
+                  <button
+                    type="button"
+                    className="text-[0.65rem] text-rose-500 underline"
+                    onClick={() => {
+                      setSelectedTransaction(transaction);
+                      setDeleteError(null);
+                      setDeleteOpen(true);
+                    }}
+                  >
+                    Eliminar
+                  </button>
+                ) : null}
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {deleteOpen && selectedTransaction ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 backdrop-blur-sm p-4">
+          <SurfaceCard variant="soft" padding="lg" className="max-w-md space-y-4 bg-white/95 shadow-[0_30px_70px_rgba(15,23,42,0.25)] ring-1 ring-slate-100">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-rose-500">Eliminar movimiento</p>
+              <h3 className="text-lg font-semibold text-slate-900">¿Eliminar este movimiento?</h3>
+              <p className="mt-2 text-sm text-slate-600">
+                Esta acción no se puede deshacer.
+              </p>
+            </div>
+            <p className="text-sm text-slate-500">{selectedTransaction.description}</p>
+            {deleteError ? <p className="text-xs text-rose-600">{deleteError}</p> : null}
+            <div className="flex gap-3 justify-end">
+              <Button variant="secondary" className="h-10 rounded-full px-4" onClick={() => setDeleteOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="h-10 rounded-full px-4 bg-rose-600 text-white shadow-[0_10px_20px_rgba(220,91,103,0.4)]"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  setDeleteError(null);
+                  try {
+                    const response = await fetch(`/api/transactions/${selectedTransaction.id}`, { method: "DELETE" });
+                    if (!response.ok) {
+                      const body = await response.json();
+                      throw new Error(body.message ?? "No se pudo eliminar el movimiento.");
+                    }
+                    refresh();
+                    setDeleteOpen(false);
+                    setSelectedTransaction(null);
+                  } catch (error) {
+                    setDeleteError(error instanceof Error ? error.message : "No se pudo eliminar.");
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+              >
+                Eliminar
+              </Button>
+            </div>
+          </SurfaceCard>
+        </div>
+      ) : null}
 
       {clearOpen ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
