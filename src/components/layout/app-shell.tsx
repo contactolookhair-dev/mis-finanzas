@@ -8,6 +8,7 @@ import { navigationItems } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { PageContainer } from "@/components/ui/page-container";
+import { StatPill } from "@/components/ui/stat-pill";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -23,14 +24,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-violet-500/80">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/80">
                     Mis Finanzas · Manual
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <h1 className="text-[1.35rem] font-semibold leading-tight tracking-[-0.03em] text-slate-900 sm:text-[1.45rem]">Tu dinero hoy</h1>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-medium text-slate-500">
+                    <StatPill tone="brand" className="px-2.5 py-1 text-[10px]">
                       Personal
-                    </span>
+                    </StatPill>
                   </div>
                 </div>
                 <div className="hidden items-center gap-3 sm:flex">
@@ -74,9 +75,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className={cn(
                     "flex flex-col items-center justify-center gap-2 rounded-[22px] px-2 py-3 text-[11px] font-medium transition-colors",
                     isActive
-                      ? "bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white shadow-[0_8px_18px_rgba(124,58,237,0.35)]"
+                      ? "bg-gradient-to-br from-primary via-secondary to-accent text-white shadow-[0_8px_18px_rgba(95,99,242,0.28)]"
                       : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                  )}
+                )}
                 >
                   <Icon className="h-4 w-4" />
                   <span className="truncate">{item.label}</span>

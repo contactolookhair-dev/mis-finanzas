@@ -1,16 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { AlertTriangle, Inbox, RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { SurfaceCard } from "@/components/ui/surface-card";
 
 export function Skeleton({
   className = ""
 }: {
   className?: string;
 }) {
-  return <div className={`animate-pulse rounded-xl bg-slate-200/70 ${className}`} />;
+  return <div className={`animate-pulse rounded-xl bg-muted/80 ${className}`} />;
 }
 
 export function SkeletonCard({
@@ -21,15 +21,13 @@ export function SkeletonCard({
   className?: string;
 }) {
   return (
-    <Card className={`rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] ${className}`}>
-      <div className="space-y-3">
-        <Skeleton className="h-3 w-28" />
-        <Skeleton className="h-8 w-44" />
-        {Array.from({ length: Math.max(1, lines) }).map((_, index) => (
-          <Skeleton key={`line-${index}`} className={`h-3 ${index % 2 === 0 ? "w-72" : "w-56"}`} />
-        ))}
-      </div>
-    </Card>
+    <SurfaceCard variant="soft" className={`space-y-3 ${className}`}>
+      <Skeleton className="h-3 w-28" />
+      <Skeleton className="h-8 w-44" />
+      {Array.from({ length: Math.max(1, lines) }).map((_, index) => (
+        <Skeleton key={`line-${index}`} className={`h-3 ${index % 2 === 0 ? "w-72" : "w-56"}`} />
+      ))}
+    </SurfaceCard>
   );
 }
 
@@ -48,27 +46,36 @@ export function EmptyStateCard({
   onAction?: () => void;
   className?: string;
 }) {
-  const Icon = icon ?? Inbox;
+  const Icon = icon ?? Sparkles;
 
   return (
-    <Card className={`rounded-[28px] border border-dashed border-slate-200 bg-gradient-to-br from-white/80 via-slate-50/70 to-white/80 p-5 shadow-[0_14px_38px_rgba(15,23,42,0.06)] ${className}`}>
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/85 text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
+    <SurfaceCard
+      variant="brand"
+      className={`relative overflow-hidden border-dashed border-primary/15 ${className}`}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(95,99,242,0.08),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(22,181,154,0.06),transparent_30%)]" />
+      <div className="pointer-events-none absolute left-5 top-0 h-1 w-20 rounded-full bg-gradient-to-r from-primary via-secondary to-accent opacity-70" />
+      <div className="relative flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-gradient-to-br from-white via-primary/6 to-accent/10 text-primary shadow-[0_12px_24px_rgba(15,23,42,0.08)]">
           <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-900">{title}</p>
-          {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+          {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
           {actionLabel && onAction ? (
             <div className="mt-3">
-              <Button variant="secondary" className="h-9 rounded-full px-4 text-xs font-semibold" onClick={onAction}>
+              <Button
+                variant="secondary"
+                className="tap-feedback h-9 rounded-full px-4 text-xs font-semibold"
+                onClick={onAction}
+              >
                 {actionLabel}
               </Button>
             </div>
           ) : null}
         </div>
       </div>
-    </Card>
+    </SurfaceCard>
   );
 }
 
@@ -88,20 +95,25 @@ export function ErrorStateCard({
   footer?: ReactNode;
 }) {
   return (
-    <Card className={`rounded-[28px] border border-rose-100 bg-gradient-to-br from-rose-50/70 via-white/70 to-amber-50/40 p-5 shadow-[0_14px_38px_rgba(15,23,42,0.06)] ${className}`}>
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/85 text-rose-600 shadow-[0_10px_24px_rgba(15,23,42,0.08)]">
+    <SurfaceCard
+      variant="soft"
+      className={`relative overflow-hidden border-rose-100 bg-gradient-to-br from-rose-50/74 via-white/72 to-amber-50/42 ${className}`}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(221,86,103,0.08),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(194,138,25,0.06),transparent_30%)]" />
+      <div className="pointer-events-none absolute left-5 top-0 h-1 w-20 rounded-full bg-gradient-to-r from-rose-500 via-amber-500 to-rose-400 opacity-70" />
+      <div className="relative flex items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/80 bg-white/88 text-rose-600 shadow-[0_12px_24px_rgba(15,23,42,0.08)]">
           <AlertTriangle className="h-5 w-5" />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-900">{title}</p>
-          {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
+          {description ? <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p> : null}
           {details ? <p className="mt-2 text-xs text-rose-700">{details}</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {onRetry ? (
               <Button
                 variant="secondary"
-                className="h-9 rounded-full px-4 text-xs font-semibold"
+                className="tap-feedback h-9 rounded-full px-4 text-xs font-semibold"
                 onClick={onRetry}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
@@ -112,6 +124,6 @@ export function ErrorStateCard({
           </div>
         </div>
       </div>
-    </Card>
+    </SurfaceCard>
   );
 }

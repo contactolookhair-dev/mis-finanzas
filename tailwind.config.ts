@@ -6,17 +6,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#f6f7fb",
-        foreground: "#0f172a",
-        card: "#ffffff",
-        border: "#e2e8f0",
-        muted: "#f1f5f9",
-        primary: "#7c3aed",
-        secondary: "#ec4899",
-        accent: "#10b981",
-        success: "#059669",
-        warning: "#d97706",
-        danger: "#dc2626"
+        background: "rgb(var(--brand-background) / <alpha-value>)",
+        foreground: "rgb(var(--brand-foreground) / <alpha-value>)",
+        card: "rgb(var(--brand-card) / <alpha-value>)",
+        border: "rgb(var(--brand-border) / <alpha-value>)",
+        muted: "rgb(var(--brand-muted) / <alpha-value>)",
+        primary: "rgb(var(--brand-primary) / <alpha-value>)",
+        secondary: "rgb(var(--brand-secondary) / <alpha-value>)",
+        accent: "rgb(var(--brand-accent) / <alpha-value>)",
+        success: "rgb(var(--brand-success) / <alpha-value>)",
+        warning: "rgb(var(--brand-warning) / <alpha-value>)",
+        danger: "rgb(var(--brand-danger) / <alpha-value>)"
       },
       fontFamily: {
         sans: ["SF Pro Display", "ui-sans-serif", "system-ui", "sans-serif"]
@@ -27,7 +27,7 @@ const config: Config = {
       },
       backgroundImage: {
         "hero-glow":
-          "radial-gradient(circle at top left, rgba(124,58,237,0.12), transparent 34%), radial-gradient(circle at top right, rgba(236,72,153,0.12), transparent 28%), linear-gradient(180deg, #f8faff 0%, #f4f6fb 100%)"
+          "radial-gradient(circle at top left, rgb(var(--brand-primary) / 0.12), transparent 34%), radial-gradient(circle at top right, rgb(var(--brand-secondary) / 0.1), transparent 28%), radial-gradient(circle at bottom right, rgb(var(--brand-accent) / 0.08), transparent 26%), linear-gradient(180deg, rgb(249 250 255) 0%, rgb(244 247 252) 100%)"
       }
     }
   },

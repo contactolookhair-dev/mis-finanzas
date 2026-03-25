@@ -3,11 +3,13 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 const surfaceVariants = {
-  default: "border-white/75 bg-white/88 shadow-[0_14px_38px_rgba(15,23,42,0.07)]",
-  soft: "border-slate-200/80 bg-white/72 shadow-[0_10px_28px_rgba(15,23,42,0.06)]",
+  default: "border-white/78 bg-white/92 shadow-[0_14px_38px_rgba(15,23,42,0.07)]",
+  soft: "border-border/80 bg-white/76 shadow-[0_10px_28px_rgba(15,23,42,0.05)]",
   highlight:
-    "border-violet-100 bg-gradient-to-br from-white via-white to-violet-50/70 shadow-[0_16px_42px_rgba(124,58,237,0.09)]",
-  dark: "border-white/10 bg-slate-950/92 text-white shadow-[0_22px_48px_rgba(15,23,42,0.22)]"
+    "border-primary/12 bg-gradient-to-br from-white via-white to-primary/5 shadow-[0_16px_42px_rgba(95,99,242,0.08)]",
+  brand:
+    "border-primary/12 bg-gradient-to-br from-white via-white to-secondary/5 shadow-[0_16px_42px_rgba(214,91,142,0.08)]",
+  dark: "border-white/10 bg-slate-950/94 text-white shadow-[0_22px_48px_rgba(15,23,42,0.22)]"
 } as const;
 
 export function SurfaceCard({
