@@ -479,31 +479,31 @@ export function DeudasClient({
         }
       />
 
-      <SurfaceCard variant="highlight" padding="sm">
+      <SurfaceCard variant="highlight" padding="sm" className="animate-fade-up">
         <div className="flex flex-wrap gap-2">
           <Button
             variant={tab === "empresas" ? "default" : "secondary"}
             onClick={() => setTab("empresas")}
-            className="h-9"
+            className="tap-feedback h-10"
           >
             Empresas
           </Button>
           <Button
             variant={tab === "personas" ? "default" : "secondary"}
             onClick={() => setTab("personas")}
-            className="h-9"
+            className="tap-feedback h-10"
           >
             Personas / tarjetas prestadas
           </Button>
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <Button variant="secondary" onClick={() => setFormMode("nueva")}>
+          <Button variant="secondary" className="tap-feedback" onClick={() => setFormMode("nueva")}>
             Registrar deuda
           </Button>
-          <Button variant="secondary" onClick={() => setFormMode("abono")}>
+          <Button variant="secondary" className="tap-feedback" onClick={() => setFormMode("abono")}>
             Registrar abono
           </Button>
-          <Button variant="secondary" onClick={() => setFormMode("none")}>
+          <Button variant="secondary" className="tap-feedback" onClick={() => setFormMode("none")}>
             Ver saldo pendiente
           </Button>
         </div>
@@ -526,12 +526,12 @@ export function DeudasClient({
         </SurfaceCard>
       ) : null}
 
-      <MobileStickyAction type="button" onClick={() => setFormMode("nueva")}>
+      <MobileStickyAction type="button" onClick={() => setFormMode("nueva")} className="tap-feedback">
         Registrar deuda
       </MobileStickyAction>
 
       {selectedDebt ? (
-        <SurfaceCard className="overflow-hidden rounded-[28px] border border-white/80 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">
+        <SurfaceCard className="overflow-hidden rounded-[28px] border border-white/80 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)] animate-fade-up">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">
@@ -548,7 +548,7 @@ export function DeudasClient({
               <Button
                 type="button"
                 variant="secondary"
-                className="h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
+                className="tap-feedback h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
                 onClick={() => exportDebt(selectedDebt)}
                 disabled={exportingDebt === selectedDebt.id}
               >
@@ -564,7 +564,7 @@ export function DeudasClient({
               <Button
                 type="button"
                 variant="secondary"
-                className="h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
+                className="tap-feedback h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
                 onClick={() => settleDebt(selectedDebt)}
                 disabled={settlingDebt === selectedDebt.id}
               >
@@ -581,7 +581,7 @@ export function DeudasClient({
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
+                  className="tap-feedback h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
                   onClick={() => setFormMode("editar")}
                 >
                   <PencilLine className="mr-2 h-4 w-4" />
@@ -620,7 +620,7 @@ export function DeudasClient({
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-emerald-300 via-cyan-300 to-violet-300"
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-300 via-cyan-300 to-violet-300 transition-[width] duration-500 ease-out"
                   style={{ width: `${Math.max(0, Math.min(100, selectedPerson.installmentProgress))}%` }}
                 />
               </div>
@@ -706,7 +706,7 @@ export function DeudasClient({
       ) : null}
 
       {formMode === "nueva" ? (
-        <SurfaceCard variant="highlight" className="space-y-4">
+        <SurfaceCard variant="highlight" className="space-y-4 animate-fade-up">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">Nueva deuda</p>
             <h3 className="text-base font-semibold tracking-tight text-slate-900">Registrar deuda</h3>
@@ -812,17 +812,17 @@ export function DeudasClient({
               <textarea className={formTextareaClass} placeholder="Observaciones" value={createForm.notes} onChange={(event) => setCreateForm((c) => ({ ...c, notes: event.target.value }))} />
             </label>
             <div className="sm:col-span-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="secondary" className="rounded-2xl" onClick={() => setFormMode("none")}>
+              <Button type="button" variant="secondary" className="tap-feedback rounded-2xl" onClick={() => setFormMode("none")}>
                 Cancelar
               </Button>
-              <Button type="submit" className="rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar deuda"}</Button>
+              <Button type="submit" className="tap-feedback rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar deuda"}</Button>
             </div>
           </form>
         </SurfaceCard>
       ) : null}
 
       {formMode === "abono" ? (
-        <SurfaceCard variant="highlight" className="space-y-4">
+        <SurfaceCard variant="highlight" className="space-y-4 animate-fade-up">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">Nuevo abono</p>
             <h3 className="text-base font-semibold tracking-tight text-slate-900">Registrar abono</h3>
@@ -850,17 +850,17 @@ export function DeudasClient({
               <Input placeholder="Observaciones" value={paymentForm.notes} onChange={(event) => setPaymentForm((c) => ({ ...c, notes: event.target.value }))} />
             </label>
             <div className="sm:col-span-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="secondary" className="rounded-2xl" onClick={() => setFormMode("none")}>
+              <Button type="button" variant="secondary" className="tap-feedback rounded-2xl" onClick={() => setFormMode("none")}>
                 Cancelar
               </Button>
-              <Button type="submit" className="rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar abono"}</Button>
+              <Button type="submit" className="tap-feedback rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar abono"}</Button>
             </div>
           </form>
         </SurfaceCard>
       ) : null}
 
       {formMode === "editar" && selectedDebtor ? (
-        <SurfaceCard variant="highlight" className="space-y-4">
+        <SurfaceCard variant="highlight" className="space-y-4 animate-fade-up">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">Edición</p>
             <h3 className="text-base font-semibold tracking-tight text-slate-900">Editar deuda</h3>
@@ -935,10 +935,10 @@ export function DeudasClient({
             ) : null}
             <label className="space-y-2 sm:col-span-2"><span className={formFieldLabelClass}>Observaciones</span><textarea className={formTextareaClass} value={editForm.notes} onChange={(event) => setEditForm((c) => ({ ...c, notes: event.target.value }))} placeholder="Observaciones" /></label>
             <div className="sm:col-span-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button type="button" variant="secondary" className="rounded-2xl" onClick={() => setFormMode("none")}>
+              <Button type="button" variant="secondary" className="tap-feedback rounded-2xl" onClick={() => setFormMode("none")}>
                 Cancelar
               </Button>
-              <Button type="submit" className="rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</Button>
+              <Button type="submit" className="tap-feedback rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</Button>
             </div>
           </form>
         </SurfaceCard>
@@ -1002,7 +1002,7 @@ export function DeudasClient({
                       key={`${entry.debtId}-${entry.dueDate}`}
                       type="button"
                       onClick={() => setSelectedDebt({ kind: "person", id: entry.debtId })}
-                      className="flex w-full items-center justify-between rounded-[18px] border border-white bg-white/90 px-3 py-3 text-left transition hover:border-violet-200"
+                    className="tap-feedback interactive-lift flex w-full items-center justify-between rounded-[18px] border border-white bg-white/90 px-3 py-3 text-left hover:border-violet-200"
                     >
                       <div>
                         <p className="text-sm font-semibold text-slate-900">{entry.debtName}</p>
@@ -1045,7 +1045,7 @@ export function DeudasClient({
                 payload.companies.map((item) => (
                   <div
                     key={item.id}
-                    className={`rounded-[24px] border px-4 py-4 shadow-soft transition ${
+                    className={`interactive-lift rounded-[24px] border px-4 py-4 shadow-soft animate-fade-up ${
                       selectedDebt?.kind === "company" && selectedDebt.id === item.id
                         ? "border-violet-300 bg-violet-50/60"
                         : "border-border/70 bg-white"
@@ -1068,7 +1068,7 @@ export function DeudasClient({
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         variant="secondary"
-                        className="h-8 rounded-2xl px-3 text-xs"
+                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
                         onClick={() => setSelectedDebt({ kind: "company", id: item.id })}
                       >
                         <Eye className="mr-2 h-4 w-4" />
@@ -1076,7 +1076,7 @@ export function DeudasClient({
                       </Button>
                       <Button
                         variant="secondary"
-                        className="h-8 rounded-2xl px-3 text-xs"
+                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
                         onClick={() => exportDebt({ kind: "company", id: item.id })}
                         disabled={exportingDebt === item.id}
                       >
@@ -1100,7 +1100,7 @@ export function DeudasClient({
                 payload.people.map((item) => (
                   <div
                     key={item.id}
-                    className={`rounded-[24px] border px-4 py-4 shadow-soft transition ${
+                    className={`interactive-lift rounded-[24px] border px-4 py-4 shadow-soft animate-fade-up ${
                       selectedDebt?.kind === "person" && selectedDebt.id === item.id
                         ? "border-violet-300 bg-violet-50/60"
                         : "border-border/70 bg-white"
@@ -1142,7 +1142,7 @@ export function DeudasClient({
                         <>
                           <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
                             <div
-                              className={`h-full rounded-full bg-gradient-to-r ${installmentTone[item.installmentStatus].bar}`}
+                              className={`h-full rounded-full bg-gradient-to-r transition-[width] duration-500 ease-out ${installmentTone[item.installmentStatus].bar}`}
                               style={{ width: `${Math.max(0, Math.min(100, item.installmentProgress))}%` }}
                             />
                           </div>
@@ -1160,7 +1160,7 @@ export function DeudasClient({
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         variant="secondary"
-                        className="h-8 rounded-2xl px-3 text-xs"
+                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
                         onClick={() => setSelectedDebt({ kind: "person", id: item.id })}
                       >
                         <Eye className="mr-2 h-4 w-4" />
@@ -1168,7 +1168,7 @@ export function DeudasClient({
                       </Button>
                       <Button
                         variant="secondary"
-                        className="h-8 rounded-2xl px-3 text-xs"
+                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
                         onClick={() => {
                           setFormMode("abono");
                           setPaymentForm((current) => ({ ...current, debtorId: item.id }));
@@ -1178,7 +1178,7 @@ export function DeudasClient({
                       </Button>
                       <Button
                         variant="secondary"
-                        className="h-8 rounded-2xl px-3 text-xs"
+                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
                         onClick={() => openEdit(item)}
                       >
                         <PencilLine className="mr-2 h-4 w-4" />
@@ -1186,7 +1186,7 @@ export function DeudasClient({
                       </Button>
                       <Button
                         variant="secondary"
-                        className="h-8 rounded-2xl px-3 text-xs"
+                        className="tap-feedback h-8 rounded-2xl px-3 text-xs"
                         onClick={() => exportDebt({ kind: "person", id: item.id })}
                         disabled={exportingDebt === item.id}
                       >

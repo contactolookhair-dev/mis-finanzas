@@ -134,13 +134,13 @@ export function CuentasClient() {
         }
       />
 
-      <SurfaceCard variant="dark" className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white">
+      <SurfaceCard variant="dark" className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white animate-fade-up">
         <p className="text-xs uppercase tracking-[0.2em] text-white/70">Total disponible</p>
         <p className="mt-2 text-4xl font-semibold tracking-tight">{formatCurrency(totalAvailable)}</p>
         <p className="mt-2 text-xs text-white/80">Suma de todas tus carteras y efectivo.</p>
       </SurfaceCard>
 
-      <SurfaceCard variant="highlight" className="space-y-4">
+      <SurfaceCard variant="highlight" className="space-y-4 animate-fade-up">
         <div className="space-y-2">
           <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Nueva cartera</p>
           <h2 className="text-lg font-semibold text-slate-900">
@@ -223,7 +223,7 @@ export function CuentasClient() {
             <Button
               type="submit"
               disabled={saving || form.name.trim().length < 2}
-              className="h-11 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500"
+              className="tap-feedback h-11 w-full rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500"
             >
               {saving ? "Guardando..." : isEditing ? "Guardar cambios" : "Crear cartera"}
             </Button>
@@ -231,7 +231,7 @@ export function CuentasClient() {
               <Button
                 type="button"
                 variant="ghost"
-                className="h-11 rounded-2xl border border-slate-200 text-slate-700"
+                className="tap-feedback h-11 rounded-2xl border border-slate-200 text-slate-700"
                 onClick={() => {
                   setEditingId(null);
                   resetForm();
@@ -281,7 +281,7 @@ export function CuentasClient() {
               key={account.id}
               variant="soft"
               padding="sm"
-              className="space-y-4 transition hover:-translate-y-0.5"
+              className="interactive-lift space-y-4 animate-fade-up"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -316,7 +316,7 @@ export function CuentasClient() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="rounded-full border border-slate-200 text-xs font-semibold"
+                  className="tap-feedback rounded-full border border-slate-200 text-xs font-semibold"
                   onClick={() => {
                     setEditingId(account.id);
                     setForm({
@@ -337,7 +337,7 @@ export function CuentasClient() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="rounded-full text-xs font-semibold text-rose-600"
+                  className="tap-feedback rounded-full text-xs font-semibold text-rose-600"
                   onClick={async () => {
                     if (!window.confirm("¿Eliminar esta cuenta?")) return;
                     setSaving(true);

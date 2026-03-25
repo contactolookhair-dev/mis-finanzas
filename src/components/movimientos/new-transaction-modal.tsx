@@ -283,7 +283,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-4">
-      <div className="w-full rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.98)_100%)] p-4 shadow-[0_-20px_50px_rgba(15,23,42,0.18)] sm:max-w-2xl sm:rounded-[32px] sm:p-6">
+      <div className="safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.98)_100%)] p-4 shadow-[0_-20px_50px_rgba(15,23,42,0.18)] animate-fade-up sm:max-w-2xl sm:rounded-[32px] sm:p-6">
         <div className="mb-4 flex items-center justify-between">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-violet-500">Nueva transacción</p>
@@ -305,7 +305,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
               onOpenChange(false);
               resetForm();
             }}
-            className="rounded-full bg-slate-100 p-2 text-slate-500 transition hover:bg-slate-200"
+            className="tap-feedback rounded-full bg-slate-100 p-2 text-slate-500 transition hover:bg-slate-200"
             aria-label="Cerrar"
           >
             <X className="h-4 w-4" />
@@ -332,7 +332,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
                   key={value}
                   type="button"
                   onClick={() => setKind(value)}
-                  className={`h-10 rounded-xl text-xs font-semibold transition ${
+                  className={`tap-feedback h-10 rounded-xl text-xs font-semibold transition ${
                     kind === value
                       ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
                       : "text-slate-500"
@@ -344,7 +344,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
             </div>
           </SurfaceCard>
 
-          <SurfaceCard variant="soft" padding="sm" className="space-y-4">
+          <SurfaceCard variant="soft" padding="sm" className="space-y-4 interactive-lift">
             <div className="space-y-1">
               <p className={fieldLabelClass}>Datos del movimiento</p>
               <p className="text-sm text-slate-500">
@@ -396,7 +396,11 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
             </div>
           </SurfaceCard>
 
-          <SurfaceCard variant={isOwed ? "highlight" : "soft"} padding="sm" className="space-y-4">
+          <SurfaceCard
+            variant={isOwed ? "highlight" : "soft"}
+            padding="sm"
+            className="space-y-4 transition-all duration-200"
+          >
             <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/85 px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-slate-900">¿Alguien me debe este gasto?</p>
@@ -523,7 +527,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
             <Button
               type="button"
               variant="secondary"
-              className="h-11 rounded-2xl"
+              className="tap-feedback h-11 rounded-2xl"
               onClick={() => {
                 onOpenChange(false);
                 resetForm();
@@ -534,7 +538,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
             </Button>
             <Button
               type="submit"
-              className="h-11 rounded-2xl sm:min-w-[220px]"
+              className="tap-feedback h-11 rounded-2xl sm:min-w-[220px]"
               disabled={saving || loading}
             >
               {saving ? "Guardando..." : "Guardar transacción"}

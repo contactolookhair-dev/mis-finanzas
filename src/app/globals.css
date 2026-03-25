@@ -77,3 +77,55 @@ body {
 .animate-fade-up {
   animation: fade-up 320ms ease-out;
 }
+
+.tap-feedback {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    opacity 180ms ease;
+  will-change: transform;
+}
+
+.tap-feedback:active {
+  transform: scale(0.985);
+}
+
+.interactive-lift {
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease,
+    border-color 200ms ease,
+    background-color 200ms ease;
+}
+
+@media (hover: hover) {
+  .interactive-lift:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.safe-pb {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .text-number-glow,
+  .animate-shimmer,
+  .animate-fade-up,
+  .tap-feedback,
+  .interactive-lift {
+    animation: none !important;
+    transition: none !important;
+  }
+}
