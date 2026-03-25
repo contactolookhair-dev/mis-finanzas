@@ -1,5 +1,5 @@
-import { GastosClient } from "@/components/gastos/gastos-client";
+import { MovimientosClient } from "@/components/movimientos/movimientos-client";
 
 export default function MovimientosPage() {
-  return <GastosClient />;
+  return <MovimientosClient />;
 }

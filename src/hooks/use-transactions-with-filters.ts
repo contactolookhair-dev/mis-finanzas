@@ -1,0 +1,158 @@
+"use client";
+
+import { useMemo, useState, useEffect, useCallback } from "react";
+
+export type TransactionRow = {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  type: "INGRESO" | "EGRESO" | "TRANSFERENCIA";
+  account: string;
+  category: string;
+  businessUnit: string;
+  origin: "PERSONAL" | "EMPRESA";
+  reimbursable: boolean;
+  reviewStatus: "PENDIENTE" | "REVISADO" | "OBSERVADO";
+};
+
+type FilterRange = "today" | "week" | "month";
+
+export type TransactionFilters = {
+  range: FilterRange;
+  search: string;
+  accountId: string;
+  categoryId: string;
+  type: "INGRESO" | "EGRESO" | "";
+};
+
+const DEFAULT_FILTERS: TransactionFilters = {
+  range: "today",
+  search: "",
+  accountId: "",
+  categoryId: "",
+  type: ""
+};
+
+function getRangeDates(range: FilterRange) {
+  const now = new Date();
+  const start = new Date(now);
+  const end = new Date(now);
+
+  if (range === "today") {
+    // start is today at midnight
+  } else if (range === "week") {
+    start.setDate(start.getDate() - 7);
+  } else if (range === "month") {
+    start.setMonth(start.getMonth() - 1);
+  }
+
+  start.setHours(0, 0, 0, 0);
+  end.setHours(23, 59, 59, 999);
+
+  return {
+    start: start.toISOString().split("T")[0],
+    end: end.toISOString().split("T")[0]
+  };
+}
+
+function buildQuery(filters: TransactionFilters) {
+  const params = new URLSearchParams();
+  params.set("take", "80");
+  const { start, end } = getRangeDates(filters.range);
+  params.set("startDate", start);
+  params.set("endDate", end);
+  if (filters.search) params.set("search", filters.search);
+  if (filters.accountId) params.set("accountId", filters.accountId);
+  if (filters.categoryId) params.set("categoryId", filters.categoryId);
+  if (filters.type) params.set("type", filters.type);
+  return params.toString();
+}
+
+export function useTransactionsWithFilters() {
+  const [filters, setFilters] = useState<TransactionFilters>(DEFAULT_FILTERS);
+  const [rows, setRows] = useState<TransactionRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+
+  const query = useMemo(() => buildQuery(filters), [filters]);
+
+  const refresh = useCallback(() => {
+    setFilters((prev) => ({ ...prev }));
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await fetch(`/api/transactions?${query}`, {
+          cache: "no-store"
+        });
+        if (!response.ok) throw new Error("No se pudieron cargar los movimientos.");
+        const payload = (await response.json()) as { items: TransactionRow[] };
+        if (!active) return;
+        setRows(payload.items);
+      } catch (loadError) {
+        if (!active) return;
+        setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los movimientos.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [query]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadAccounts() {
+      try {
+        const response = await fetch("/api/accounts", { cache: "no-store" });
+        if (!response.ok) throw new Error();
+        const payload = (await response.json()) as { items: { id: string; name: string }[] };
+        if (active) setAccounts(payload.items);
+      } catch {
+        if (active) setAccounts([]);
+      }
+    }
+    void loadAccounts();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function loadCategories() {
+      try {
+        const response = await fetch("/api/categories", { cache: "no-store" });
+        if (!response.ok) throw new Error();
+        const payload = (await response.json()) as { items: { id: string; name: string }[] };
+        if (active) setCategories(payload.items);
+      } catch {
+        if (active) setCategories([]);
+      }
+    }
+    void loadCategories();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return {
+    rows,
+    loading,
+    error,
+    filters,
+    setFilters,
+    accounts,
+    categories,
+    refresh
+  };
+}
