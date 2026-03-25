@@ -21,6 +21,38 @@ import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-p
 import { useDashboardHeader } from "@/components/layout/dashboard-header-context";
 
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
+const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
+
+type InicioWidgetId =
+  | "cashflow"
+  | "financialHealth"
+  | "calendar"
+  | "calculator"
+  | "recentMovements"
+  | "aiFinancial";
+
+type WidgetSize = "compact" | "standard" | "featured";
+
+const defaultWidgetOrder: InicioWidgetId[] = [
+  "cashflow",
+  "financialHealth",
+  "calendar",
+  "calculator",
+  "recentMovements",
+  "aiFinancial"
+];
+
+const widgetMeta: Record<
+  InicioWidgetId,
+  { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
+> = {
+  cashflow: { label: "Flujo del mes", description: "Ingresos vs gastos del período.", category: "Esenciales" },
+  financialHealth: { label: "Salud financiera", description: "Semáforo, alertas y foco del mes.", category: "Inteligencia" },
+  calendar: { label: "Calendario", description: "Selecciona días y revisa tu saldo estimado.", category: "Control" },
+  calculator: { label: "Calculadora", description: "Haz cuentas rápidas sin salir de Inicio.", category: "Control" },
+  recentMovements: { label: "Movimientos", description: "Últimos gastos e ingresos registrados.", category: "Esenciales" },
+  aiFinancial: { label: "IA financiera", description: "Análisis bajo demanda con tus datos reales.", category: "Planeación" }
+};
 
 type AccountItem = {
   id: string;
@@ -90,6 +122,16 @@ export function InicioClient() {
   const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
   const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
   const [widgetPanelOpen, setWidgetPanelOpen] = useState(false);
+  const [widgetOrder, setWidgetOrder] = useState<InicioWidgetId[]>(defaultWidgetOrder);
+  const [hiddenWidgets, setHiddenWidgets] = useState<InicioWidgetId[]>(defaultWidgetOrder);
+  const [widgetSizes, setWidgetSizes] = useState<Record<InicioWidgetId, WidgetSize>>({
+    cashflow: "compact",
+    financialHealth: "standard",
+    calendar: "featured",
+    calculator: "compact",
+    recentMovements: "standard",
+    aiFinancial: "standard"
+  });
 
   const monthGrid = useMemo(() => buildMonthGrid(new Date()), []);
   const movementDateKeys = useMemo(
@@ -188,6 +230,48 @@ export function InicioClient() {
   const onboardingInsightReady = Boolean(snapshot && accounts.length > 0 && movements.length > 0);
   const totalAvailableTone = availableTotal < 0 ? "negative" : "positive";
 
+  const visibleWidgets = useMemo(
+    () => widgetOrder.filter((id) => !hiddenWidgets.includes(id)),
+    [hiddenWidgets, widgetOrder]
+  );
+
+  const categorizedWidgets = useMemo(() => {
+    const groups: Record<string, InicioWidgetId[]> = {
+      Esenciales: [],
+      Control: [],
+      Inteligencia: [],
+      Planeación: []
+    };
+
+    defaultWidgetOrder.forEach((id) => {
+      groups[widgetMeta[id].category].push(id);
+    });
+
+    return groups;
+  }, []);
+
+  const moveWidget = (id: InicioWidgetId, direction: "up" | "down") => {
+    setWidgetOrder((current) => {
+      const idx = current.indexOf(id);
+      if (idx === -1) return current;
+      const target = direction === "up" ? Math.max(0, idx - 1) : Math.min(current.length - 1, idx + 1);
+      const next = [...current];
+      const [item] = next.splice(idx, 1);
+      next.splice(target, 0, item);
+      return next;
+    });
+  };
+
+  const toggleWidget = (id: InicioWidgetId) => {
+    setHiddenWidgets((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    );
+  };
+
+  const updateWidgetSize = (id: InicioWidgetId, size: WidgetSize) => {
+    setWidgetSizes((current) => ({ ...current, [id]: size }));
+  };
+
   useEffect(() => {
     if (loading || !snapshot) {
       setMetric(null);
@@ -224,6 +308,51 @@ export function InicioClient() {
       // noop
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(INICIO_WIDGET_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        order?: InicioWidgetId[];
+        hidden?: InicioWidgetId[];
+        sizes?: Record<InicioWidgetId, WidgetSize>;
+      };
+
+      if (parsed.order?.length) {
+        setWidgetOrder(parsed.order.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id)));
+      }
+      if (parsed.hidden?.length) {
+        setHiddenWidgets(parsed.hidden.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id)));
+      }
+      const sizes = parsed.sizes;
+      if (sizes) {
+        setWidgetSizes((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            Object.entries(sizes).filter(
+              ([key, value]) =>
+                defaultWidgetOrder.includes(key as InicioWidgetId) &&
+                (["compact", "standard", "featured"] as WidgetSize[]).includes(value as WidgetSize)
+            )
+          )
+        }));
+      }
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        INICIO_WIDGET_STORAGE_KEY,
+        JSON.stringify({ order: widgetOrder, hidden: hiddenWidgets, sizes: widgetSizes })
+      );
+    } catch {
+      // noop
+    }
+  }, [hiddenWidgets, widgetOrder, widgetSizes]);
 
   useEffect(() => {
     try {
@@ -323,6 +452,10 @@ export function InicioClient() {
         insightsReady={onboardingInsightReady}
       />
 
+      {error ? (
+        <ErrorStateCard title="No se pudo cargar la vista" description={error} onRetry={() => void loadData()} />
+      ) : null}
+
       <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {accounts.length === 0 ? (
           <div className="col-span-2 sm:col-span-1 lg:col-span-1">
@@ -410,196 +543,347 @@ export function InicioClient() {
       </SurfaceCard>
 
       {widgetPanelOpen ? (
-        <SurfaceCard variant="soft" padding="sm" className="space-y-2">
+        <SurfaceCard variant="soft" padding="sm" className="space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Personalización
-              </p>
-              <p className="mt-1 text-base font-semibold text-slate-900">Widgets disponibles</p>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Personalización</p>
+              <p className="mt-1 text-base font-semibold text-slate-900">Elige tus widgets</p>
               <p className="mt-1 text-sm text-slate-600">
-                Vamos a conectar este panel con el sistema modular sin afectar cálculos.
+                Activa, ordena y define el tamaño de tu panel.
               </p>
             </div>
-            <Button type="button" variant="secondary" className="rounded-full" onClick={() => setWidgetPanelOpen(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              className="shrink-0 rounded-full"
+              onClick={() => setWidgetPanelOpen(false)}
+            >
               Cerrar
             </Button>
           </div>
-        </SurfaceCard>
-      ) : null}
 
-      <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
-      {financialHealthError ? (
-        <ErrorStateCard
-          title="No se pudo cargar la salud financiera"
-          description={financialHealthError}
-          onRetry={() => void loadData()}
-        />
-      ) : null}
+          <div className="space-y-4">
+            {Object.entries(categorizedWidgets).map(([category, ids]) => (
+              <div key={category} className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  {category}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {ids.map((id) => {
+                    const isHidden = hiddenWidgets.includes(id);
+                    const size = widgetSizes[id] ?? "standard";
+                    return (
+                      <div
+                        key={id}
+                        className={`rounded-2xl border border-slate-200 bg-white/80 p-3 shadow-[0_10px_22px_rgba(15,23,42,0.05)] ${
+                          isHidden ? "opacity-60" : "opacity-100"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-slate-900">{widgetMeta[id].label}</p>
+                            <p className="mt-1 text-xs text-slate-500">{widgetMeta[id].description}</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Button
+                              type="button"
+                              variant={isHidden ? "secondary" : "default"}
+                              className={`h-8 rounded-full px-3 text-xs font-semibold ${
+                                isHidden ? "" : "bg-slate-900 text-white hover:bg-slate-800"
+                              }`}
+                              onClick={() => toggleWidget(id)}
+                            >
+                              {isHidden ? "Activar" : "Desactivar"}
+                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-full p-0 text-slate-500"
+                                onClick={() => moveWidget(id, "up")}
+                                aria-label="Subir"
+                              >
+                                ↑
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-full p-0 text-slate-500"
+                                onClick={() => moveWidget(id, "down")}
+                                aria-label="Bajar"
+                              >
+                                ↓
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
 
-      <SurfaceCard variant="highlight" padding="sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Análisis inteligente</p>
-            <p className="text-base font-semibold text-slate-900">Pulsa para revisar tu situación financiera con IA</p>
-          </div>
-          <Button
-            type="button"
-            onClick={handleAnalyzeFinancials}
-            disabled={financialInsightsLoading}
-            className="h-11 rounded-2xl bg-primary px-4 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
-          >
-            {financialInsightsLoading ? "Analizando..." : "Analizar mis finanzas"}
-          </Button>
-        </div>
-      </SurfaceCard>
-
-      {error ? (
-        <ErrorStateCard title="No se pudo cargar la vista" description={error} onRetry={() => void loadData()} />
-      ) : null}
-
-      <section className="grid gap-3 sm:grid-cols-2">
-        <SurfaceCard variant="soft" padding="sm">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Ingresos</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-600">
-            {loading ? "..." : formatCurrency(incomes)}
-          </p>
-        </SurfaceCard>
-        <SurfaceCard variant="soft" padding="sm">
-          <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Gastos</p>
-          <p className="mt-2 text-2xl font-semibold text-rose-600">
-            {loading ? "..." : formatCurrency(expenses)}
-          </p>
-        </SurfaceCard>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <SurfaceCard variant="soft" padding="sm">
-          <div className="mb-2 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calendario mensual</p>
-              <p className="text-lg font-semibold text-slate-900">
-                {new Date(monthGrid.year, monthGrid.month, 1).toLocaleString("es-CL", {
-                  month: "long",
-                  year: "numeric"
-                })}
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Saldo del día</p>
-              <p className="text-lg font-semibold text-emerald-600">{formatCurrency(selectedDayTotal)}</p>
-              <p className="text-[11px] text-slate-400">{selectedDateLabel}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
-            {["L", "M", "M", "J", "V", "S", "D"].map((label) => (
-              <span key={label}>{label}</span>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Tamaño
+                          </span>
+                          {(["compact", "standard", "featured"] as WidgetSize[]).map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              onClick={() => updateWidgetSize(id, option)}
+                              className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                size === option
+                                  ? "border-slate-900 bg-slate-900 text-white"
+                                  : "border-slate-200 bg-white text-slate-600"
+                              }`}
+                            >
+                              {option === "featured" ? "Destacado" : option === "standard" ? "Estándar" : "Compacto"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </div>
-          <div className="mt-2 grid grid-cols-7 gap-1.5">
-            {monthGrid.cells.map((day, index) => {
-              if (!day) {
-                return <span key={`empty-${index}`} className="h-9 rounded-xl bg-slate-50" />;
-              }
-              const dateKey = `${monthGrid.year}-${`${monthGrid.month + 1}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
-              const isToday = dateKey === todayKey;
-              const isSelected = dateKey === selectedDate;
-              const hasMovement = movementDateKeys.has(dateKey);
-              return (
-                <button
-                  key={dateKey}
-                  type="button"
-                  onClick={() => setSelectedDate(dateKey)}
-                  className={`flex h-9 items-center justify-center rounded-xl text-xs font-medium transition ${
-                    isSelected
-                      ? "bg-primary text-white"
-                      : isToday
-                        ? "bg-slate-900 text-white"
-                        : hasMovement
-                          ? "bg-slate-100 text-slate-700"
-                          : "bg-slate-50 text-slate-500"
-                  }`}
-                >
-                  {day}
-                </button>
-            );
-          })}
-          </div>
         </SurfaceCard>
-        <SurfaceCard variant="soft" padding="sm" className="hidden lg:block">
-          <div className="mb-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calculadora dinámica</p>
-            <p className="text-lg font-semibold text-slate-900">Haz cuentas sin salir del dashboard</p>
-          </div>
-          <CalculatorWidget
-            calculatorInput={calculatorInput}
-            calculatorResult={calculatorResult}
-            onAppend={appendCalculatorSymbol}
-            onClear={handleCalculatorClear}
-            onDelete={handleCalculatorDelete}
-            onEquals={handleCalculatorEquals}
+      ) : null}
+
+      <div className="space-y-4">
+        {visibleWidgets.length === 0 ? (
+          <EmptyStateCard
+            title="Tu panel está listo para personalizar"
+            description="Agrega widgets para ver aquí tu información más importante."
+            actionLabel="Elegir widgets"
+            onAction={() => setWidgetPanelOpen(true)}
+            className="shadow-none"
           />
-        </SurfaceCard>
-      </section>
+        ) : null}
 
-      <SurfaceCard variant="soft" padding="sm">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-slate-900">Movimientos recientes</h3>
-          <span className="text-xs text-slate-500">{movements.length} registros</span>
-        </div>
-        <div className="space-y-2">
-          {loading ? (
-            <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-4 w-40" />
-                <Skeleton className="h-4 w-20" />
+        {visibleWidgets.map((id) => {
+          const size = widgetSizes[id] ?? "standard";
+
+          if (id === "cashflow") {
+            return (
+              <section key={id} className="grid gap-3 sm:grid-cols-2">
+                <SurfaceCard variant="soft" padding="sm">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Ingresos</p>
+                  <p className="mt-2 text-2xl font-semibold text-emerald-600">
+                    {loading ? "..." : formatCurrency(incomes)}
+                  </p>
+                </SurfaceCard>
+                <SurfaceCard variant="soft" padding="sm">
+                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Gastos</p>
+                  <p className="mt-2 text-2xl font-semibold text-rose-600">
+                    {loading ? "..." : formatCurrency(expenses)}
+                  </p>
+                </SurfaceCard>
+              </section>
+            );
+          }
+
+          if (id === "financialHealth") {
+            return (
+              <div key={id} className="space-y-3">
+                <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
+                {financialHealthError ? (
+                  <ErrorStateCard
+                    title="No se pudo cargar la salud financiera"
+                    description={financialHealthError}
+                    onRetry={() => void loadData()}
+                  />
+                ) : null}
               </div>
-              <Skeleton className="h-3 w-56" />
-              <Skeleton className="h-3 w-40" />
-            </div>
-          ) : null}
-          {!loading && movements.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">
-              <p className="font-semibold text-slate-900">Sin movimientos</p>
-              <p className="mt-1 text-sm text-slate-500">Agrega tu primer gasto o ingreso para ver el historial aquí.</p>
-              <Button type="button" variant="secondary" className="mt-3 rounded-full" onClick={() => setOpenModal(true)}>
-                Agregar movimiento
-              </Button>
-            </div>
-          ) : null}
-          {movements.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-3"
-            >
-              <div>
-                <p className="text-sm font-medium text-slate-900">{item.description}</p>
-                <p className="text-xs text-slate-500">
-                  {formatDate(item.date)} · {item.account} · {item.category}
-                </p>
+            );
+          }
+
+          if (id === "calendar") {
+            return (
+              <section
+                key={id}
+                className={`grid gap-4 ${size === "featured" ? "lg:grid-cols-[minmax(0,1fr)_300px]" : ""}`}
+              >
+                <SurfaceCard variant="soft" padding="sm">
+                  <div className="mb-2 flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calendario mensual</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {new Date(monthGrid.year, monthGrid.month, 1).toLocaleString("es-CL", {
+                          month: "long",
+                          year: "numeric"
+                        })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Saldo del día</p>
+                      <p className="text-lg font-semibold text-emerald-600">{formatCurrency(selectedDayTotal)}</p>
+                      <p className="text-[11px] text-slate-400">{selectedDateLabel}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-slate-400">
+                    {["L", "M", "M", "J", "V", "S", "D"].map((label) => (
+                      <span key={label}>{label}</span>
+                    ))}
+                  </div>
+                  <div className="mt-2 grid grid-cols-7 gap-1.5">
+                    {monthGrid.cells.map((day, index) => {
+                      if (!day) {
+                        return <span key={`empty-${index}`} className="h-9 rounded-xl bg-slate-50" />;
+                      }
+                      const dateKey = `${monthGrid.year}-${`${monthGrid.month + 1}`.padStart(2, "0")}-${`${day}`.padStart(2, "0")}`;
+                      const isToday = dateKey === todayKey;
+                      const isSelected = dateKey === selectedDate;
+                      const hasMovement = movementDateKeys.has(dateKey);
+                      return (
+                        <button
+                          key={dateKey}
+                          type="button"
+                          onClick={() => setSelectedDate(dateKey)}
+                          className={`flex h-9 items-center justify-center rounded-xl text-xs font-medium transition ${
+                            isSelected
+                              ? "bg-primary text-white"
+                              : isToday
+                                ? "bg-slate-900 text-white"
+                                : hasMovement
+                                  ? "bg-slate-100 text-slate-700"
+                                  : "bg-slate-50 text-slate-500"
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </SurfaceCard>
+                {size === "featured" ? (
+                  <SurfaceCard variant="soft" padding="sm" className="hidden lg:block">
+                    <div className="mb-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calculadora dinámica</p>
+                      <p className="text-lg font-semibold text-slate-900">Haz cuentas sin salir del dashboard</p>
+                    </div>
+                    <CalculatorWidget
+                      calculatorInput={calculatorInput}
+                      calculatorResult={calculatorResult}
+                      onAppend={appendCalculatorSymbol}
+                      onClear={handleCalculatorClear}
+                      onDelete={handleCalculatorDelete}
+                      onEquals={handleCalculatorEquals}
+                    />
+                  </SurfaceCard>
+                ) : null}
+              </section>
+            );
+          }
+
+          if (id === "calculator") {
+            return (
+              <SurfaceCard key={id} variant="soft" padding="sm" className="space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calculadora</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">Haz cuentas rápidas</p>
+                    <p className="mt-1 text-sm text-slate-600">Abre una calculadora sin perder el estado.</p>
+                  </div>
+                  <Button type="button" variant="secondary" className="rounded-full" onClick={() => setCalculatorOpen(true)}>
+                    Abrir
+                  </Button>
+                </div>
+                {size !== "compact" ? (
+                  <CalculatorWidget
+                    calculatorInput={calculatorInput}
+                    calculatorResult={calculatorResult}
+                    onAppend={appendCalculatorSymbol}
+                    onClear={handleCalculatorClear}
+                    onDelete={handleCalculatorDelete}
+                    onEquals={handleCalculatorEquals}
+                    compact
+                  />
+                ) : null}
+              </SurfaceCard>
+            );
+          }
+
+          if (id === "recentMovements") {
+            const items = size === "compact" ? movements.slice(0, 3) : movements;
+            return (
+              <SurfaceCard key={id} variant="soft" padding="sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-slate-900">Movimientos recientes</h3>
+                  <span className="text-xs text-slate-500">{movements.length} registros</span>
+                </div>
+                <div className="space-y-2">
+                  {loading ? (
+                    <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                      <div className="flex items-center justify-between">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-4 w-20" />
+                      </div>
+                      <Skeleton className="h-3 w-56" />
+                      <Skeleton className="h-3 w-40" />
+                    </div>
+                  ) : null}
+                  {!loading && items.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">
+                      <p className="font-semibold text-slate-900">Sin movimientos</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Agrega tu primer gasto o ingreso para ver el historial aquí.
+                      </p>
+                      <Button type="button" variant="secondary" className="mt-3 rounded-full" onClick={() => setOpenModal(true)}>
+                        Agregar movimiento
+                      </Button>
+                    </div>
+                  ) : null}
+                  {items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between rounded-xl border border-slate-100 px-3 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{item.description}</p>
+                        <p className="text-xs text-slate-500">
+                          {formatDate(item.date)} · {item.account} · {item.category}
+                        </p>
+                      </div>
+                      <p className={`text-sm font-semibold ${item.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {formatCurrency(item.amount)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </SurfaceCard>
+            );
+          }
+
+          if (id === "aiFinancial") {
+            return (
+              <div key={id} className="space-y-3">
+                <SurfaceCard variant="highlight" padding="sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">IA financiera</p>
+                      <p className="text-base font-semibold text-slate-900">
+                        Pulsa para revisar tu situación financiera
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={handleAnalyzeFinancials}
+                      disabled={financialInsightsLoading}
+                      className="h-11 rounded-2xl bg-primary px-4 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
+                    >
+                      {financialInsightsLoading ? "Analizando..." : "Analizar mis finanzas"}
+                    </Button>
+                  </div>
+                </SurfaceCard>
+                <FinancialInsightsPanel
+                  loading={financialInsightsLoading}
+                  error={financialInsightsError}
+                  response={financialInsights}
+                />
               </div>
-              <p className={`text-sm font-semibold ${item.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                {formatCurrency(item.amount)}
-              </p>
-            </div>
-          ))}
-        </div>
-      </SurfaceCard>
+            );
+          }
 
-      <FinancialInsightsPanel
-        loading={financialInsightsLoading}
-        error={financialInsightsError}
-        response={financialInsights}
-      />
-
-      <div className="hidden sm:block">
-        <Button
-          type="button"
-          className="h-11 w-full rounded-2xl bg-primary text-white shadow-soft"
-          onClick={() => setOpenModal(true)}
-        >
-          Nueva transacción
-        </Button>
+          return null;
+        })}
       </div>
 
       <NewTransactionModal
