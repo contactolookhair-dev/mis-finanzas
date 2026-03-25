@@ -1,6 +1,7 @@
 import { AccountType, FinancialOrigin, TransactionType } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
 import { toAmountNumber } from "@/server/lib/amounts";
+import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
 const ACCOUNT_META_KEY = "manualAccountMeta";
 
@@ -8,6 +9,9 @@ type AccountMeta = {
   color?: string;
   icon?: string;
   appearanceMode?: "auto" | "manual";
+  creditLimit?: number;
+  closingDay?: number;
+  paymentDay?: number;
 };
 
 type AccountMetaMap = Record<string, AccountMeta>;
@@ -29,7 +33,19 @@ function readAccountMeta(raw: unknown): AccountMetaMap {
     parsed[accountId] = {
       color: typeof candidate.color === "string" ? candidate.color : undefined,
       icon: typeof candidate.icon === "string" ? candidate.icon : undefined,
-      appearanceMode
+      appearanceMode,
+      creditLimit:
+        typeof candidate.creditLimit === "number" && Number.isFinite(candidate.creditLimit)
+          ? candidate.creditLimit
+          : undefined,
+      closingDay:
+        typeof candidate.closingDay === "number" && Number.isFinite(candidate.closingDay)
+          ? candidate.closingDay
+          : undefined,
+      paymentDay:
+        typeof candidate.paymentDay === "number" && Number.isFinite(candidate.paymentDay)
+          ? candidate.paymentDay
+          : undefined
     };
   });
 
@@ -153,7 +169,10 @@ export async function listManualAccountsWithBalances(workspaceId: string) {
     balance: byAccountId.get(account.id) ?? 0,
     color: metaMap[account.id]?.color ?? null,
     icon: metaMap[account.id]?.icon ?? null,
-    appearanceMode: metaMap[account.id]?.appearanceMode ?? "manual"
+    appearanceMode: metaMap[account.id]?.appearanceMode ?? "manual",
+    creditLimit: metaMap[account.id]?.creditLimit ?? null,
+    closingDay: metaMap[account.id]?.closingDay ?? null,
+    paymentDay: metaMap[account.id]?.paymentDay ?? null
   }));
 }
 
@@ -166,6 +185,9 @@ export async function createManualAccount(input: {
   color?: string;
   icon?: string;
   appearanceMode?: "auto" | "manual";
+  creditLimit?: number;
+  closingDay?: number;
+  paymentDay?: number;
 }) {
   const created = await prisma.account.create({
     data: {
@@ -199,6 +221,15 @@ export async function createManualAccount(input: {
   if (input.color) metaPatch.color = input.color;
   if (input.icon) metaPatch.icon = input.icon;
   if (input.appearanceMode) metaPatch.appearanceMode = input.appearanceMode;
+  if (typeof input.creditLimit === "number" && Number.isFinite(input.creditLimit) && input.creditLimit > 0) {
+    metaPatch.creditLimit = input.creditLimit;
+  }
+  if (typeof input.closingDay === "number" && Number.isFinite(input.closingDay) && input.closingDay >= 1) {
+    metaPatch.closingDay = input.closingDay;
+  }
+  if (typeof input.paymentDay === "number" && Number.isFinite(input.paymentDay) && input.paymentDay >= 1) {
+    metaPatch.paymentDay = input.paymentDay;
+  }
   if (Object.keys(metaPatch).length) {
     await upsertAccountMeta(input.workspaceId, created.id, metaPatch);
   }
@@ -216,6 +247,9 @@ export async function updateManualAccount(input: {
   color?: string;
   icon?: string;
   appearanceMode?: "auto" | "manual";
+  creditLimit?: number;
+  closingDay?: number;
+  paymentDay?: number;
 }) {
   const account = await prisma.account.findFirst({
     where: { id: input.accountId, workspaceId: input.workspaceId }
@@ -236,6 +270,9 @@ export async function updateManualAccount(input: {
   if (input.color !== undefined) metaPatch.color = input.color;
   if (input.icon !== undefined) metaPatch.icon = input.icon;
   if (input.appearanceMode !== undefined) metaPatch.appearanceMode = input.appearanceMode;
+  if (input.creditLimit !== undefined) metaPatch.creditLimit = input.creditLimit;
+  if (input.closingDay !== undefined) metaPatch.closingDay = input.closingDay;
+  if (input.paymentDay !== undefined) metaPatch.paymentDay = input.paymentDay;
   if (Object.keys(metaPatch).length) {
     await upsertAccountMeta(input.workspaceId, account.id, metaPatch);
   }
@@ -284,4 +321,3 @@ export async function resetAccountBaseTransaction(params: {
     }
   });
 }
-import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";

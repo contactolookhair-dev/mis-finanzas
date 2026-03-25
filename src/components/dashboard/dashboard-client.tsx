@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
+import { computeCreditCardMetrics } from "@/lib/accounts/credit-card";
 import {
   appendMonthlyReportHistory,
   createMonthlyReportHistoryEntry,
@@ -55,6 +56,9 @@ type AccountItem = {
   color: string | null;
   icon: string | null;
   appearanceMode: "auto" | "manual";
+  creditLimit: number | null;
+  closingDay: number | null;
+  paymentDay: number | null;
 };
 
 type WidgetId =
@@ -104,7 +108,16 @@ const widgetMeta: Record<
 
 function AccountCard({ account }: { account: AccountItem }) {
   const appearance = resolveAccountAppearance(account);
-  const accentTone = account.balance >= 0 ? "text-emerald-600" : "text-rose-600";
+  const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+  const primaryAmount = account.type === "CREDITO" && credit ? credit.debt : account.balance;
+  const accentTone =
+    account.type === "CREDITO"
+      ? credit && credit.debt > 0
+        ? "text-rose-600"
+        : "text-emerald-600"
+      : account.balance >= 0
+        ? "text-emerald-600"
+        : "text-rose-600";
 
   return (
     <div
@@ -136,19 +149,28 @@ function AccountCard({ account }: { account: AccountItem }) {
           </div>
         </div>
         <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Saldo disponible</p>
-          <p className={`mt-1 text-3xl font-semibold ${accentTone}`}>{formatCurrency(account.balance)}</p>
+          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
+            {account.type === "CREDITO" ? "Deuda actual" : "Saldo disponible"}
+          </p>
+          <p className={`mt-1 text-3xl font-semibold ${accentTone}`}>{formatCurrency(primaryAmount)}</p>
         </div>
         {account.type === "CREDITO" ? (
-          <div className="space-y-2 rounded-[20px] bg-slate-900/80 p-3 text-white">
-            <div className="flex items-center justify-between text-xs">
-              <span>Utilizado</span>
-              <span>{formatCurrency(account.balance * 0.18)}</span>
-            </div>
+            <div className="space-y-2 rounded-[20px] bg-slate-900/80 p-3 text-white">
+              <div className="flex items-center justify-between text-xs">
+                <span>Cupo disponible</span>
+                <span>
+                  {credit?.available === null ? "—" : formatCurrency(credit?.available ?? 0)}
+                </span>
+              </div>
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/30">
-              <div className="h-full bg-gradient-to-r from-sky-500 via-cyan-500 to-emerald-400" style={{ width: "40%" }} />
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-emerald-400"
+                style={{ width: `${Math.round(((credit?.utilization ?? 0) * 100))}%` }}
+              />
             </div>
-            <p className="text-[11px] text-white/80">Cupo 40% usado</p>
+            <p className="text-[11px] text-white/80">
+              {credit?.creditLimit ? `${Math.round((credit.utilization ?? 0) * 100)}% usado · ${formatCurrency(credit.creditLimit)} total` : "Define un cupo para ver el disponible"}
+            </p>
           </div>
         ) : (
           <p className="text-xs text-slate-500">Saldo manual</p>

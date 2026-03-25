@@ -17,7 +17,10 @@ const updateAccountSchema = z.object({
   color: z.string().optional(),
   icon: z.string().optional(),
   currentBalance: z.number().optional(),
-  appearanceMode: z.enum(["auto", "manual"]).optional()
+  appearanceMode: z.enum(["auto", "manual"]).optional(),
+  creditLimit: z.number().optional(),
+  closingDay: z.number().int().min(1).max(31).optional(),
+  paymentDay: z.number().int().min(1).max(31).optional()
 });
 
 export async function PATCH(

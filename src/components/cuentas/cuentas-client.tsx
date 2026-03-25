@@ -21,6 +21,10 @@ import { SectionHeader } from "@/components/ui/section-header";
 import { StatPill } from "@/components/ui/stat-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
+import { formatDate } from "@/lib/formatters/date";
+import { computeCreditCardMetrics } from "@/lib/accounts/credit-card";
+import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
 const fieldLabelClass = "text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500";
 
@@ -33,6 +37,9 @@ type AccountItem = {
   color: string | null;
   icon: string | null;
   appearanceMode: "auto" | "manual";
+  creditLimit: number | null;
+  closingDay: number | null;
+  paymentDay: number | null;
 };
 
 type AccountFormState = {
@@ -41,6 +48,9 @@ type AccountFormState = {
   type: AccountItem["type"];
   openingBalance: string;
   currentBalance: string;
+  creditLimit: string;
+  closingDay: string;
+  paymentDay: string;
   color: string;
   icon: string;
   appearanceMode: "auto" | "manual";
@@ -262,9 +272,50 @@ function AccountUpsertModal({
                 />
               </label>
 
+              {form.type === "CREDITO" ? (
+                <div className="grid gap-2.5 sm:col-span-2 sm:grid-cols-3">
+                  <label className="space-y-2 sm:col-span-2">
+                    <span className={fieldLabelClass}>Cupo total (opcional)</span>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={form.creditLimit}
+                      onChange={(event) => onChange({ creditLimit: event.target.value, appearanceMode: form.appearanceMode })}
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className={fieldLabelClass}>Día de cierre</span>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={31}
+                      placeholder="Ej: 25"
+                      value={form.closingDay}
+                      onChange={(event) => onChange({ closingDay: event.target.value })}
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className={fieldLabelClass}>Día de pago</span>
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={31}
+                      placeholder="Ej: 5"
+                      value={form.paymentDay}
+                      onChange={(event) => onChange({ paymentDay: event.target.value })}
+                    />
+                  </label>
+                </div>
+              ) : null}
+
               {mode === "create" ? (
                 <label className="space-y-2 sm:col-span-2">
-                  <span className={fieldLabelClass}>Saldo inicial (opcional)</span>
+                  <span className={fieldLabelClass}>
+                    {form.type === "CREDITO" ? "Deuda inicial (opcional)" : "Saldo inicial (opcional)"}
+                  </span>
                   <Input
                     type="number"
                     inputMode="decimal"
@@ -275,7 +326,9 @@ function AccountUpsertModal({
                 </label>
               ) : (
                 <label className="space-y-2 sm:col-span-2">
-                  <span className={fieldLabelClass}>Saldo actual</span>
+                  <span className={fieldLabelClass}>
+                    {form.type === "CREDITO" ? "Deuda actual" : "Saldo actual"}
+                  </span>
                   <Input
                     type="number"
                     inputMode="decimal"
@@ -439,19 +492,77 @@ function AccountDetailModal({
   open,
   account,
   onClose,
+  onAddPurchase,
+  onRegisterPayment,
   onEdit,
   onDelete
 }: {
   open: boolean;
   account: AccountItem | null;
   onClose: () => void;
+  onAddPurchase: () => void;
+  onRegisterPayment: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [statementItems, setStatementItems] = useState<
+    { id: string; date: string; description: string; amount: number; account: string }[]
+  >([]);
+  const [statementLoading, setStatementLoading] = useState(false);
+  const [statementError, setStatementError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    async function loadStatement() {
+      if (!open || !account || account.type !== "CREDITO") {
+        setStatementItems([]);
+        return;
+      }
+      setStatementLoading(true);
+      setStatementError(null);
+      try {
+        const now = new Date();
+        const startDate = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-01`;
+        const endDate = `${now.getFullYear()}-${`${now.getMonth() + 1}`.padStart(2, "0")}-${`${now.getDate()}`.padStart(2, "0")}`;
+        const params = new URLSearchParams();
+        params.set("take", "80");
+        params.set("startDate", startDate);
+        params.set("endDate", endDate);
+        const response = await fetch(`/api/transactions?${params.toString()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("No se pudo cargar el estado de cuenta.");
+        const payload = (await response.json()) as { items: { id: string; date: string; description: string; amount: number; account: string }[] };
+        if (!active) return;
+        const filtered = (payload.items ?? [])
+          .filter((item) => item.description !== BASE_TRANSACTION_MARKER)
+          .filter((item) => item.account === account.name)
+          .filter((item) => item.amount < 0);
+        setStatementItems(filtered.slice(0, 12));
+      } catch (error) {
+        if (!active) return;
+        setStatementError(error instanceof Error ? error.message : "No se pudo cargar el estado de cuenta.");
+      } finally {
+        if (active) setStatementLoading(false);
+      }
+    }
+
+    void loadStatement();
+    return () => {
+      active = false;
+    };
+  }, [open, account]);
+
   if (!open || !account) return null;
   const visual = resolveAccountVisual(account);
   const Icon = visual.icon;
-  const balanceTone = account.balance >= 0 ? "text-emerald-700" : "text-rose-700";
+  const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+  const balanceTone =
+    account.type === "CREDITO"
+      ? credit && credit.debt > 0
+        ? "text-rose-700"
+        : "text-emerald-700"
+      : account.balance >= 0
+        ? "text-emerald-700"
+        : "text-rose-700";
   const accentColor = normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type];
   const accentBackground = hexToRgba(accentColor, 0.12);
 
@@ -491,13 +602,109 @@ function AccountDetailModal({
         </div>
 
         <SurfaceCard variant="soft" padding="sm" className="space-y-3">
-          <p className={fieldLabelClass}>Saldo</p>
-          <p className={`text-3xl font-semibold tracking-tight ${balanceTone}`}>{formatCurrency(account.balance)}</p>
-          <p className="text-sm text-slate-500">Tipo: {typeLabel[account.type]}</p>
-          <p className="text-xs text-slate-500">
-            Apariencia: {account.appearanceMode === "auto" ? "Automática" : "Manual"}
-          </p>
+          {account.type === "CREDITO" && credit ? (
+            <>
+              <p className={fieldLabelClass}>Tarjeta de crédito</p>
+              <p className={`text-3xl font-semibold tracking-tight ${balanceTone}`}>{formatCurrency(credit.debt)}</p>
+              <div className="grid gap-2 rounded-2xl border border-slate-200/70 bg-white/85 p-3 text-sm text-slate-700">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Cupo disponible</span>
+                  <span className="font-semibold text-slate-900">
+                    {credit.available === null ? "—" : formatCurrency(credit.available)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Cupo total</span>
+                  <span className="font-semibold text-slate-900">
+                    {credit.creditLimit === null ? "—" : formatCurrency(credit.creditLimit)}
+                  </span>
+                </div>
+                {credit.creditLimit ? (
+                  <div className="space-y-1.5">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-emerald-400 transition-[width] duration-500 ease-out"
+                        style={{ width: `${Math.round((credit.utilization ?? 0) * 100)}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Utilizado: {formatCurrency(credit.debt)}</span>
+                      <span>{Math.round((credit.utilization ?? 0) * 100)}%</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500">Define un cupo para ver el disponible.</p>
+                )}
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Cierre</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {account.closingDay ? `Día ${account.closingDay}` : "Sin configurar"}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pago</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">
+                    {account.paymentDay ? `Día ${account.paymentDay}` : "Sin configurar"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button type="button" variant="secondary" className="h-11 rounded-2xl" onClick={onAddPurchase}>
+                  Agregar compra
+                </Button>
+                <Button type="button" className="h-11 rounded-2xl" onClick={onRegisterPayment}>
+                  Registrar pago
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className={fieldLabelClass}>Saldo</p>
+              <p className={`text-3xl font-semibold tracking-tight ${balanceTone}`}>{formatCurrency(account.balance)}</p>
+              <p className="text-sm text-slate-500">Tipo: {typeLabel[account.type]}</p>
+              <p className="text-xs text-slate-500">
+                Apariencia: {account.appearanceMode === "auto" ? "Automática" : "Manual"}
+              </p>
+            </>
+          )}
         </SurfaceCard>
+
+        {account.type === "CREDITO" ? (
+          <SurfaceCard variant="soft" padding="sm" className="mt-4 space-y-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Estado de cuenta</p>
+              <h4 className="mt-1 text-sm font-semibold text-slate-900">Compras del período</h4>
+              <p className="mt-1 text-xs text-slate-500">Basado en movimientos registrados en esta tarjeta.</p>
+            </div>
+
+            {statementLoading ? (
+              <p className="text-xs text-slate-500">Cargando compras...</p>
+            ) : statementError ? (
+              <p className="text-xs text-rose-600">{statementError}</p>
+            ) : statementItems.length === 0 ? (
+              <p className="text-xs text-slate-500">Aún no hay compras registradas en este período.</p>
+            ) : (
+              <div className="space-y-2">
+                {statementItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{item.description}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">{formatDate(item.date)}</p>
+                    </div>
+                    <p className="shrink-0 text-sm font-semibold text-rose-700">{formatCurrency(Math.abs(item.amount))}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SurfaceCard>
+        ) : null}
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <Button type="button" variant="secondary" className="h-11 rounded-2xl" onClick={onEdit}>
@@ -531,6 +738,9 @@ export function CuentasClient() {
     type: "DEBITO" as AccountItem["type"],
     openingBalance: "",
     currentBalance: "",
+    creditLimit: "",
+    closingDay: "",
+    paymentDay: "",
     color: "",
     icon: "",
     appearanceMode: "auto"
@@ -538,6 +748,7 @@ export function CuentasClient() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isUpsertOpen, setIsUpsertOpen] = useState(false);
   const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
+  const [transactionModalOpen, setTransactionModalOpen] = useState(false);
 
   const sortedAccounts = useMemo(() => {
     return [...accounts].sort((a, b) => {
@@ -559,6 +770,9 @@ export function CuentasClient() {
       type: "DEBITO",
       openingBalance: "",
       currentBalance: "",
+      creditLimit: "",
+      closingDay: "",
+      paymentDay: "",
       color: "",
       icon: "",
       appearanceMode: "auto"
@@ -575,12 +789,16 @@ export function CuentasClient() {
 
   function openEdit(account: AccountItem) {
     setEditingId(account.id);
+    const creditDebt = account.type === "CREDITO" ? Math.max(0, -account.balance) : account.balance;
     setForm({
       name: account.name,
       bank: account.bank ?? "",
       type: account.type,
       openingBalance: "",
-      currentBalance: account.balance.toString(),
+      currentBalance: creditDebt.toString(),
+      creditLimit: account.creditLimit ? String(account.creditLimit) : "",
+      closingDay: account.closingDay ? String(account.closingDay) : "",
+      paymentDay: account.paymentDay ? String(account.paymentDay) : "",
       color: account.color ?? "",
       icon: account.icon ?? "",
       appearanceMode: account.appearanceMode ?? "manual"
@@ -595,6 +813,18 @@ export function CuentasClient() {
     setEditingId(null);
     resetForm();
   }
+
+  const openNewTransactionForAccount = (kind: "GASTO" | "INGRESO", accountId: string) => {
+    try {
+      window.localStorage.setItem(
+        "mis-finanzas.quick-transaction",
+        JSON.stringify({ kind, accountId })
+      );
+    } catch {
+      // noop
+    }
+    setTransactionModalOpen(true);
+  };
 
   async function loadAccounts() {
     try {
@@ -621,10 +851,25 @@ export function CuentasClient() {
     setError(null);
     setSuccess(null);
     try {
-      const openingBalance =
+      const parsedOpening =
         editingId || form.openingBalance === "" ? undefined : Number(form.openingBalance);
+      const parsedCurrent = editingId && form.currentBalance !== "" ? Number(form.currentBalance) : undefined;
+      const openingBalance =
+        typeof parsedOpening === "number" && Number.isFinite(parsedOpening)
+          ? form.type === "CREDITO"
+            ? -Math.abs(parsedOpening)
+            : parsedOpening
+          : undefined;
       const currentBalance =
-        editingId && form.currentBalance !== "" ? Number(form.currentBalance) : undefined;
+        typeof parsedCurrent === "number" && Number.isFinite(parsedCurrent)
+          ? form.type === "CREDITO"
+            ? -Math.abs(parsedCurrent)
+            : parsedCurrent
+          : undefined;
+
+      const creditLimit = form.creditLimit !== "" ? Number(form.creditLimit) : undefined;
+      const closingDay = form.closingDay !== "" ? Number(form.closingDay) : undefined;
+      const paymentDay = form.paymentDay !== "" ? Number(form.paymentDay) : undefined;
       const response = await fetch(
         editingId ? `/api/accounts/${editingId}` : "/api/accounts",
         {
@@ -636,6 +881,9 @@ export function CuentasClient() {
             type: form.type,
             openingBalance,
             currentBalance,
+            creditLimit,
+            closingDay,
+            paymentDay,
             color: form.color || undefined,
             icon: form.icon || undefined,
             appearanceMode: form.appearanceMode
@@ -709,7 +957,15 @@ export function CuentasClient() {
             {sortedAccounts.map((account) => {
               const visual = resolveAccountVisual(account);
               const Icon = visual.icon;
-              const balanceTone = account.balance >= 0 ? "text-emerald-700" : "text-rose-700";
+              const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+              const balanceTone =
+                account.type === "CREDITO"
+                  ? credit && credit.debt > 0
+                    ? "text-rose-700"
+                    : "text-emerald-700"
+                  : account.balance >= 0
+                    ? "text-emerald-700"
+                    : "text-rose-700";
               const bankOrType = account.bank?.trim() ? account.bank : visual.label;
               const accentColor = normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type];
               const accentBackground = hexToRgba(accentColor, 0.16);
@@ -803,13 +1059,45 @@ export function CuentasClient() {
                   </div>
 
                   <div className="mt-4 space-y-2">
-                    <p className="text-xs text-slate-500">Saldo</p>
-                    <p className={`text-2xl font-semibold tracking-tight ${balanceTone}`}>
-                      {formatCurrency(account.balance)}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {visual.label} · {typeLabel[account.type]}
-                    </p>
+                    {account.type === "CREDITO" && credit ? (
+                      <>
+                        <p className="text-xs text-slate-500">Deuda actual</p>
+                        <p className={`text-2xl font-semibold tracking-tight ${balanceTone}`}>
+                          {formatCurrency(credit.debt)}
+                        </p>
+                        {credit.creditLimit ? (
+                          <div className="space-y-2 rounded-2xl border border-slate-200/70 bg-slate-950/90 p-3 text-white">
+                            <div className="flex items-center justify-between text-[11px] font-semibold text-white/80">
+                              <span>Cupo disponible</span>
+                              <span className="text-white">{formatCurrency(credit.available ?? 0)}</span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-emerald-400"
+                                style={{ width: `${Math.round(((credit.utilization ?? 0) * 100))}%` }}
+                              />
+                            </div>
+                            <p className="text-[11px] text-white/70">
+                              {formatCurrency(credit.creditLimit)} total · {Math.round((credit.utilization ?? 0) * 100)}% usado
+                            </p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-500">
+                            Tarjeta de crédito · define un cupo para ver disponible.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-slate-500">Saldo</p>
+                        <p className={`text-2xl font-semibold tracking-tight ${balanceTone}`}>
+                          {formatCurrency(account.balance)}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {visual.label} · {typeLabel[account.type]}
+                        </p>
+                      </>
+                    )}
                   </div>
                 </SurfaceCard>
               );
@@ -851,6 +1139,14 @@ export function CuentasClient() {
         open={Boolean(detailAccountId)}
         account={selectedAccount}
         onClose={() => setDetailAccountId(null)}
+        onAddPurchase={() => {
+          if (!selectedAccount) return;
+          openNewTransactionForAccount("GASTO", selectedAccount.id);
+        }}
+        onRegisterPayment={() => {
+          if (!selectedAccount) return;
+          openNewTransactionForAccount("INGRESO", selectedAccount.id);
+        }}
         onEdit={() => {
           if (!selectedAccount) return;
           setDetailAccountId(null);
@@ -876,6 +1172,12 @@ export function CuentasClient() {
             }
           })();
         }}
+      />
+
+      <NewTransactionModal
+        open={transactionModalOpen}
+        onOpenChange={setTransactionModalOpen}
+        onSuccess={() => void loadAccounts()}
       />
     </div>
   );

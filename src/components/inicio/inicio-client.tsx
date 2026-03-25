@@ -14,6 +14,7 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
+import { computeCreditCardMetrics } from "@/lib/accounts/credit-card";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
@@ -79,6 +80,9 @@ type AccountItem = {
   color: string | null;
   icon: string | null;
   appearanceMode: "auto" | "manual";
+  creditLimit: number | null;
+  closingDay: number | null;
+  paymentDay: number | null;
 };
 
 type AccountsPayload = {
@@ -219,7 +223,10 @@ export function InicioClient() {
 
       setSnapshot(dashboardPayload);
       setAccountsTotal(
-        (accountsPayload.items ?? []).reduce((acc, account) => acc + account.balance, 0)
+        (accountsPayload.items ?? []).reduce(
+          (acc, account) => (account.type === "CREDITO" ? acc : acc + account.balance),
+          0
+        )
       );
       setAccounts(accountsPayload.items ?? []);
       setMovements(transactionsPayload.items ?? []);
@@ -371,6 +378,16 @@ export function InicioClient() {
 
   const renderAccountCard = (account: AccountItem) => {
     const appearance = resolveAccountAppearance(account);
+    const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+    const primaryAmount = account.type === "CREDITO" && credit ? credit.debt : account.balance;
+    const primaryTone =
+      account.type === "CREDITO"
+        ? credit && credit.debt > 0
+          ? "text-rose-600"
+          : "text-emerald-600"
+        : account.balance >= 0
+          ? "text-emerald-600"
+          : "text-rose-600";
 
     return (
       <SurfaceCard
@@ -403,15 +420,20 @@ export function InicioClient() {
           <div className="flex flex-1 items-center">
             <div className="space-y-1">
               <p className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
-                Saldo disponible
+                {account.type === "CREDITO" ? "Deuda actual" : "Saldo disponible"}
               </p>
               <p
-                className={`text-[clamp(1.4rem,4.6vw,1.85rem)] font-semibold leading-none tracking-[-0.04em] ${
-                  account.balance >= 0 ? "text-emerald-600" : "text-rose-600"
-                }`}
+                className={`text-[clamp(1.4rem,4.6vw,1.85rem)] font-semibold leading-none tracking-[-0.04em] ${primaryTone}`}
               >
-                {formatCurrency(account.balance)}
+                {formatCurrency(primaryAmount)}
               </p>
+              {account.type === "CREDITO" && credit ? (
+                <p className="text-[10px] font-medium text-slate-500">
+                  {credit.creditLimit
+                    ? `Disponible ${formatCurrency(credit.available ?? 0)}`
+                    : "Configura cupo"}
+                </p>
+              ) : null}
             </div>
           </div>
         </div>

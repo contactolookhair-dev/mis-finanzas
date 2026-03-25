@@ -41,8 +41,11 @@ export function DashboardHeaderLoader() {
         const response = await fetch("/api/accounts", { cache: "no-store" });
         if (!active) return;
         if (!response.ok) throw new Error("No se pudo calcular el total disponible");
-        const payload = (await response.json()) as { items: { balance: number }[] };
-        const total = payload.items.reduce((sum, account) => sum + account.balance, 0);
+        const payload = (await response.json()) as { items: { balance: number; type?: string }[] };
+        const total = payload.items.reduce(
+          (sum, account) => (account.type === "CREDITO" ? sum : sum + account.balance),
+          0
+        );
         totalCache.current = total;
         if (!active) return;
         setMetric(createMetric(total));
