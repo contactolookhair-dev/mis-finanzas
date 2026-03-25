@@ -165,6 +165,15 @@ export async function getFinancialHealthSnapshot(input: {
 
   const topExpenseCategory = [...dashboard.charts.categories]
     .sort((left, right) => right.value - left.value)[0] ?? null;
+  const topCategories = [...dashboard.charts.categories]
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 5)
+    .map((item) => ({
+      name: item.name,
+      amount: item.value,
+      percentage: dashboard.kpis.expenses > 0 ? (item.value / dashboard.kpis.expenses) * 100 : 0,
+      count: item.count
+    }));
   const committedDebtAmount = debts.commitments.monthlyCommittedTotal;
   const committedDebtPct =
     dashboard.kpis.incomes > 0
@@ -228,7 +237,10 @@ export async function getFinancialHealthSnapshot(input: {
     headline: copy.headline,
     summary: copy.summary,
     periodLabel: dashboard.comparisons.currentPeriodLabel,
+    topCategories,
     metrics: {
+      incomes: dashboard.kpis.incomes,
+      expenses: dashboard.kpis.expenses,
       savings: dashboard.kpis.netFlow,
       expenseComparison: dashboard.comparisons.expenses,
       topExpenseCategory:

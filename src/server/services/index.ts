@@ -31,3 +31,4 @@ export {
   getTransactionSummaryByOrigin,
   updateTransactionWithAutomation
 } from "@/server/services/transaction-service";
+export { buildMonthlyReportBundle } from "@/server/services/monthly-report-service";

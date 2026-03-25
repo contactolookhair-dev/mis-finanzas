@@ -27,7 +27,17 @@ export const financialHealthResponseSchema = z.object({
   headline: z.string(),
   summary: z.string(),
   periodLabel: z.string(),
+  topCategories: z.array(
+    z.object({
+      name: z.string(),
+      amount: z.number(),
+      percentage: z.number(),
+      count: z.number()
+    })
+  ),
   metrics: z.object({
+    incomes: z.number(),
+    expenses: z.number(),
     savings: z.number(),
     expenseComparison: dashboardKpiComparisonSchema,
     topExpenseCategory: z

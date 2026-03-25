@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCcw, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { FileText, RefreshCcw, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { LineChartCard } from "@/components/charts/chart-card";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { InsightList } from "@/components/dashboard/insight-list";
@@ -338,6 +338,8 @@ function HeroPanel({
   snapshot,
   filters,
   onRefresh,
+  onMonthlyReport,
+  monthlyReportLoading,
   loading,
   displayBalance
 }: {
@@ -345,6 +347,8 @@ function HeroPanel({
   snapshot: DashboardSnapshot;
   filters: DashboardFilters;
   onRefresh: () => void;
+  onMonthlyReport: () => void;
+  monthlyReportLoading: boolean;
   loading: boolean;
   displayBalance?: number;
 }) {
@@ -393,6 +397,22 @@ function HeroPanel({
             defaultReportType="dashboard_summary"
             compact
           />
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-9 px-3 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(15,23,42,0.12)] active:translate-y-0"
+            onClick={onMonthlyReport}
+            disabled={monthlyReportLoading}
+          >
+            {monthlyReportLoading ? (
+              "Generando PDF..."
+            ) : (
+              <>
+                <FileText className="mr-2 h-4 w-4" />
+                Exportar PDF
+              </>
+            )}
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -560,6 +580,8 @@ export function DashboardClient() {
   const [financialHealth, setFinancialHealth] = useState<FinancialHealthResponse | null>(null);
   const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
   const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
+  const [monthlyReportLoading, setMonthlyReportLoading] = useState(false);
+  const [monthlyReportError, setMonthlyReportError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -610,6 +632,46 @@ export function DashboardClient() {
       );
     } finally {
       setFinancialHealthLoading(false);
+    }
+  }
+
+  async function handleMonthlyReportExport() {
+    const activeFilters = filters ?? getDefaultRange();
+
+    try {
+      setMonthlyReportLoading(true);
+      setMonthlyReportError(null);
+
+      const response = await fetch("/api/reports/monthly", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ filters: activeFilters })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? "No se pudo generar el reporte mensual.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const contentDisposition = response.headers.get("Content-Disposition");
+      const match = contentDisposition?.match(/filename=\"?([^"]+)\"?/);
+      anchor.href = url;
+      anchor.download = match?.[1] ?? "reporte-mensual.pdf";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setMonthlyReportError(
+        exportError instanceof Error ? exportError.message : "Error exportando reporte mensual."
+      );
+    } finally {
+      setMonthlyReportLoading(false);
     }
   }
 
@@ -744,6 +806,11 @@ export function DashboardClient() {
                 {financialHealthError}
               </Card>
             ) : null}
+            {monthlyReportError ? (
+              <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
+                {monthlyReportError}
+              </Card>
+            ) : null}
           </section>
 
           <section className="space-y-4">
@@ -765,6 +832,8 @@ export function DashboardClient() {
               snapshot={snapshot}
               filters={filters ?? getDefaultRange()}
               onRefresh={() => setRefreshKey((value) => value + 1)}
+              onMonthlyReport={handleMonthlyReportExport}
+              monthlyReportLoading={monthlyReportLoading}
               loading={loading}
               displayBalance={accountsTotal}
             />
