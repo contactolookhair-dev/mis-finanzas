@@ -66,6 +66,8 @@ type WidgetId =
   | "insights"
   | "filters";
 
+type WidgetSize = "compact" | "standard" | "featured";
+
 const DASHBOARD_WIDGET_STORAGE = "mis-finanzas.dashboard.widgets.v1";
 const defaultWidgetOrder: WidgetId[] = [
   "hero",
@@ -554,6 +556,19 @@ export function DashboardClient() {
   const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(defaultWidgetOrder);
   const [hiddenWidgets, setHiddenWidgets] = useState<WidgetId[]>([]);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [widgetSizes, setWidgetSizes] = useState<Record<WidgetId, WidgetSize>>({
+    hero: "featured",
+    quickActions: "compact",
+    summary: "standard",
+    health: "standard",
+    accounts: "standard",
+    goals: "compact",
+    trend: "featured",
+    recent: "standard",
+    reports: "compact",
+    insights: "standard",
+    filters: "compact"
+  });
 
   function openQuickTransaction(kind: "GASTO" | "INGRESO") {
     try {
@@ -665,9 +680,25 @@ export function DashboardClient() {
     try {
       const raw = window.localStorage.getItem(DASHBOARD_WIDGET_STORAGE);
       if (!raw) return;
-      const parsed = JSON.parse(raw) as { order?: WidgetId[]; hidden?: WidgetId[] };
+      const parsed = JSON.parse(raw) as {
+        order?: WidgetId[];
+        hidden?: WidgetId[];
+        sizes?: Record<WidgetId, WidgetSize>;
+      };
       if (parsed.order?.length) setWidgetOrder(parsed.order.filter((id): id is WidgetId => defaultWidgetOrder.includes(id)));
       if (parsed.hidden) setHiddenWidgets(parsed.hidden.filter((id): id is WidgetId => defaultWidgetOrder.includes(id)));
+      if (parsed.sizes) {
+        setWidgetSizes((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            Object.entries(parsed.sizes ?? {}).filter(
+              ([key, value]) =>
+                defaultWidgetOrder.includes(key as WidgetId) &&
+                (["compact", "standard", "featured"] as WidgetSize[]).includes(value as WidgetSize)
+            )
+          )
+        }));
+      }
     } catch {
       // noop
     }
@@ -677,12 +708,12 @@ export function DashboardClient() {
     try {
       window.localStorage.setItem(
         DASHBOARD_WIDGET_STORAGE,
-        JSON.stringify({ order: widgetOrder, hidden: hiddenWidgets })
+        JSON.stringify({ order: widgetOrder, hidden: hiddenWidgets, sizes: widgetSizes })
       );
     } catch {
       // noop
     }
-  }, [widgetOrder, hiddenWidgets]);
+  }, [widgetOrder, hiddenWidgets, widgetSizes]);
 
   useEffect(() => {
     if (!initializedRef.current || !filters) return;
@@ -866,6 +897,41 @@ export function DashboardClient() {
   };
 
   const visibleWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
+  const widgetSizeMap: Record<WidgetSize, string> = {
+    compact: "lg:col-span-1",
+    standard: "lg:col-span-1",
+    featured: "lg:col-span-2"
+  };
+
+  const widgetMeta: Record<
+    WidgetId,
+    { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
+  > = {
+    hero: { label: "Saldo total", description: "Disponible consolidado.", category: "Esenciales" },
+    quickActions: { label: "Acciones rápidas", description: "Gasto, ingreso, deuda, reportes.", category: "Esenciales" },
+    summary: { label: "Resumen financiero", description: "Ingresos, egresos y flujo neto.", category: "Esenciales" },
+    health: { label: "Semáforo financiero", description: "Estado general y alertas clave.", category: "Inteligencia" },
+    accounts: { label: "Cuentas", description: "Distribución por billeteras y bancos.", category: "Control" },
+    goals: { label: "Metas de ahorro", description: "Progreso hacia tu meta mensual.", category: "Planeación" },
+    trend: { label: "Tendencia mensual", description: "Evolución de ingresos y gastos.", category: "Inteligencia" },
+    recent: { label: "Movimientos recientes", description: "Últimos registros del período.", category: "Control" },
+    reports: { label: "Reportes", description: "Exporta tu resumen en PDF/Excel.", category: "Planeación" },
+    insights: { label: "Alertas / Insights", description: "Hallazgos y recomendaciones.", category: "Inteligencia" },
+    filters: { label: "Filtros", description: "Acota rango, unidad y categoría.", category: "Esenciales" }
+  };
+
+  const categorizedWidgets = useMemo(() => {
+    const groups: Record<string, WidgetId[]> = {
+      Esenciales: [],
+      Control: [],
+      Inteligencia: [],
+      Planeación: []
+    };
+    defaultWidgetOrder.forEach((id) => {
+      groups[widgetMeta[id].category].push(id);
+    });
+    return groups;
+  }, [widgetMeta]);
 
   const moveWidget = (id: WidgetId, direction: "up" | "down") => {
     setWidgetOrder((current) => {
@@ -883,6 +949,10 @@ export function DashboardClient() {
     setHiddenWidgets((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
     );
+  };
+
+  const updateWidgetSize = (id: WidgetId, size: WidgetSize) => {
+    setWidgetSizes((current) => ({ ...current, [id]: size }));
   };
 
   return (
@@ -905,7 +975,7 @@ export function DashboardClient() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
               Personalizar dashboard
             </p>
-            <p className="text-sm text-slate-600">Elige qué widgets ver y en qué orden.</p>
+            <p className="text-sm text-slate-600">Elige qué widgets ver, su orden y tamaño.</p>
           </div>
           <Button
             size="sm"
@@ -919,66 +989,98 @@ export function DashboardClient() {
       ) : null}
 
       {customizeOpen ? (
-        <Card className="space-y-3 rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+        <Card className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Widgets disponibles</h3>
-            <span className="text-[11px] text-slate-500">Ordena y muestra solo lo que necesitas</span>
+            <span className="text-[11px] text-slate-500">Mostrar/ocultar · Ordenar · Tamaño</span>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {defaultWidgetOrder.map((id) => {
-              const isHidden = hiddenWidgets.includes(id);
-              const labelMap: Record<WidgetId, string> = {
-                hero: "Saldo total",
-                quickActions: "Acciones rápidas",
-                summary: "Resumen financiero",
-                health: "Semáforo financiero",
-                accounts: "Cuentas",
-                goals: "Metas de ahorro",
-                trend: "Tendencia mensual",
-                recent: "Movimientos recientes",
-                reports: "Reportes",
-                insights: "Alertas / Insights",
-                filters: "Filtros"
-              };
-              return (
-                <div
-                  key={id}
-                  className={cn(
-                    "flex items-center justify-between rounded-[16px] border px-3 py-2 text-sm",
-                    isHidden ? "border-slate-200 bg-slate-50/80 text-slate-500" : "border-slate-200 bg-white text-slate-900"
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleWidget(id)}
-                    className="flex-1 text-left"
-                  >
-                    {labelMap[id]}
-                    <span className="ml-2 text-[11px] text-slate-500">{isHidden ? "(oculto)" : ""}</span>
-                  </button>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 px-0 text-slate-500"
-                      onClick={() => moveWidget(id, "up")}
-                      aria-label="Subir"
-                    >
-                      ↑
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 px-0 text-slate-500"
-                      onClick={() => moveWidget(id, "down")}
-                      aria-label="Bajar"
-                    >
-                      ↓
-                    </Button>
-                  </div>
+          <div className="space-y-3">
+            {Object.entries(categorizedWidgets).map(([category, ids]) => (
+              <div key={category} className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  {category}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {ids.map((id) => {
+                    const isHidden = hiddenWidgets.includes(id);
+                    const size = widgetSizes[id] ?? "standard";
+                    return (
+                      <div
+                        key={id}
+                        className={cn(
+                          "rounded-[16px] border p-3 text-sm transition hover:-translate-y-0.5",
+                          isHidden
+                            ? "border-slate-200 bg-slate-50/80 text-slate-500"
+                            : "border-slate-200 bg-white text-slate-900 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <p className="text-[13px] font-semibold leading-tight">{widgetMeta[id].label}</p>
+                            <p className="text-[12px] leading-5 text-slate-500">{widgetMeta[id].description}</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => toggleWidget(id)}
+                              className={cn(
+                                "rounded-full px-2 py-1 text-[11px] font-semibold",
+                                isHidden ? "bg-slate-100 text-slate-500" : "bg-slate-900 text-white"
+                              )}
+                            >
+                              {isHidden ? "Mostrar" : "Ocultar"}
+                            </button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 px-0 text-slate-500"
+                                onClick={() => moveWidget(id, "up")}
+                                aria-label="Subir"
+                              >
+                                ↑
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 px-0 text-slate-500"
+                                onClick={() => moveWidget(id, "down")}
+                                aria-label="Bajar"
+                              >
+                                ↓
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2 rounded-[12px] border border-slate-100 bg-slate-50 px-2 py-1.5 text-[12px] text-slate-600">
+                          <span>Tamaño</span>
+                          <div className="flex gap-1">
+                            {(["compact", "standard", "featured"] as WidgetSize[]).map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                onClick={() => updateWidgetSize(id, option)}
+                                className={cn(
+                                  "rounded-full px-2 py-1 text-[11px] font-semibold capitalize",
+                                  size === option
+                                    ? "bg-slate-900 text-white"
+                                    : "bg-white text-slate-600 border border-slate-200"
+                                )}
+                              >
+                                {option === "featured" ? "Destacado" : option}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-2 rounded-[12px] border border-dashed border-slate-200 bg-slate-50/80 p-2 text-[12px] text-slate-500">
+                          Mini preview: {widgetMeta[id].label}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         </Card>
       ) : null}
@@ -986,7 +1088,7 @@ export function DashboardClient() {
       {snapshot
         ? visibleWidgets.map((id) =>
             widgetElements[id] ? (
-              <div key={id} className="animate-fade-up space-y-3">
+              <div key={id} className={cn("animate-fade-up space-y-3", widgetSizeMap[widgetSizes[id] ?? "standard"])}>
                 {widgetElements[id]}
               </div>
             ) : null
