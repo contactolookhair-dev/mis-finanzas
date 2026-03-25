@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, RefreshCcw, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
+import { Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { LineChartCard } from "@/components/charts/chart-card";
+import { DashboardHero } from "@/components/dashboard/dashboard-hero";
+import { DashboardQuickActions } from "@/components/dashboard/dashboard-quick-actions";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { InsightList } from "@/components/dashboard/insight-list";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Building, CreditCard, ShieldCheck, Wallet } from "lucide-react";
 import { ExportActions } from "@/components/exports/export-actions";
+import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -116,7 +120,7 @@ function AccountCard({ account }: { account: AccountItem }) {
             <p className="text-[11px] text-white/80">Cupo 40% usado</p>
           </div>
         ) : (
-          <p className="text-xs text-slate-500">Actualizado hace 2h</p>
+          <p className="text-xs text-slate-500">Saldo manual</p>
         )}
       </div>
     </div>
@@ -338,125 +342,45 @@ function FiltersRow({
   );
 }
 
-function HeroPanel({
-  kpis,
+function GoalsCard({
   snapshot,
-  filters,
-  onRefresh,
-  onMonthlyReport,
-  monthlyReportLoading,
-  loading,
-  displayBalance
+  financialHealth
 }: {
-  kpis: DashboardSnapshot["kpis"];
   snapshot: DashboardSnapshot;
-  filters: DashboardFilters;
-  onRefresh: () => void;
-  onMonthlyReport: () => void;
-  monthlyReportLoading: boolean;
-  loading: boolean;
-  displayBalance?: number;
+  financialHealth: FinancialHealthResponse | null;
 }) {
-  const totalBalance = typeof displayBalance === "number" ? displayBalance : kpis.netFlow;
-  const neutralGain = totalBalance >= 0;
-  const netFlowComparison = snapshot.comparisons.netFlow;
-  const netFlowTone =
-    netFlowComparison.delta > 0
-      ? "bg-emerald-50/90 text-emerald-700"
-      : netFlowComparison.delta < 0
-        ? "bg-rose-50/90 text-rose-700"
-        : "bg-slate-100/90 text-slate-700";
-  const TrendIcon =
-    netFlowComparison.delta > 0 ? TrendingUp : netFlowComparison.delta < 0 ? TrendingDown : Sparkles;
+  const incomes = snapshot.kpis.incomes;
+  const savings = financialHealth?.metrics.savings ?? snapshot.kpis.netFlow;
+  const target = Math.max(50_000, Math.round(incomes * 0.1));
+  const pct = target > 0 ? Math.max(0, Math.min(1, savings / target)) : 0;
+
+  const headline =
+    savings >= target ? "Meta cumplida" : savings > 0 ? "Vas en buen camino" : "Primero estabiliza tu flujo";
 
   return (
-    <Card className="relative overflow-hidden rounded-[32px] border border-white/65 bg-gradient-to-br from-cyan-50/95 via-white/96 to-emerald-50/90 p-5 shadow-[0_20px_56px_rgba(15,23,42,0.14)] sm:p-6">
-      <div className="pointer-events-none absolute -right-12 -top-10 h-40 w-40 rounded-full bg-cyan-300/30 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-14 left-10 h-36 w-36 rounded-full bg-emerald-300/25 blur-3xl" />
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="relative z-10">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.36em] text-slate-500">
-            Dinero disponible hoy
-          </p>
-  <p className="text-number-glow mt-2 text-[2.35rem] font-semibold leading-none tracking-[-0.035em] text-slate-950 sm:text-[3rem]">
-            {formatCurrency(totalBalance)}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${netFlowTone}`}>
-              <TrendIcon className="h-3.5 w-3.5" />
-              {netFlowComparison.deltaPct >= 0 ? "+" : ""}
-              {netFlowComparison.deltaPct.toFixed(1)}% vs mes anterior
-            </span>
-            <span className="text-[11px] text-slate-500 sm:text-xs">
-              {netFlowComparison.delta >= 0 ? "+" : ""}
-              {formatCurrency(netFlowComparison.delta)}
-            </span>
-          </div>
-          <p className="mt-2 text-xs text-slate-500 sm:text-sm">
-            {snapshot.comparisons.currentPeriodLabel} · {kpis.totalTransactions} movimientos
+    <Card className="rounded-[28px] border border-white/75 bg-white/88 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">Progreso</p>
+          <h3 className="mt-1 text-base font-semibold text-slate-900 sm:text-lg">{headline}</h3>
+          <p className="mt-1 text-xs text-slate-500 sm:text-sm">
+            Meta del mes: ahorrar {formatCurrency(target)} (10% de ingresos aprox.)
           </p>
         </div>
-        <div className="relative z-10 flex flex-wrap items-center gap-2">
-          <ExportActions
-            filters={filters}
-            defaultReportType="dashboard_summary"
-            compact
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-9 px-3 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(15,23,42,0.12)] active:translate-y-0"
-            onClick={onMonthlyReport}
-            disabled={monthlyReportLoading}
-          >
-            {monthlyReportLoading ? (
-              "Generando PDF..."
-            ) : (
-              <>
-                <FileText className="mr-2 h-4 w-4" />
-                Exportar PDF
-              </>
-            )}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-9 px-3 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(15,23,42,0.12)] active:translate-y-0"
-            onClick={onRefresh}
-            disabled={loading}
-          >
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Actualizar
-          </Button>
+        <div className="rounded-2xl bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_24px_rgba(15,23,42,0.15)]">
+          {Math.round(pct * 100)}%
         </div>
       </div>
-      <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
-        <div className="rounded-[24px] border border-emerald-100/70 bg-gradient-to-br from-emerald-50/90 to-white/85 px-3.5 py-3 shadow-[0_10px_24px_rgba(16,185,129,0.12)] transition-all duration-200 hover:-translate-y-0.5">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Ingresos</p>
-          <p className="mt-1 text-lg font-semibold text-emerald-700">{formatCurrency(kpis.incomes)}</p>
-          <p className="text-[11px] text-slate-500">{snapshot.comparisons.incomes.deltaPct >= 0 ? "+" : ""}
-            {snapshot.comparisons.incomes.deltaPct.toFixed(1)}%</p>
-        </div>
-        <div className="rounded-[24px] border border-rose-100/70 bg-gradient-to-br from-rose-50/90 to-white/85 px-3.5 py-3 shadow-[0_10px_24px_rgba(244,63,94,0.1)] transition-all duration-200 hover:-translate-y-0.5">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Egresos</p>
-          <p className="mt-1 text-lg font-semibold text-rose-600">{formatCurrency(kpis.expenses)}</p>
-          <p className="text-[11px] text-slate-500">{snapshot.comparisons.expenses.deltaPct >= 0 ? "+" : ""}
-            {snapshot.comparisons.expenses.deltaPct.toFixed(1)}%</p>
-        </div>
-        <div className="rounded-[24px] border border-cyan-100/80 bg-gradient-to-br from-cyan-50/90 to-white/85 px-3.5 py-3 shadow-[0_10px_24px_rgba(14,165,233,0.1)] transition-all duration-200 hover:-translate-y-0.5">
-          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Dinero personal en empresa</p>
-          <p className="mt-1 text-lg font-semibold text-teal-700">
-            {formatCurrency(kpis.personalMoneyInBusiness)}
-          </p>
-          <p className="text-[11px] text-slate-500">
-            {snapshot.comparisons.personalMoneyInBusiness.deltaPct >= 0 ? "+" : ""}
-            {snapshot.comparisons.personalMoneyInBusiness.deltaPct.toFixed(1)}%
-          </p>
-        </div>
+      <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-cyan-500 to-emerald-400 transition-[width] duration-700 ease-out"
+          style={{ width: `${Math.round(pct * 100)}%` }}
+        />
       </div>
-      <p className="mt-4 text-[11px] text-slate-600">
-        {neutralGain ? "Vas mejor que el mes pasado. Mantén este ritmo." : "Cuidado con tus gastos, el flujo se está ajustando."}
-      </p>
+      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+        <span>Ahorro actual: {formatCurrency(savings)}</span>
+        <span>Restante: {formatCurrency(Math.max(0, target - savings))}</span>
+      </div>
     </Card>
   );
 }
@@ -579,6 +503,7 @@ function ComparisonSummary({ snapshot }: { snapshot: DashboardSnapshot }) {
 }
 
 export function DashboardClient() {
+  const router = useRouter();
   const [filters, setFilters] = useState<DashboardFilters | null>(null);
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
@@ -591,8 +516,18 @@ export function DashboardClient() {
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [transactionModalOpen, setTransactionModalOpen] = useState(false);
   const initializedRef = useRef(false);
   const skipNextFilteredFetchRef = useRef(false);
+
+  function openQuickTransaction(kind: "GASTO" | "INGRESO") {
+    try {
+      window.localStorage.setItem("mis-finanzas.quick-transaction", JSON.stringify({ kind }));
+    } catch {
+      // no-op
+    }
+    setTransactionModalOpen(true);
+  }
 
   const queryString = useMemo(() => {
     if (!filters) return "";
@@ -787,16 +722,51 @@ export function DashboardClient() {
 
       {snapshot && kpis ? (
         <>
+          <DashboardHero
+            snapshot={snapshot}
+            filters={filters ?? getDefaultRange()}
+            displayBalance={accountsTotal}
+            financialHealth={financialHealth}
+            onMonthlyReport={handleMonthlyReportExport}
+            monthlyReportLoading={monthlyReportLoading}
+            onRefresh={() => setRefreshKey((value) => value + 1)}
+            loading={loading}
+          />
+
+          {monthlyReportError ? (
+            <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
+              {monthlyReportError}
+            </Card>
+          ) : null}
+
+          <DashboardQuickActions
+            onExpense={() => openQuickTransaction("GASTO")}
+            onIncome={() => openQuickTransaction("INGRESO")}
+            onDebt={() => router.push("/pendientes")}
+            onReports={handleMonthlyReportExport}
+          />
+
           <section className="space-y-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Resumen financiero
+              </p>
+              <h2 className="text-lg font-semibold text-slate-900">Lo importante del mes</h2>
+            </div>
+            <SummaryGrid kpis={kpis} snapshot={snapshot} />
+          </section>
+
+          <section className="space-y-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                Salud financiera
+              </p>
+              <h2 className="text-lg font-semibold text-slate-900">Tu semáforo y foco</h2>
+            </div>
             <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
             {financialHealthError ? (
               <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
                 {financialHealthError}
-              </Card>
-            ) : null}
-            {monthlyReportError ? (
-              <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
-                {monthlyReportError}
               </Card>
             ) : null}
           </section>
@@ -814,20 +784,7 @@ export function DashboardClient() {
             <AccountList accounts={accounts} loading={accountsLoading} />
           </section>
 
-          <section className="space-y-3.5 sm:space-y-4">
-            <HeroPanel
-              kpis={kpis}
-              snapshot={snapshot}
-              filters={filters ?? getDefaultRange()}
-              onRefresh={() => setRefreshKey((value) => value + 1)}
-              onMonthlyReport={handleMonthlyReportExport}
-              monthlyReportLoading={monthlyReportLoading}
-              loading={loading}
-              displayBalance={accountsTotal}
-            />
-          </section>
-
-          <SummaryGrid kpis={kpis} snapshot={snapshot} />
+          <GoalsCard snapshot={snapshot} financialHealth={financialHealth} />
 
           <section className="grid gap-3.5 lg:grid-cols-[1.45fr_0.55fr] lg:gap-4">
             <LineChartCard
@@ -838,11 +795,19 @@ export function DashboardClient() {
             <ComparisonSummary snapshot={snapshot} />
           </section>
 
+          <RecentTransactionsList items={snapshot.recentTransactions} />
+
+          <section className="space-y-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">Reportes</p>
+              <h2 className="text-lg font-semibold text-slate-900">Exporta cuando lo necesites</h2>
+            </div>
+            <ExportActions filters={filters ?? getDefaultRange()} defaultReportType="dashboard_summary" />
+          </section>
+
           <section className="space-y-4">
             <InsightList insights={snapshot.insights} />
           </section>
-
-          <RecentTransactionsList items={snapshot.recentTransactions} />
 
           <FiltersRow
             filters={filters ?? getDefaultRange()}
@@ -855,10 +820,17 @@ export function DashboardClient() {
 
       <Button
         variant="secondary"
+        onClick={() => openQuickTransaction("GASTO")}
         className="fixed bottom-4 right-4 z-30 flex h-11 items-center gap-2 rounded-full border border-white/40 bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 text-sm font-semibold text-white shadow-[0_14px_38px_rgba(14,116,144,0.35)] transition-all duration-200 hover:brightness-105 active:scale-[0.985] sm:hidden"
       >
         Agregar gasto
       </Button>
+
+      <NewTransactionModal
+        open={transactionModalOpen}
+        onOpenChange={setTransactionModalOpen}
+        onSuccess={() => setRefreshKey((value) => value + 1)}
+      />
     </div>
   );
 }
