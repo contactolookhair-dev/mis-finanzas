@@ -14,7 +14,7 @@ export function MobileStickyAction({
       <Button
         {...props}
         className={cn(
-          "h-14 w-full rounded-[22px] bg-gradient-to-r from-violet-600 via-fuchsia-600 to-emerald-500 text-base font-semibold text-white shadow-[0_22px_42px_rgba(124,58,237,0.28)]",
+          "h-14 w-full rounded-[22px] bg-primary text-base font-semibold text-white shadow-[0_22px_42px_rgba(37,99,235,0.22)]",
           className
         )}
       >
@@ -23,4 +23,3 @@ export function MobileStickyAction({
     </div>
   );
 }
-

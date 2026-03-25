@@ -19,8 +19,7 @@ import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
 import { FinancialInsightsPanel } from "@/components/inicio/financial-insights-panel";
 
-const accountCardGradient = "linear-gradient(135deg,#2563eb,#06b6d4,#10b981)";
-const heroGradient = "from-sky-600 via-cyan-600 to-emerald-500";
+const accountCardGradient = "linear-gradient(135deg,#ffffff,#f8fafc,#eef2f7)";
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 
 type AccountItem = {
@@ -320,7 +319,7 @@ export function InicioClient() {
           <SurfaceCard
             key={account.id}
             variant="soft"
-            className="aspect-[1/1] min-h-[154px] overflow-hidden bg-gradient-to-br from-white/84 to-white/28 p-3.5 sm:aspect-auto sm:min-h-[176px] sm:p-5"
+            className="aspect-[1/1] min-h-[160px] overflow-hidden bg-white p-3.5 sm:aspect-auto sm:min-h-[176px] sm:p-5"
           >
             <div className="flex h-full flex-col justify-between gap-3">
               <div className="flex items-start justify-between gap-2.5">
@@ -328,12 +327,12 @@ export function InicioClient() {
                   <p className="truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
                     {account.bank || account.type}
                   </p>
-                  <p className="line-clamp-2 min-h-[2.6rem] text-[13px] font-semibold leading-[1.25rem] tracking-[-0.02em] text-slate-900">
+                  <p className="line-clamp-2 min-h-[2.65rem] text-[13px] font-semibold leading-[1.25rem] tracking-[-0.02em] text-slate-900">
                     {account.name}
                   </p>
                 </div>
                 <span
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl text-white shadow"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_10px_24px_rgba(15,23,42,0.14)]"
                   style={{
                     background: account.color ? account.color : accountCardGradient
                   }}
@@ -341,11 +340,11 @@ export function InicioClient() {
                   <span className="text-[13px]">{account.icon ?? "💳"}</span>
                 </span>
               </div>
-              <div>
+              <div className="space-y-1">
                 <p className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
                   Saldo disponible
                 </p>
-                <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
+                <p className="text-[1.18rem] font-semibold leading-none tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
                   {formatCurrency(account.balance)}
                 </p>
               </div>
@@ -353,14 +352,14 @@ export function InicioClient() {
           </SurfaceCard>
         ))}
       </section>
-      <SurfaceCard className={`relative overflow-hidden bg-gradient-to-br ${heroGradient} text-white shadow-[0_28px_56px_rgba(37,99,235,0.24)]`}>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_40%)]" />
+      <SurfaceCard className="relative overflow-hidden border-border/80 bg-white text-slate-900 shadow-[0_20px_46px_rgba(15,23,42,0.08)]">
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-primary to-emerald-500" />
         <div className="relative">
-          <p className="text-xs uppercase tracking-[0.2em] text-white/75">Saldo total</p>
-          <p className="mt-2 text-4xl font-semibold tracking-tight sm:text-[44px]">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Saldo total</p>
+          <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-900 sm:text-[44px]">
             {loading ? "..." : formatCurrency(flow)}
           </p>
-          <p className="mt-2 text-xs text-white/85">
+          <p className="mt-2 text-xs text-slate-500">
             Disponible estimado entre cuentas y flujo del período.
           </p>
         </div>
@@ -397,15 +396,15 @@ export function InicioClient() {
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2">
-        <SurfaceCard variant="soft" padding="sm" className="border-sky-100">
+        <SurfaceCard variant="soft" padding="sm">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Ingresos</p>
           <p className="mt-2 text-2xl font-semibold text-emerald-600">
             {loading ? "..." : formatCurrency(incomes)}
           </p>
         </SurfaceCard>
-        <SurfaceCard variant="soft" padding="sm" className="border-cyan-100">
+        <SurfaceCard variant="soft" padding="sm">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Gastos</p>
-          <p className="mt-2 text-2xl font-semibold text-sky-600">
+          <p className="mt-2 text-2xl font-semibold text-rose-600">
             {loading ? "..." : formatCurrency(expenses)}
           </p>
         </SurfaceCard>
@@ -516,7 +515,7 @@ export function InicioClient() {
                   {formatDate(item.date)} · {item.account} · {item.category}
                 </p>
               </div>
-              <p className={`text-sm font-semibold ${item.amount >= 0 ? "text-emerald-600" : "text-fuchsia-600"}`}>
+              <p className={`text-sm font-semibold ${item.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
                 {formatCurrency(item.amount)}
               </p>
             </div>
