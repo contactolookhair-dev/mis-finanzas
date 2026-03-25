@@ -10,6 +10,14 @@ export type CompanyDebtItem = {
   paidAmount: number;
   pendingAmount: number;
   status: "PENDIENTE" | "ABONANDO" | "PAGADO";
+  entries: Array<{
+    id: string;
+    amount: number;
+    status: string;
+    reimbursedAt: string | null;
+    notes: string | null;
+    createdAt: string;
+  }>;
 };
 
 export type PersonDebtItem = {
@@ -23,6 +31,12 @@ export type PersonDebtItem = {
   startDate: string;
   estimatedPayDate: string | null;
   notes: string | null;
+  payments: Array<{
+    id: string;
+    amount: number;
+    paidAt: string;
+    notes: string | null;
+  }>;
 };
 
 export async function getDebtsSnapshot(workspaceId: string) {
@@ -51,7 +65,8 @@ export async function getDebtsSnapshot(workspaceId: string) {
       totalAmount: 0,
       paidAmount: 0,
       pendingAmount: 0,
-      status: "PENDIENTE" as const
+      status: "PENDIENTE" as const,
+      entries: []
     };
 
     const amount = Math.abs(toAmountNumber(item.amount));
@@ -59,6 +74,14 @@ export async function getDebtsSnapshot(workspaceId: string) {
     if (item.status === ReimbursementStatus.REEMBOLSADO) {
       current.paidAmount += amount;
     }
+    current.entries.push({
+      id: item.id,
+      amount,
+      status: item.status,
+      reimbursedAt: item.reimbursedAt?.toISOString() ?? null,
+      notes: item.notes ?? null,
+      createdAt: item.createdAt.toISOString()
+    });
     current.pendingAmount = Math.max(0, current.totalAmount - current.paidAmount);
     current.status =
       current.pendingAmount <= 0 ? "PAGADO" : current.paidAmount > 0 ? "ABONANDO" : "PENDIENTE";
@@ -79,7 +102,16 @@ export async function getDebtsSnapshot(workspaceId: string) {
       status: debtor.status,
       startDate: debtor.startDate.toISOString(),
       estimatedPayDate: debtor.estimatedPayDate?.toISOString() ?? null,
-      notes: debtor.notes ?? null
+      notes: debtor.notes ?? null,
+      payments: debtor.payments
+        .slice()
+        .sort((left, right) => right.paidAt.getTime() - left.paidAt.getTime())
+        .map((payment) => ({
+          id: payment.id,
+          amount: toAmountNumber(payment.amount),
+          paidAt: payment.paidAt.toISOString(),
+          notes: payment.notes ?? null
+        }))
     };
   });
 
@@ -100,4 +132,3 @@ export async function getDebtsSnapshot(workspaceId: string) {
     }
   };
 }
-

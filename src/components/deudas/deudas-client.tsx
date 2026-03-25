@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Download, Eye, PencilLine, Clock3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,14 @@ type CompanyDebt = {
   paidAmount: number;
   pendingAmount: number;
   status: "PENDIENTE" | "ABONANDO" | "PAGADO";
+  entries: Array<{
+    id: string;
+    amount: number;
+    status: string;
+    reimbursedAt: string | null;
+    notes: string | null;
+    createdAt: string;
+  }>;
 };
 
 type PersonDebt = {
@@ -29,7 +38,17 @@ type PersonDebt = {
   startDate: string;
   estimatedPayDate: string | null;
   notes: string | null;
+  payments: Array<{
+    id: string;
+    amount: number;
+    paidAt: string;
+    notes: string | null;
+  }>;
 };
+
+type SelectedDebt =
+  | { kind: "person"; id: string }
+  | { kind: "company"; id: string };
 
 type DebtsPayload = {
   companies: CompanyDebt[];
@@ -74,6 +93,9 @@ export function DeudasClient({
   const [message, setMessage] = useState<string | null>(null);
   const [formMode, setFormMode] = useState<"none" | "nueva" | "abono" | "editar">("none");
   const [activeDebtorId, setActiveDebtorId] = useState<string>("");
+  const [selectedDebt, setSelectedDebt] = useState<SelectedDebt | null>(null);
+  const [exportingDebt, setExportingDebt] = useState<string | null>(null);
+  const [settlingDebt, setSettlingDebt] = useState<string | null>(null);
 
   const [createForm, setCreateForm] = useState({
     name: "",
@@ -109,6 +131,13 @@ export function DeudasClient({
       if (!activeDebtorId && nextPayload.people[0]) {
         setActiveDebtorId(nextPayload.people[0].id);
         setPaymentForm((current) => ({ ...current, debtorId: nextPayload.people[0].id }));
+      }
+      if (!selectedDebt) {
+        if (nextPayload.people[0]) {
+          setSelectedDebt({ kind: "person", id: nextPayload.people[0].id });
+        } else if (nextPayload.companies[0]) {
+          setSelectedDebt({ kind: "company", id: nextPayload.companies[0].id });
+        }
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Error cargando deudas.");
@@ -228,6 +257,7 @@ export function DeudasClient({
   }
 
   function openEdit(debt: PersonDebt) {
+    setSelectedDebt({ kind: "person", id: debt.id });
     setActiveDebtorId(debt.id);
     setFormMode("editar");
     setEditForm({
@@ -238,6 +268,81 @@ export function DeudasClient({
       estimatedPayDate: debt.estimatedPayDate ? debt.estimatedPayDate.slice(0, 10) : "",
       notes: debt.notes ?? ""
     });
+  }
+
+  const selectedPerson = useMemo(
+    () =>
+      selectedDebt?.kind === "person"
+        ? payload?.people.find((item) => item.id === selectedDebt.id) ?? null
+        : null,
+    [payload?.people, selectedDebt]
+  );
+
+  const selectedCompany = useMemo(
+    () =>
+      selectedDebt?.kind === "company"
+        ? payload?.companies.find((item) => item.id === selectedDebt.id) ?? null
+        : null,
+    [payload?.companies, selectedDebt]
+  );
+  const selectedDetailStartLabel = selectedPerson
+    ? formatDate(selectedPerson.startDate)
+    : selectedCompany
+      ? "Generada desde reembolsos"
+      : "N/A";
+  const selectedDetailEstimatedLabel = selectedPerson?.estimatedPayDate
+    ? formatDate(selectedPerson.estimatedPayDate)
+    : selectedCompany
+      ? "No aplica"
+      : "Sin fecha estimada";
+
+  async function exportDebt(debt: SelectedDebt) {
+    setExportingDebt(debt.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/debts/${debt.id}/export?kind=${debt.kind}`, {
+        cache: "no-store"
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? "No se pudo exportar la deuda.");
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = response.headers.get("Content-Disposition")?.match(/filename=\"?([^"]+)\"?/)?.[1] ?? "deuda.pdf";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      setMessage("PDF generado correctamente.");
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "No se pudo exportar la deuda.");
+    } finally {
+      setExportingDebt(null);
+    }
+  }
+
+  async function settleDebt(debt: SelectedDebt) {
+    setSettlingDebt(debt.id);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/debts/${debt.id}/settle?kind=${debt.kind}`, {
+        method: "POST"
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(body.message ?? "No se pudo cerrar la deuda.");
+      }
+      setMessage("Deuda marcada como pagada.");
+      await loadDebts();
+    } catch (settleError) {
+      setError(settleError instanceof Error ? settleError.message : "No se pudo cerrar la deuda.");
+    } finally {
+      setSettlingDebt(null);
+    }
   }
 
   return (
@@ -274,6 +379,139 @@ export function DeudasClient({
 
       {error ? <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">{error}</Card> : null}
       {message ? <Card className="rounded-[20px] border border-emerald-100 bg-emerald-50/70 p-3 text-sm text-emerald-700">{message}</Card> : null}
+
+      {selectedDebt ? (
+        <Card className="overflow-hidden rounded-[28px] border border-white/80 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">
+                {selectedDebt.kind === "person" ? "Deuda personal" : "Deuda empresarial"}
+              </p>
+              <h3 className="text-2xl font-semibold tracking-tight">
+                {selectedPerson?.name ?? selectedCompany?.name ?? "Detalle de deuda"}
+              </h3>
+              <p className="max-w-2xl text-sm text-white/70">
+                {selectedPerson?.reason ?? selectedCompany?.reason ?? "Revisar detalle y acciones disponibles."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
+                onClick={() => exportDebt(selectedDebt)}
+                disabled={exportingDebt === selectedDebt.id}
+              >
+                {exportingDebt === selectedDebt.id ? (
+                  "Exportando..."
+                ) : (
+                  <>
+                    <Download className="mr-2 h-4 w-4" />
+                    Exportar PDF
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
+                onClick={() => settleDebt(selectedDebt)}
+                disabled={settlingDebt === selectedDebt.id}
+              >
+                {settlingDebt === selectedDebt.id ? (
+                  "Cerrando..."
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    Marcar como pagada
+                  </>
+                )}
+              </Button>
+              {selectedDebt.kind === "person" ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-10 rounded-2xl bg-white/10 text-white hover:bg-white/20"
+                  onClick={() => setFormMode("editar")}
+                >
+                  <PencilLine className="mr-2 h-4 w-4" />
+                  Editar
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[22px] bg-white/10 p-4">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Monto total</p>
+              <p className="mt-2 text-2xl font-semibold">{formatCurrency(selectedPerson?.totalAmount ?? selectedCompany?.totalAmount ?? 0)}</p>
+            </div>
+            <div className="rounded-[22px] bg-white/10 p-4">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Abonado</p>
+              <p className="mt-2 text-2xl font-semibold">{formatCurrency(selectedPerson?.paidAmount ?? selectedCompany?.paidAmount ?? 0)}</p>
+            </div>
+            <div className="rounded-[22px] bg-white/10 p-4">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Saldo pendiente</p>
+              <p className="mt-2 text-2xl font-semibold">{formatCurrency(selectedPerson?.pendingAmount ?? selectedCompany?.pendingAmount ?? 0)}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+              <div className="flex items-center gap-2">
+                <Clock3 className="h-4 w-4 text-emerald-300" />
+                <p className="text-sm font-semibold text-white">Cronología</p>
+              </div>
+              <div className="mt-3 space-y-2">
+                {selectedPerson ? (
+                  selectedPerson.payments.length === 0 ? (
+                    <p className="text-sm text-white/60">Todavía no hay abonos registrados.</p>
+                  ) : (
+                    selectedPerson.payments.map((payment) => (
+                      <div key={payment.id} className="rounded-[20px] bg-white/8 px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium">{formatDate(payment.paidAt)}</p>
+                          <p className="text-sm font-semibold text-emerald-300">{formatCurrency(payment.amount)}</p>
+                        </div>
+                        {payment.notes ? <p className="mt-1 text-xs text-white/60">{payment.notes}</p> : null}
+                      </div>
+                    ))
+                  )
+                ) : selectedCompany ? (
+                  selectedCompany.entries.length === 0 ? (
+                    <p className="text-sm text-white/60">No hay movimientos asociados.</p>
+                  ) : (
+                    selectedCompany.entries.map((entry) => (
+                      <div key={entry.id} className="rounded-[20px] bg-white/8 px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium">{formatDate(entry.createdAt)}</p>
+                          <p className="text-sm font-semibold text-emerald-300">{formatCurrency(entry.amount)}</p>
+                        </div>
+                        <p className="mt-1 text-xs text-white/60">
+                          {entry.status === "REEMBOLSADO" ? "Reembolsado" : "Pendiente"}
+                          {entry.notes ? ` · ${entry.notes}` : ""}
+                        </p>
+                      </div>
+                    ))
+                  )
+                ) : null}
+              </div>
+            </div>
+
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                <p className="text-sm font-semibold text-white">Detalle rápido</p>
+              <div className="mt-3 space-y-3 text-sm text-white/70">
+                <p>Inicio: {selectedDetailStartLabel}</p>
+                <p>Vencimiento estimado: {selectedDetailEstimatedLabel}</p>
+                <p>
+                  Estado: {selectedPerson?.status ?? selectedCompany?.status ?? "Sin estado"}
+                </p>
+                {selectedPerson?.notes ? <p>Notas: {selectedPerson.notes}</p> : null}
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {formMode === "nueva" ? (
         <Card className="rounded-[24px] p-4">
@@ -361,20 +599,46 @@ export function DeudasClient({
                 <p className="text-sm text-neutral-500">No hay deudas de empresas registradas.</p>
               ) : (
                 payload.companies.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-border/70 px-3 py-3">
-                    <div className="flex items-center justify-between gap-3">
+                  <div
+                    key={item.id}
+                    className={`rounded-[24px] border px-4 py-4 shadow-soft transition ${
+                      selectedDebt?.kind === "company" && selectedDebt.id === item.id
+                        ? "border-violet-300 bg-violet-50/60"
+                        : "border-border/70 bg-white"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold">{item.name}</p>
+                        <p className="text-sm font-semibold text-slate-900">{item.name}</p>
                         <p className="text-xs text-neutral-500">{item.reason}</p>
                       </div>
                       <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700">
                         {item.status === "PAGADO" ? "Pagado" : item.status === "ABONANDO" ? "Abonando" : "Pendiente"}
                       </span>
                     </div>
-                    <div className="mt-2 grid gap-1 text-xs text-neutral-600 sm:grid-cols-3">
+                    <div className="mt-3 grid gap-1 text-xs text-neutral-600 sm:grid-cols-3">
                       <p>Total: {formatCurrency(item.totalAmount)}</p>
                       <p>Abonado: {formatCurrency(item.paidAmount)}</p>
                       <p>Saldo: {formatCurrency(item.pendingAmount)}</p>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-2xl px-3 text-xs"
+                        onClick={() => setSelectedDebt({ kind: "company", id: item.id })}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        Ver detalle
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-2xl px-3 text-xs"
+                        onClick={() => exportDebt({ kind: "company", id: item.id })}
+                        disabled={exportingDebt === item.id}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar PDF
+                      </Button>
                     </div>
                   </div>
                 ))
@@ -386,10 +650,17 @@ export function DeudasClient({
                 <p className="text-sm text-neutral-500">No hay personas con deuda registrada.</p>
               ) : (
                 payload.people.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-border/70 px-3 py-3">
+                  <div
+                    key={item.id}
+                    className={`rounded-[24px] border px-4 py-4 shadow-soft transition ${
+                      selectedDebt?.kind === "person" && selectedDebt.id === item.id
+                        ? "border-violet-300 bg-violet-50/60"
+                        : "border-border/70 bg-white"
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold">{item.name}</p>
+                        <p className="text-sm font-semibold text-slate-900">{item.name}</p>
                         <p className="text-xs text-neutral-500">{item.reason}</p>
                       </div>
                       <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-700">
@@ -404,10 +675,18 @@ export function DeudasClient({
                     <p className="mt-1 text-[11px] text-neutral-500">
                       Inicio: {formatDate(item.startDate)} {item.estimatedPayDate ? `· Estimado: ${formatDate(item.estimatedPayDate)}` : ""}
                     </p>
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <Button
                         variant="secondary"
-                        className="h-8 px-3 text-xs"
+                        className="h-8 rounded-2xl px-3 text-xs"
+                        onClick={() => setSelectedDebt({ kind: "person", id: item.id })}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
+                        Ver detalle
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-2xl px-3 text-xs"
                         onClick={() => {
                           setFormMode("abono");
                           setPaymentForm((current) => ({ ...current, debtorId: item.id }));
@@ -415,8 +694,22 @@ export function DeudasClient({
                       >
                         Registrar abono
                       </Button>
-                      <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => openEdit(item)}>
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-2xl px-3 text-xs"
+                        onClick={() => openEdit(item)}
+                      >
+                        <PencilLine className="mr-2 h-4 w-4" />
                         Editar
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        className="h-8 rounded-2xl px-3 text-xs"
+                        onClick={() => exportDebt({ kind: "person", id: item.id })}
+                        disabled={exportingDebt === item.id}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar PDF
                       </Button>
                     </div>
                   </div>
