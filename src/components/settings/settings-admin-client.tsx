@@ -20,11 +20,12 @@ import type {
 } from "@/shared/types/settings-admin";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import { computeSectionChanges, formatChangeValue } from "@/shared/utils/settings-diff";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
+import { StatPill } from "@/components/ui/stat-pill";
 
 type SettingsSnapshot = {
   appSettings: AppSettingsPayload;
@@ -78,6 +79,12 @@ function formatAuditDate(value: string) {
     timeStyle: "short"
   }).format(new Date(value));
 }
+
+const textareaClass =
+  "min-h-[110px] w-full rounded-2xl border border-white/80 bg-white/85 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-neutral-100";
+
+const jsonTextareaClass =
+  "min-h-[130px] w-full rounded-2xl border border-white/80 bg-white/85 px-4 py-3 font-mono text-xs outline-none focus:border-primary disabled:bg-neutral-100";
 
 export function SettingsAdminClient() {
   const [authLoading, setAuthLoading] = useState(true);
@@ -427,30 +434,35 @@ export function SettingsAdminClient() {
 
   return (
     <div className="space-y-4">
-      <Card className="space-y-4">
+      <SurfaceCard variant="highlight" className="space-y-4">
         <div className="grid gap-2 md:grid-cols-2">
-          <div>
+          <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Sesion activa</p>
             <p className="mt-1 text-sm font-medium">
               {authSession.user.displayName ?? authSession.user.userKey}
             </p>
           </div>
-          <div>
+          <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Workspace activo</p>
             <p className="mt-1 text-sm font-medium">
               {authSession.activeWorkspace?.workspaceName ?? "Sin workspace"}
             </p>
-            <p className="text-xs text-neutral-500">Rol: {authSession.activeWorkspace?.role ?? "-"}</p>
+            <div className="flex flex-wrap gap-2">
+              <StatPill tone="neutral">Rol: {authSession.activeWorkspace?.role ?? "-"}</StatPill>
+              <StatPill tone={hasDirtyChanges ? "warning" : "success"}>
+                {hasDirtyChanges ? "Cambios sin guardar" : "Todo guardado"}
+              </StatPill>
+            </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           {authSession.memberships.map((membership) => (
             <button
               key={membership.workspaceId}
-              className={`rounded-xl border px-3 py-1 text-xs ${
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
                 authSession.activeWorkspace?.workspaceId === membership.workspaceId
-                  ? "border-primary bg-accent text-primary"
-                  : "border-border bg-white/90 text-neutral-600"
+                  ? "border-violet-200 bg-violet-50 text-violet-700 shadow-[0_12px_24px_rgba(124,58,237,0.12)]"
+                  : "border-white/80 bg-white/90 text-neutral-600 hover:bg-white"
               }`}
               onClick={async () => {
                 if (hasDirtyChanges) {
@@ -485,14 +497,26 @@ export function SettingsAdminClient() {
             </button>
           ))}
         </div>
-        <Button variant="secondary" onClick={loadSettings} disabled={isSaving}>
+        <Button variant="secondary" className="rounded-full" onClick={loadSettings} disabled={isSaving}>
           Recargar settings
         </Button>
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
-        {success ? <p className="text-sm text-success">{success}</p> : null}
-      </Card>
+        {error ? (
+          <SurfaceCard variant="soft" padding="sm" className="border-rose-200/80 bg-rose-50/80 text-rose-700">
+            <p className="text-sm font-medium">{error}</p>
+          </SurfaceCard>
+        ) : null}
+        {success ? (
+          <SurfaceCard
+            variant="soft"
+            padding="sm"
+            className="border-emerald-200/80 bg-emerald-50/80 text-emerald-700"
+          >
+            <p className="text-sm font-medium">{success}</p>
+          </SurfaceCard>
+        ) : null}
+      </SurfaceCard>
 
-      <Card className="space-y-4">
+      <SurfaceCard variant="soft" className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {SETTINGS_SECTIONS.filter((section) =>
             ["ai", "regional_preferences", "general", "dashboard"].includes(section.code)
@@ -503,22 +527,26 @@ export function SettingsAdminClient() {
               <button
                 key={section.code}
                 onClick={() => setActiveSection(section.code)}
-                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                className={`rounded-[24px] border px-4 py-3 text-left transition ${
                   activeSection === section.code
-                    ? "border-primary bg-accent text-primary"
-                    : "border-border bg-white/80 hover:bg-white"
+                    ? "border-violet-200 bg-violet-50/90 text-violet-700 shadow-[0_14px_28px_rgba(124,58,237,0.12)]"
+                    : "border-white/80 bg-white/80 text-slate-700 hover:bg-white"
                 }`}
               >
                 <p className="text-sm font-semibold">{section.title}</p>
                 <p className="mt-1 text-xs text-neutral-500">{section.description}</p>
-                {isDirty ? <p className="mt-2 text-xs font-semibold text-amber-600">Modificado</p> : null}
+                {isDirty ? (
+                  <p className="mt-2 text-xs font-semibold text-amber-600">Modificado</p>
+                ) : (
+                  <p className="mt-2 text-xs font-semibold text-slate-400">Sin cambios</p>
+                )}
               </button>
             );
           })}
         </div>
-      </Card>
+      </SurfaceCard>
       {currentSummary?.changed ? (
-        <Card className="space-y-3">
+        <SurfaceCard variant="soft" className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Cambios detectados en {getSectionTitle(activeEditableSection)}</h3>
             <span className="text-xs text-neutral-500">{currentSummary.changes.length} campos</span>
@@ -527,7 +555,7 @@ export function SettingsAdminClient() {
             {currentSummary.changes.slice(0, 8).map((change) => (
               <div
                 key={`${change.fieldPath}-${String(change.nextValue)}`}
-                className="rounded-xl border border-border bg-white/80 px-3 py-2 text-xs"
+                className="rounded-2xl border border-white/80 bg-white/80 px-3 py-3 text-xs shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
               >
                 <p className="font-semibold text-neutral-700">{change.fieldPath}</p>
                 <p className="text-neutral-500">Antes: {formatChangeValue(change.previousValue)}</p>
@@ -535,24 +563,35 @@ export function SettingsAdminClient() {
               </div>
             ))}
           </div>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {lastSavedChanges.length > 0 ? (
-        <Card className="space-y-3">
+        <SurfaceCard variant="soft" className="space-y-3">
           <h3 className="text-sm font-semibold">Ultimo guardado</h3>
           {lastSavedChanges.map((sectionSummary) => (
-            <div key={sectionSummary.section} className="rounded-xl border border-border bg-white/80 px-3 py-2 text-xs">
+            <div
+              key={sectionSummary.section}
+              className="rounded-2xl border border-white/80 bg-white/80 px-3 py-3 text-xs shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+            >
               <p className="font-semibold">{getSectionTitle(sectionSummary.section)}</p>
               <p className="text-neutral-500">{sectionSummary.changes.length} cambios aplicados</p>
             </div>
           ))}
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {activeSection === "ai" ? (
-        <Card className="space-y-4">
-          <h3 className="text-lg font-semibold">Configuracion IA</h3>
+        <SurfaceCard variant="soft" className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatPill tone="premium">IA</StatPill>
+              <StatPill tone={sectionIsDirty ? "warning" : "neutral"}>
+                {sectionIsDirty ? "Pendiente de guardar" : "Estable"}
+              </StatPill>
+            </div>
+            <h3 className="text-lg font-semibold tracking-tight">Configuracion IA</h3>
+          </div>
           {!canEditAI ? <p className="text-sm text-neutral-500">Tu rol tiene solo lectura en esta seccion.</p> : null}
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
@@ -596,7 +635,7 @@ export function SettingsAdminClient() {
           <label className="space-y-2">
             <span className="text-sm font-medium">System prompt</span>
             <textarea
-              className="min-h-[110px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-neutral-100"
+              className={textareaClass}
               value={settings.aiSettings.systemPrompt ?? ""}
               disabled={!canEditAI}
               onChange={(event) =>
@@ -647,7 +686,7 @@ export function SettingsAdminClient() {
           <label className="space-y-2">
             <span className="text-sm font-medium">Suggested questions (1 por linea)</span>
             <textarea
-              className="min-h-[110px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-neutral-100"
+              className={textareaClass}
               value={aiSuggestedQuestionsInput}
               disabled={!canEditAI}
               onChange={(event) => setAiSuggestedQuestionsInput(event.target.value)}
@@ -656,7 +695,7 @@ export function SettingsAdminClient() {
           <label className="space-y-2">
             <span className="text-sm font-medium">Insight parameters (JSON)</span>
             <textarea
-              className="min-h-[130px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 font-mono text-xs outline-none focus:border-primary disabled:bg-neutral-100"
+              className={jsonTextareaClass}
               value={aiInsightParametersInput}
               disabled={!canEditAI}
               onChange={(event) => setAiInsightParametersInput(event.target.value)}
@@ -669,12 +708,20 @@ export function SettingsAdminClient() {
           >
             {savingSection === "ai" ? "Guardando IA..." : "Guardar IA"}
           </Button>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {activeSection === "regional_preferences" ? (
-        <Card className="space-y-4">
-          <h3 className="text-lg font-semibold">Preferencias regionales</h3>
+        <SurfaceCard variant="soft" className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatPill tone="premium">Regional</StatPill>
+              <StatPill tone={sectionIsDirty ? "warning" : "neutral"}>
+                {sectionIsDirty ? "Pendiente de guardar" : "Sin cambios"}
+              </StatPill>
+            </div>
+            <h3 className="text-lg font-semibold tracking-tight">Preferencias regionales</h3>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
               <span className="text-sm font-medium">Language</span>
@@ -776,16 +823,26 @@ export function SettingsAdminClient() {
           >
             {savingSection === "regional_preferences" ? "Guardando..." : "Guardar preferencias regionales"}
           </Button>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {activeSection === "general" || activeSection === "dashboard" ? (
-        <Card className="space-y-4">
-          <h3 className="text-lg font-semibold">General y Dashboard</h3>
+        <SurfaceCard variant="soft" className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatPill tone="premium">
+                {activeSection === "general" ? "General" : "Dashboard"}
+              </StatPill>
+              <StatPill tone={sectionIsDirty ? "warning" : "neutral"}>
+                {sectionIsDirty ? "Pendiente de guardar" : "Sin cambios"}
+              </StatPill>
+            </div>
+            <h3 className="text-lg font-semibold tracking-tight">General y Dashboard</h3>
+          </div>
           <label className="space-y-2">
             <span className="text-sm font-medium">Enabled modules (1 por linea)</span>
             <textarea
-              className="min-h-[100px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-neutral-100"
+              className={textareaClass}
               value={enabledModulesInput}
               disabled={!canEditModules || activeSection !== "general"}
               onChange={(event) => setEnabledModulesInput(event.target.value)}
@@ -794,7 +851,7 @@ export function SettingsAdminClient() {
           <label className="space-y-2">
             <span className="text-sm font-medium">Dashboard modules (1 por linea)</span>
             <textarea
-              className="min-h-[100px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-neutral-100"
+              className={textareaClass}
               value={dashboardModulesInput}
               disabled={!canEditSettings || activeSection !== "general"}
               onChange={(event) => setDashboardModulesInput(event.target.value)}
@@ -804,7 +861,7 @@ export function SettingsAdminClient() {
             <label className="space-y-2">
               <span className="text-sm font-medium">Visible widgets (1 por linea)</span>
               <textarea
-                className="min-h-[120px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 text-sm outline-none focus:border-primary disabled:bg-neutral-100"
+                className={textareaClass}
                 value={visibleWidgetsInput}
                 disabled={!canEditDashboard || activeSection !== "dashboard"}
                 onChange={(event) => setVisibleWidgetsInput(event.target.value)}
@@ -835,7 +892,7 @@ export function SettingsAdminClient() {
           <label className="space-y-2">
             <span className="text-sm font-medium">Layout config (JSON)</span>
             <textarea
-              className="min-h-[130px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 font-mono text-xs outline-none focus:border-primary disabled:bg-neutral-100"
+              className={jsonTextareaClass}
               value={layoutConfigInput}
               disabled={!canEditDashboard || activeSection !== "dashboard"}
               onChange={(event) => setLayoutConfigInput(event.target.value)}
@@ -844,7 +901,7 @@ export function SettingsAdminClient() {
           <label className="space-y-2">
             <span className="text-sm font-medium">KPI definitions (JSON)</span>
             <textarea
-              className="min-h-[130px] w-full rounded-2xl border border-border bg-white/90 px-4 py-3 font-mono text-xs outline-none focus:border-primary disabled:bg-neutral-100"
+              className={jsonTextareaClass}
               value={kpiDefinitionsInput}
               disabled={!canEditDashboard || activeSection !== "dashboard"}
               onChange={(event) => setKpiDefinitionsInput(event.target.value)}
@@ -866,14 +923,14 @@ export function SettingsAdminClient() {
           >
             {savingSection === activeSection ? "Guardando..." : "Guardar seccion"}
           </Button>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {canViewAuditLog ? (
-        <Card className="space-y-4">
+        <SurfaceCard variant="soft" className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-semibold">Historial de cambios</h3>
-            <Button variant="secondary" onClick={loadAuditLog} disabled={auditLoading}>
+            <Button variant="secondary" className="rounded-full" onClick={loadAuditLog} disabled={auditLoading}>
               {auditLoading ? "Actualizando..." : "Actualizar"}
             </Button>
           </div>
@@ -889,7 +946,10 @@ export function SettingsAdminClient() {
           ) : null}
           <div className="space-y-2">
             {auditItems.map((item) => (
-              <div key={item.id} className="rounded-xl border border-border bg-white/80 px-3 py-3 text-sm">
+              <div
+                key={item.id}
+                className="rounded-2xl border border-white/80 bg-white/80 px-3 py-3 text-sm shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+              >
                 <p className="font-semibold">{getSectionTitle(item.section)}</p>
                 <p className="text-xs text-neutral-500">
                   {item.userKey} · {formatAuditDate(item.createdAt)}
@@ -898,13 +958,15 @@ export function SettingsAdminClient() {
               </div>
             ))}
           </div>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {sectionHasValidationError ? (
-        <p className="text-xs text-danger">
-          Corrige los campos JSON invalidos para habilitar el guardado de la seccion actual.
-        </p>
+        <SurfaceCard variant="soft" padding="sm" className="border-rose-200/80 bg-rose-50/80 text-rose-700">
+          <p className="text-xs font-medium">
+            Corrige los campos JSON invalidos para habilitar el guardado de la seccion actual.
+          </p>
+        </SurfaceCard>
       ) : null}
     </div>
   );

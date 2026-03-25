@@ -10,10 +10,11 @@ import type {
 } from "@/shared/types/import-templates";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
+import { StatPill } from "@/components/ui/stat-pill";
 
 type TemplatesResponse = {
   items: ImportTemplate[];
@@ -74,13 +75,14 @@ function payloadFromTemplate(template: ImportTemplate): ImportTemplatePayload {
 }
 
 function SourceBadge({ template }: { template: ImportTemplate }) {
-  const tone =
-    template.sourceType === "workspace"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-      : "bg-sky-50 text-sky-700 border-sky-200";
-
   return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${tone}`}>
+    <span
+      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+        template.sourceType === "workspace"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-sky-200 bg-sky-50 text-sky-700"
+      }`}
+    >
       {template.sourceType === "workspace" ? "Workspace" : "Sistema"}
     </span>
   );
@@ -271,17 +273,28 @@ export function ImportTemplatesPanel() {
   }
 
   return (
-    <Card className="space-y-5">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Plantillas de importación</h3>
-          <p className="mt-1 max-w-2xl text-sm text-neutral-500">
-            Administra mappings por workspace para adaptar cartolas reales sin tocar código.
-            Las plantillas personalizadas se prueban antes que las del sistema.
-          </p>
+    <SurfaceCard variant="highlight" className="space-y-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatPill tone="premium">Importador</StatPill>
+            <StatPill tone={canEdit ? "success" : "neutral"}>
+              {canEdit ? "Workspace editable" : "Solo lectura"}
+            </StatPill>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight text-slate-950">
+              Plantillas de importación
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-neutral-500">
+              Administra mappings por workspace para adaptar cartolas reales sin tocar código.
+              Las plantillas personalizadas se prueban antes que las del sistema.
+            </p>
+          </div>
         </div>
         <Button
           variant="secondary"
+          className="rounded-full"
           disabled={!canEdit}
           onClick={() => {
             setEditingId(null);
@@ -303,7 +316,15 @@ export function ImportTemplatesPanel() {
           onRetry={() => void loadTemplates()}
         />
       ) : null}
-      {success ? <p className="text-sm text-success">{success}</p> : null}
+      {success ? (
+        <SurfaceCard
+          variant="soft"
+          padding="sm"
+          className="border-emerald-200/80 bg-emerald-50/80 text-emerald-700"
+        >
+          <p className="text-sm font-medium">{success}</p>
+        </SurfaceCard>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.1fr_1.4fr]">
         <div className="space-y-3">
@@ -314,33 +335,25 @@ export function ImportTemplatesPanel() {
             />
           ) : null}
           {templates.map((template) => (
-            <div
-              key={template.id}
-              className="rounded-[24px] border border-white/70 bg-white/70 p-4 shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-neutral-900">{template.name}</p>
-                    <SourceBadge template={template} />
-                    {!template.isActive ? (
-                      <span className="inline-flex rounded-full border border-neutral-200 px-2.5 py-1 text-[11px] text-neutral-500">
-                        Inactiva
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="text-sm text-neutral-500">
-                    {template.institution} · {template.parser.toUpperCase()} · prioridad{" "}
-                    {template.detectionPriority}
-                  </p>
+            <SurfaceCard key={template.id} variant="soft" padding="sm" className="space-y-3">
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-neutral-900">{template.name}</p>
+                  <SourceBadge template={template} />
+                  <StatPill tone="neutral">{template.parser.toUpperCase()}</StatPill>
+                  {!template.isActive ? <StatPill tone="warning">Inactiva</StatPill> : null}
                 </div>
+                <p className="text-sm text-neutral-500">
+                  {template.institution} · prioridad {template.detectionPriority}
+                </p>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
                 {template.sourceType === "workspace" ? (
                   <Button
                     variant="secondary"
                     size="sm"
+                    className="rounded-full"
                     disabled={!canEdit || saving}
                     onClick={() => {
                       setEditingId(template.id);
@@ -354,6 +367,7 @@ export function ImportTemplatesPanel() {
                 <Button
                   variant="secondary"
                   size="sm"
+                  className="rounded-full"
                   disabled={!canEdit || saving}
                   onClick={() => duplicateTemplate(template.id)}
                 >
@@ -364,6 +378,7 @@ export function ImportTemplatesPanel() {
                   <Button
                     variant="secondary"
                     size="sm"
+                    className="rounded-full"
                     disabled={!canEdit || saving}
                     onClick={() => toggleTemplate(template)}
                   >
@@ -374,7 +389,7 @@ export function ImportTemplatesPanel() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-danger hover:text-danger"
+                    className="rounded-full text-danger hover:text-danger"
                     disabled={!canEdit || saving}
                     onClick={() => deleteTemplate(template.id)}
                   >
@@ -383,18 +398,21 @@ export function ImportTemplatesPanel() {
                   </Button>
                 ) : null}
               </div>
-            </div>
+            </SurfaceCard>
           ))}
         </div>
 
-        <div className="space-y-4 rounded-[28px] border border-white/70 bg-white/75 p-4 shadow-sm">
-          <div>
+        <SurfaceCard variant="soft" className="space-y-4">
+          <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">
               {editingId ? "Edición personalizada" : "Nueva plantilla"}
             </p>
-            <h4 className="mt-1 text-lg font-semibold">
+            <h4 className="text-lg font-semibold tracking-tight text-slate-950">
               {editingId ? "Editar plantilla del workspace" : "Crear plantilla personalizada"}
             </h4>
+            <p className="text-sm text-neutral-500">
+              Ajusta columnas, formatos y heurísticas de importación para tus cartolas reales.
+            </p>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -451,7 +469,7 @@ export function ImportTemplatesPanel() {
               <option value="SIGNED">Monto con signo</option>
               <option value="SEPARATE_DEBIT_CREDIT">Cargo / abono separados</option>
             </Select>
-            <label className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm text-neutral-700">
+            <label className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-neutral-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
               <input
                 type="checkbox"
                 checked={draft.hasBalance}
@@ -462,7 +480,7 @@ export function ImportTemplatesPanel() {
               />
               Incluye saldo
             </label>
-            <label className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm text-neutral-700 md:col-span-2">
+            <label className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-neutral-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)] md:col-span-2">
               <input
                 type="checkbox"
                 checked={draft.isActive}
@@ -477,7 +495,7 @@ export function ImportTemplatesPanel() {
 
           <div className="grid gap-3 md:grid-cols-3">
             <textarea
-              className="min-h-28 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
+              className="min-h-28 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
               placeholder={"Sugerencias por nombre de archivo\nbanco chile\ncartola"}
               value={filenameHintsInput}
               disabled={!canEdit}
@@ -489,7 +507,7 @@ export function ImportTemplatesPanel() {
               }
             />
             <textarea
-              className="min-h-28 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
+              className="min-h-28 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
               placeholder={"Encabezados esperados\nfecha\nglosa\nsaldo"}
               value={headerHintsInput}
               disabled={!canEdit}
@@ -501,7 +519,7 @@ export function ImportTemplatesPanel() {
               }
             />
             <textarea
-              className="min-h-28 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
+              className="min-h-28 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
               placeholder={"Formatos de fecha\ndd/MM/yyyy\nyyyy-MM-dd"}
               value={dateFormatsInput}
               disabled={!canEdit}
@@ -529,20 +547,24 @@ export function ImportTemplatesPanel() {
                   ["type", "Tipo"]
                 ] as const
               ).map(([key, label]) => (
-                <textarea
-                  key={key}
-                  className="min-h-24 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
-                  placeholder={`${label}\nUna variante por línea`}
-                  value={arrayToMultiline(draft.columns[key])}
-                  disabled={!canEdit}
-                  onChange={(event) => setColumn(key, event.target.value)}
-                />
+                <label key={key} className="space-y-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">
+                    {label}
+                  </span>
+                  <textarea
+                    className="min-h-24 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
+                    placeholder={`${label}\nUna variante por línea`}
+                    value={arrayToMultiline(draft.columns[key])}
+                    disabled={!canEdit}
+                    onChange={(event) => setColumn(key, event.target.value)}
+                  />
+                </label>
               ))}
             </div>
           </div>
 
           <textarea
-            className="min-h-24 rounded-2xl border border-white/80 bg-white/70 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
+            className="min-h-24 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm outline-none ring-0 placeholder:text-neutral-400"
             placeholder="Notas operativas u observaciones de esta plantilla"
             value={draft.notes ?? ""}
             disabled={!canEdit}
@@ -579,8 +601,8 @@ export function ImportTemplatesPanel() {
               </Button>
             ) : null}
           </div>
-        </div>
+        </SurfaceCard>
       </div>
-    </Card>
+    </SurfaceCard>
   );
 }

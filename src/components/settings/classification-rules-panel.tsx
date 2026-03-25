@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import type { AuthSessionResponse } from "@/shared/types/auth";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import type { ClassificationRulePayload } from "@/shared/types/classification-rules";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
+import { StatPill } from "@/components/ui/stat-pill";
 
 type RuleItem = ClassificationRulePayload & {
   id: string;
@@ -123,13 +124,35 @@ export function ClassificationRulesPanel() {
   }
 
   return (
-    <Card className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold">Reglas automáticas</h3>
-        <p className="mt-1 text-sm text-neutral-500">
-          Motor base para sugerir categoría, negocio y origen usando texto y prioridad.
-        </p>
+    <SurfaceCard variant="highlight" className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <StatPill tone="premium" icon={<Sparkles className="h-3.5 w-3.5" />}>
+              Automatización
+            </StatPill>
+            <StatPill tone={canEdit ? "success" : "neutral"}>
+              {canEdit ? "Edición habilitada" : "Solo lectura"}
+            </StatPill>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight text-slate-950">
+              Reglas automáticas
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm text-neutral-500">
+              Motor base para sugerir categoría, negocio y origen usando texto y prioridad.
+            </p>
+          </div>
+        </div>
       </div>
+
+      {!canEdit ? (
+        <SurfaceCard variant="soft" padding="sm" className="border-dashed">
+          <p className="text-sm text-slate-600">
+            Tu rol actual puede revisar las reglas existentes, pero no crear ni editar reglas nuevas.
+          </p>
+        </SurfaceCard>
+      ) : null}
 
       {authLoading || loading ? <SkeletonCard lines={3} /> : null}
       {error ? (
@@ -139,132 +162,157 @@ export function ClassificationRulesPanel() {
           onRetry={() => void loadRules()}
         />
       ) : null}
-      {success ? <p className="text-sm text-success">{success}</p> : null}
+      {success ? (
+        <SurfaceCard
+          variant="soft"
+          padding="sm"
+          className="border-emerald-200/80 bg-emerald-50/80 text-emerald-700"
+        >
+          <p className="text-sm font-medium">{success}</p>
+        </SurfaceCard>
+      ) : null}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <Input
-          placeholder="Nombre de la regla"
-          value={draft.name}
-          disabled={!canEdit}
-          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-        />
-        <Input
-          placeholder="Texto o palabra clave"
-          value={draft.keyword}
-          disabled={!canEdit}
-          onChange={(event) => setDraft((current) => ({ ...current, keyword: event.target.value }))}
-        />
-        <Input
-          type="number"
-          placeholder="Prioridad"
-          value={draft.priority}
-          disabled={!canEdit}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, priority: Number(event.target.value) }))
-          }
-        />
-        <Select
-          value={draft.matchMode}
-          disabled={!canEdit}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              matchMode: event.target.value as "PARTIAL" | "EXACT"
-            }))
-          }
-        >
-          <option value="PARTIAL">Coincidencia parcial</option>
-          <option value="EXACT">Coincidencia exacta</option>
-        </Select>
-        <Select
-          value={draft.categoryId ?? ""}
-          disabled={!canEdit}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, categoryId: event.target.value || undefined }))
-          }
-        >
-          <option value="">Sin categoria sugerida</option>
-          {references.categories.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={draft.businessUnitId ?? ""}
-          disabled={!canEdit}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, businessUnitId: event.target.value || undefined }))
-          }
-        >
-          <option value="">Sin negocio sugerido</option>
-          {references.businessUnits.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          value={draft.financialOrigin ?? ""}
-          disabled={!canEdit}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              financialOrigin: (event.target.value || undefined) as "PERSONAL" | "EMPRESA" | undefined
-            }))
-          }
-        >
-          <option value="">Sin origen sugerido</option>
-          <option value="PERSONAL">Personal</option>
-          <option value="EMPRESA">Empresa</option>
-        </Select>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={Boolean(draft.isReimbursable)}
+      <SurfaceCard variant="soft" className="space-y-4">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">
+            {editingId ? "Editar regla" : "Nueva regla"}
+          </p>
+          <h4 className="text-base font-semibold tracking-tight text-slate-950">
+            {editingId ? "Ajusta la lógica de clasificación" : "Crear sugerencia automática"}
+          </h4>
+          <p className="text-sm text-neutral-500">
+            Define palabras clave y prioridad para reducir el trabajo manual al clasificar movimientos.
+          </p>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Input
+            placeholder="Nombre de la regla"
+            value={draft.name}
+            disabled={!canEdit}
+            onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+          />
+          <Input
+            placeholder="Texto o palabra clave"
+            value={draft.keyword}
+            disabled={!canEdit}
+            onChange={(event) => setDraft((current) => ({ ...current, keyword: event.target.value }))}
+          />
+          <Input
+            type="number"
+            placeholder="Prioridad"
+            value={draft.priority}
             disabled={!canEdit}
             onChange={(event) =>
-              setDraft((current) => ({ ...current, isReimbursable: event.target.checked }))
+              setDraft((current) => ({ ...current, priority: Number(event.target.value) }))
             }
           />
-          Reembolsable
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={draft.isActive}
+          <Select
+            value={draft.matchMode}
             disabled={!canEdit}
-            onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))}
-          />
-          Activa
-        </label>
-      </div>
-
-      <div className="flex flex-wrap gap-3">
-        <Button onClick={saveRule} disabled={!canEdit || saving}>
-          {saving ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Guardando
-            </>
-          ) : editingId ? (
-            "Actualizar regla"
-          ) : (
-            "Crear regla"
-          )}
-        </Button>
-        {editingId ? (
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setEditingId(null);
-              setDraft(emptyRule);
-            }}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                matchMode: event.target.value as "PARTIAL" | "EXACT"
+              }))
+            }
           >
-            Cancelar
+            <option value="PARTIAL">Coincidencia parcial</option>
+            <option value="EXACT">Coincidencia exacta</option>
+          </Select>
+          <Select
+            value={draft.categoryId ?? ""}
+            disabled={!canEdit}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, categoryId: event.target.value || undefined }))
+            }
+          >
+            <option value="">Sin categoria sugerida</option>
+            {references.categories.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={draft.businessUnitId ?? ""}
+            disabled={!canEdit}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, businessUnitId: event.target.value || undefined }))
+            }
+          >
+            <option value="">Sin negocio sugerido</option>
+            {references.businessUnits.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </Select>
+          <Select
+            value={draft.financialOrigin ?? ""}
+            disabled={!canEdit}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                financialOrigin: (event.target.value || undefined) as
+                  | "PERSONAL"
+                  | "EMPRESA"
+                  | undefined
+              }))
+            }
+          >
+            <option value="">Sin origen sugerido</option>
+            <option value="PERSONAL">Personal</option>
+            <option value="EMPRESA">Empresa</option>
+          </Select>
+          <label className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <input
+              type="checkbox"
+              checked={Boolean(draft.isReimbursable)}
+              disabled={!canEdit}
+              onChange={(event) =>
+                setDraft((current) => ({ ...current, isReimbursable: event.target.checked }))
+              }
+            />
+            Reembolsable
+          </label>
+          <label className="flex items-center gap-2 rounded-2xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-700 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <input
+              type="checkbox"
+              checked={draft.isActive}
+              disabled={!canEdit}
+              onChange={(event) => setDraft((current) => ({ ...current, isActive: event.target.checked }))}
+            />
+            Activa
+          </label>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={saveRule} disabled={!canEdit || saving}>
+            {saving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Guardando
+              </>
+            ) : editingId ? (
+              "Actualizar regla"
+            ) : (
+              "Crear regla"
+            )}
           </Button>
-        ) : null}
-      </div>
+          {editingId ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditingId(null);
+                setDraft(emptyRule);
+              }}
+            >
+              Cancelar
+            </Button>
+          ) : null}
+        </div>
+      </SurfaceCard>
 
       <div className="space-y-3">
         {!loading && rules.length === 0 ? (
@@ -274,22 +322,32 @@ export function ClassificationRulesPanel() {
           />
         ) : null}
         {rules.map((rule) => (
-          <div key={rule.id} className="rounded-[22px] border border-border bg-white/80 p-4">
+          <SurfaceCard key={rule.id} variant="soft" padding="sm" className="space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-medium">{rule.name}</p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  Keyword: {rule.keyword} · Prioridad: {rule.priority} · {rule.matchMode}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium text-slate-950">{rule.name}</p>
+                  <StatPill tone={rule.isActive ? "success" : "neutral"}>
+                    {rule.isActive ? "Activa" : "Inactiva"}
+                  </StatPill>
+                  <StatPill tone="premium">Prioridad {rule.priority}</StatPill>
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Keyword: {rule.keyword} ·{" "}
+                  {rule.matchMode === "EXACT" ? "Coincidencia exacta" : "Coincidencia parcial"}
                 </p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  {rule.category?.name ?? "Sin categoria"} · {rule.businessUnit?.name ?? "Sin negocio"} ·{" "}
-                  {rule.financialOrigin ?? "Sin origen"}
-                </p>
+                <div className="flex flex-wrap gap-2">
+                  <StatPill tone="neutral">{rule.category?.name ?? "Sin categoría"}</StatPill>
+                  <StatPill tone="neutral">{rule.businessUnit?.name ?? "Sin negocio"}</StatPill>
+                  <StatPill tone="neutral">{rule.financialOrigin ?? "Sin origen"}</StatPill>
+                  {rule.isReimbursable ? <StatPill tone="warning">Reembolsable</StatPill> : null}
+                </div>
               </div>
               {canEdit ? (
                 <Button
                   variant="secondary"
                   size="sm"
+                  className="rounded-full"
                   onClick={() => {
                     setEditingId(rule.id);
                     setDraft({
@@ -310,9 +368,9 @@ export function ClassificationRulesPanel() {
                 </Button>
               ) : null}
             </div>
-          </div>
+          </SurfaceCard>
         ))}
       </div>
-    </Card>
+    </SurfaceCard>
   );
 }
