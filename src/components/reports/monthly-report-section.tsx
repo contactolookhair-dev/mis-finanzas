@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Clock3, Download, FileClock, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import {
   appendMonthlyReportHistory,
@@ -133,12 +134,32 @@ export function MonthlyReportSection({
             </>
           )}
         </Button>
+        {authLoading ? (
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 w-16" />
+          </div>
+        ) : null}
         {!authLoading && !canExport ? (
           <p className="text-sm text-neutral-500">Tu rol actual puede ver datos, pero no exportar reportes.</p>
         ) : null}
       </div>
 
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+      {error ? (
+        <ErrorStateCard
+          title="No se pudo generar el PDF"
+          description={error}
+          footer={
+            <Button
+              variant="secondary"
+              className="h-9 rounded-full px-4 text-xs font-semibold"
+              onClick={() => setError(null)}
+            >
+              Cerrar
+            </Button>
+          }
+        />
+      ) : null}
 
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -150,9 +171,12 @@ export function MonthlyReportSection({
         </div>
 
         {history.length === 0 ? (
-          <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-sm text-slate-600">
-            Aún no has generado reportes mensuales desde este dispositivo.
-          </div>
+          <EmptyStateCard
+            title="Sin reportes todavía"
+            description="Cuando exportes tu primer PDF, aparecerá aquí para volver a descargarlo."
+            actionLabel={filters && canExport ? "Exportar ahora" : undefined}
+            onAction={filters && canExport ? () => void handleExport(filters, periodLabel) : undefined}
+          />
         ) : (
           <div className="space-y-2.5">
             {history.slice(0, 4).map((entry) => (

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertTriangle, CalendarDays, ShieldCheck, Sparkles, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { EmptyStateCard } from "@/components/ui/states";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { FinancialHealthResponse } from "@/shared/types/financial-health";
@@ -65,9 +66,15 @@ export function FinancialHealthCenter({
 
   if (!data) {
     return (
-      <Card className="rounded-[28px] border border-dashed border-slate-200 bg-white/80 p-5 text-sm text-slate-500 shadow-[0_14px_38px_rgba(15,23,42,0.05)]">
-        Aún no hay suficiente información para construir tu salud financiera.
-      </Card>
+      <EmptyStateCard
+        title="Salud financiera en preparación"
+        description="Cuando registres algunos movimientos, aquí verás alertas, patrones y compromisos del mes."
+        actionLabel="Registrar movimiento"
+        onAction={() => {
+          const button = document.querySelector<HTMLButtonElement>("[aria-label='Nueva transacción']");
+          button?.click();
+        }}
+      />
     );
   }
 
@@ -390,7 +397,9 @@ export function FinancialHealthCenter({
                 </div>
                 <div className="mt-4 space-y-2">
                   {data.alerts.length === 0 ? (
-                    <p className="text-sm text-slate-500">No hay alertas relevantes en este momento.</p>
+                    <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-500">
+                      Sin alertas relevantes por ahora.
+                    </div>
                   ) : (
                     data.alerts.slice(0, 3).map((alert) => (
                       <div
@@ -428,7 +437,9 @@ export function FinancialHealthCenter({
             </div>
             <div className="mt-4 space-y-2">
               {data.gastosHormiga.length === 0 ? (
-                <p className="text-sm text-slate-500">No se detectaron patrones repetitivos de bajo monto.</p>
+                <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-500">
+                  Sin patrones repetitivos detectados.
+                </div>
               ) : (
                 data.gastosHormiga.slice(0, 3).map((item) => (
                   <div key={item.id} className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-3">
@@ -460,7 +471,9 @@ export function FinancialHealthCenter({
             </div>
             <div className="mt-4 space-y-2">
               {data.upcomingTimeline.length === 0 ? (
-                <p className="text-sm text-slate-500">No hay cuotas próximas para el período actual.</p>
+                <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-500">
+                  No hay cuotas próximas para este período.
+                </div>
               ) : (
                 data.upcomingTimeline.slice(0, 4).map((item) => (
                   <div key={`${item.debtId}-${item.dueDate}`} className="rounded-[18px] border border-slate-100 bg-slate-50/80 p-3">

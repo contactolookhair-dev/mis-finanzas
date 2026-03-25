@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 
 type TemplatesResponse = {
   items: ImportTemplate[];
@@ -294,12 +295,24 @@ export function ImportTemplatesPanel() {
         </Button>
       </div>
 
-      {authLoading || loading ? <p className="text-sm text-neutral-500">Cargando plantillas...</p> : null}
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {authLoading || loading ? <SkeletonCard lines={3} /> : null}
+      {error ? (
+        <ErrorStateCard
+          title="No se pudieron cargar las plantillas"
+          description={error}
+          onRetry={() => void loadTemplates()}
+        />
+      ) : null}
       {success ? <p className="text-sm text-success">{success}</p> : null}
 
       <div className="grid gap-4 xl:grid-cols-[1.1fr_1.4fr]">
         <div className="space-y-3">
+          {!loading && templates.length === 0 ? (
+            <EmptyStateCard
+              title="Sin plantillas todavía"
+              description="Crea una plantilla para que el importador reconozca mejor tus cartolas."
+            />
+          ) : null}
           {templates.map((template) => (
             <div
               key={template.id}

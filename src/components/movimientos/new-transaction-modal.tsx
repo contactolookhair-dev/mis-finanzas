@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/states";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 
 type AccountItem = {
@@ -433,7 +434,18 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
           />
 
           {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-          {loading ? <p className="text-xs text-slate-500">Cargando opciones...</p> : null}
+          {loading ? (
+            <div className="rounded-2xl border border-slate-200 bg-white/60 p-3">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-3 w-36" />
+                <Skeleton className="h-3 w-16" />
+              </div>
+              <div className="mt-2 space-y-2">
+                <Skeleton className="h-3 w-64" />
+                <Skeleton className="h-3 w-52" />
+              </div>
+            </div>
+          ) : null}
 
           <Button type="submit" className="h-11 w-full" disabled={saving || loading}>
             {saving ? "Guardando..." : "Guardar transacción"}

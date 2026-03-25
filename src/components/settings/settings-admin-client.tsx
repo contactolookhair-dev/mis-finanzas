@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 
 type SettingsSnapshot = {
   appSettings: AppSettingsPayload;
@@ -384,35 +385,34 @@ export function SettingsAdminClient() {
   }
 
   if (authLoading || loading) {
-    return (
-      <Card className="space-y-3">
-        <p className="text-sm text-neutral-500">Cargando sesion y configuracion...</p>
-      </Card>
-    );
+    return <SkeletonCard lines={4} />;
   }
 
   if (authSession?.authenticated !== true) {
     return (
-      <Card className="space-y-3">
-        <p className="text-sm text-danger">Debes iniciar sesion para administrar configuracion.</p>
-      </Card>
+      <EmptyStateCard
+        title="Sesión no iniciada"
+        description="Para administrar configuraciones avanzadas necesitas iniciar sesión."
+      />
     );
   }
 
   if (!canViewSettings) {
     return (
-      <Card className="space-y-3">
-        <p className="text-sm text-danger">Tu rol no tiene permisos para ver configuracion.</p>
-      </Card>
+      <ErrorStateCard
+        title="Sin permisos"
+        description="Tu rol actual no tiene permisos para ver o editar la configuración."
+      />
     );
   }
 
   if (!settings || !baselineSettings) {
     return (
-      <Card className="space-y-3">
-        <p className="text-sm text-danger">No fue posible cargar configuracion.</p>
-        <Button onClick={loadSettings}>Reintentar</Button>
-      </Card>
+      <ErrorStateCard
+        title="No fue posible cargar la configuración"
+        description="Intenta nuevamente. Si persiste, revisa permisos o conexión."
+        onRetry={() => void loadSettings()}
+      />
     );
   }
 
@@ -877,9 +877,15 @@ export function SettingsAdminClient() {
               {auditLoading ? "Actualizando..." : "Actualizar"}
             </Button>
           </div>
-          {auditError ? <p className="text-sm text-danger">{auditError}</p> : null}
+          {auditError ? (
+            <div className="rounded-[18px] border border-rose-200 bg-rose-50/70 px-3 py-3 text-sm text-rose-700">
+              {auditError}
+            </div>
+          ) : null}
           {auditItems.length === 0 && !auditLoading ? (
-            <p className="text-sm text-neutral-500">Aun no hay cambios registrados.</p>
+            <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50/70 px-3 py-3 text-sm text-slate-600">
+              Aún no hay cambios registrados.
+            </div>
           ) : null}
           <div className="space-y-2">
             {auditItems.map((item) => (

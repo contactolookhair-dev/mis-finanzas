@@ -6,6 +6,7 @@ import { NewTransactionModal } from "@/components/movimientos/new-transaction-mo
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
@@ -242,9 +243,12 @@ export function InicioClient() {
     <div className="space-y-4 pb-20 sm:space-y-5">
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {accounts.length === 0 ? (
-          <Card className="rounded-[26px] border border-dashed border-slate-200 bg-white/70 p-5 text-sm text-slate-500">
-            Aún no tienes cuentas registradas.
-          </Card>
+          <EmptyStateCard
+            title="Aún no tienes cuentas"
+            description="Crea tu primera billetera o tarjeta para registrar movimientos."
+            actionLabel="Crear cuenta"
+            onAction={() => (window.location.href = "/cuentas")}
+          />
         ) : null}
         {accounts.map((account) => (
           <Card
@@ -289,9 +293,11 @@ export function InicioClient() {
 
       <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
       {financialHealthError ? (
-        <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
-          {financialHealthError}
-        </Card>
+        <ErrorStateCard
+          title="No se pudo cargar la salud financiera"
+          description={financialHealthError}
+          onRetry={() => void loadData()}
+        />
       ) : null}
 
       <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
@@ -312,9 +318,7 @@ export function InicioClient() {
       </Card>
 
       {error ? (
-        <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
-          {error}
-        </Card>
+        <ErrorStateCard title="No se pudo cargar la vista" description={error} onRetry={() => void loadData()} />
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2">
@@ -456,9 +460,24 @@ export function InicioClient() {
           <span className="text-xs text-slate-500">{movements.length} registros</span>
         </div>
         <div className="space-y-2">
-          {loading ? <p className="text-sm text-slate-500">Cargando movimientos...</p> : null}
+          {loading ? (
+            <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-20" />
+              </div>
+              <Skeleton className="h-3 w-56" />
+              <Skeleton className="h-3 w-40" />
+            </div>
+          ) : null}
           {!loading && movements.length === 0 ? (
-            <p className="text-sm text-slate-500">Aún no hay movimientos para este período.</p>
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-4 text-sm text-slate-600">
+              <p className="font-semibold text-slate-900">Sin movimientos</p>
+              <p className="mt-1 text-sm text-slate-500">Agrega tu primer gasto o ingreso para ver el historial aquí.</p>
+              <Button type="button" variant="secondary" className="mt-3 rounded-full" onClick={() => setOpenModal(true)}>
+                Agregar movimiento
+              </Button>
+            </div>
           ) : null}
           {movements.map((item) => (
             <div

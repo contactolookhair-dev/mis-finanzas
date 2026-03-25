@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 
 type RuleItem = ClassificationRulePayload & {
   id: string;
@@ -130,10 +131,14 @@ export function ClassificationRulesPanel() {
         </p>
       </div>
 
-      {authLoading || loading ? (
-        <p className="text-sm text-neutral-500">Cargando reglas...</p>
+      {authLoading || loading ? <SkeletonCard lines={3} /> : null}
+      {error ? (
+        <ErrorStateCard
+          title="No se pudieron cargar las reglas"
+          description={error}
+          onRetry={() => void loadRules()}
+        />
       ) : null}
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
       {success ? <p className="text-sm text-success">{success}</p> : null}
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -262,6 +267,12 @@ export function ClassificationRulesPanel() {
       </div>
 
       <div className="space-y-3">
+        {!loading && rules.length === 0 ? (
+          <EmptyStateCard
+            title="Sin reglas todavía"
+            description="Crea una regla para sugerir categoría, negocio u origen durante la importación y edición."
+          />
+        ) : null}
         {rules.map((rule) => (
           <div key={rule.id} className="rounded-[22px] border border-border bg-white/80 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -305,4 +316,3 @@ export function ClassificationRulesPanel() {
     </Card>
   );
 }
-
