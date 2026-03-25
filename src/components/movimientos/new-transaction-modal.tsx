@@ -283,7 +283,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-4">
-      <div className="safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.98)_100%)] p-4 shadow-[0_-20px_50px_rgba(15,23,42,0.18)] animate-fade-up sm:max-w-2xl sm:rounded-[32px] sm:p-6">
+      <div className="glass-surface safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(248,250,252,0.96)_100%)] p-4 animate-fade-up sm:max-w-2xl sm:rounded-[32px] sm:p-6">
         <div className="mb-4 flex items-center justify-between">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-violet-500">Nueva transacción</p>

@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen">
       <div className="screen-shell">
         <div className="lg:pl-[120px]">
-          <header className="glass-panel sticky top-3 z-20 mb-5 rounded-[24px] px-4 py-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.08)] sm:mb-6 sm:px-5">
+          <header className="glass-surface sticky top-3 z-20 mb-5 rounded-[24px] px-4 py-3.5 sm:mb-6 sm:px-5">
             <div className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </main>
         </div>
 
-        <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[28px] border-white/70 bg-white/86 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)] lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[94px] lg:-translate-y-1/2">
+        <nav className="glass-surface fixed inset-x-4 bottom-4 z-30 rounded-[28px] p-2 lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[94px] lg:-translate-y-1/2">
           <div className="grid grid-cols-5 gap-2 lg:grid-cols-1">
             {visibleNavigationItems.map((item) => {
               const isActive = pathname === item.href;
