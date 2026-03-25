@@ -1,7 +1,9 @@
 "use client";
 
 import { BrainCircuit, Loader2, Sparkles, TrendingUp, AlertTriangle } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
+import { StatPill } from "@/components/ui/stat-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
 
@@ -35,7 +37,7 @@ export function FinancialInsightsPanel({
   response: FinancialInsightsResponse | null;
 }) {
   return (
-    <Card className="space-y-4 rounded-[28px] border border-white/80 bg-white/80 p-4 shadow-soft">
+    <SurfaceCard variant="highlight" padding="sm" className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
@@ -48,44 +50,42 @@ export function FinancialInsightsPanel({
           </p>
         </div>
         {loading ? (
-          <div className="inline-flex h-11 items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-600">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <StatPill tone="premium">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Analizando...
-          </div>
+          </StatPill>
         ) : null}
       </div>
 
-      {error ? (
-        <div className="rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
-      ) : null}
+      {error ? <ErrorStateCard title="No se pudo generar el análisis" description={error} /> : null}
 
       {!response && !loading ? (
-        <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/80 px-4 py-5 text-sm text-slate-500">
-          Todavía no hay un análisis ejecutado. Pulsa{" "}
-          <span className="font-semibold text-slate-900">Analizar mis finanzas</span> para ver el
-          resumen.
-        </div>
+        <EmptyStateCard
+          title="Sin análisis todavía"
+          description="Pulsa Analizar mis finanzas para ver resumen, alertas y recomendaciones."
+        />
       ) : null}
 
       {loading ? (
         <div className="grid gap-3 md:grid-cols-2">
-          <div className="h-32 animate-pulse rounded-[24px] bg-slate-100" />
-          <div className="h-32 animate-pulse rounded-[24px] bg-slate-100" />
-          <div className="h-32 animate-pulse rounded-[24px] bg-slate-100 md:col-span-2" />
+          <SkeletonCard lines={3} />
+          <SkeletonCard lines={3} />
+          <SkeletonCard lines={4} className="md:col-span-2" />
         </div>
       ) : null}
 
       {response ? (
         <div className="space-y-4">
-          <Card className="rounded-[26px] border border-violet-100 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 p-5 text-white shadow-[0_24px_48px_rgba(124,58,237,0.22)]">
+          <SurfaceCard
+            variant="dark"
+            className="rounded-[26px] border border-violet-100 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 p-5 text-white"
+          >
             <p className="text-xs uppercase tracking-[0.22em] text-white/70">Resumen IA</p>
             <p className="mt-3 text-base leading-7 text-white/90">{response.summary}</p>
-          </Card>
+          </SurfaceCard>
 
           <section className="grid gap-4 md:grid-cols-2">
-            <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-soft">
+            <SurfaceCard variant="soft" padding="sm" className="rounded-[26px]">
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-emerald-600" />
                 <h4 className="text-sm font-semibold text-slate-900">Top categorías</h4>
@@ -113,9 +113,9 @@ export function FinancialInsightsPanel({
                   ))
                 )}
               </div>
-            </Card>
+            </SurfaceCard>
 
-            <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-soft">
+            <SurfaceCard variant="soft" padding="sm" className="rounded-[26px]">
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-fuchsia-600" />
                 <h4 className="text-sm font-semibold text-slate-900">Gastos hormiga</h4>
@@ -140,9 +140,9 @@ export function FinancialInsightsPanel({
                   ))
                 )}
               </div>
-            </Card>
+            </SurfaceCard>
 
-            <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-soft">
+            <SurfaceCard variant="soft" padding="sm" className="rounded-[26px]">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
                 <h4 className="text-sm font-semibold text-slate-900">Alertas</h4>
@@ -159,9 +159,9 @@ export function FinancialInsightsPanel({
                   ))
                 )}
               </div>
-            </Card>
+            </SurfaceCard>
 
-            <Card className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-soft">
+            <SurfaceCard variant="soft" padding="sm" className="rounded-[26px]">
               <div className="flex items-center gap-2">
                 <BrainCircuit className="h-4 w-4 text-violet-600" />
                 <h4 className="text-sm font-semibold text-slate-900">Recomendaciones</h4>
@@ -186,7 +186,7 @@ export function FinancialInsightsPanel({
                   ))
                 )}
               </div>
-            </Card>
+            </SurfaceCard>
           </section>
 
           <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-xs text-slate-500">
@@ -194,6 +194,6 @@ export function FinancialInsightsPanel({
           </div>
         </div>
       ) : null}
-    </Card>
+    </SurfaceCard>
   );
 }

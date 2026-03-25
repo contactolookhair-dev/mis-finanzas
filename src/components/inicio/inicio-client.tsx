@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
+import { MobileStickyAction } from "@/components/ui/mobile-sticky-action";
+import { SectionHeader } from "@/components/ui/section-header";
+import { StatPill } from "@/components/ui/stat-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
@@ -240,7 +243,18 @@ export function InicioClient() {
   }
 
   return (
-    <div className="space-y-4 pb-20 sm:space-y-5">
+    <div className="space-y-5 pb-20 sm:space-y-6">
+      <SectionHeader
+        eyebrow="Inicio"
+        title="Tu dinero en un vistazo"
+        description="Cuentas, calendario, movimientos y analisis en una sola vista clara y mobile-first."
+        actions={
+          <StatPill tone="premium" icon={<Wallet2 className="h-3.5 w-3.5" />}>
+            Vista diaria
+          </StatPill>
+        }
+      />
+
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {accounts.length === 0 ? (
           <EmptyStateCard
@@ -251,9 +265,10 @@ export function InicioClient() {
           />
         ) : null}
         {accounts.map((account) => (
-          <Card
+          <SurfaceCard
             key={account.id}
-            className="rounded-[26px] border border-white/60 bg-gradient-to-br from-white/80 to-white/30 p-5 shadow-[0_20px_40px_rgba(15,15,15,0.08)]"
+            variant="soft"
+            className="bg-gradient-to-br from-white/80 to-white/30"
           >
             <div className="flex items-start justify-between">
               <div>
@@ -275,10 +290,10 @@ export function InicioClient() {
             </div>
             <p className="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">Saldo disponible</p>
             <p className="text-2xl font-semibold text-slate-900">{formatCurrency(account.balance)}</p>
-          </Card>
+          </SurfaceCard>
         ))}
       </section>
-      <Card className="relative overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 p-5 text-white shadow-[0_28px_56px_rgba(124,58,237,0.32)]">
+      <SurfaceCard className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white shadow-[0_28px_56px_rgba(124,58,237,0.32)]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_40%)]" />
         <div className="relative">
           <p className="text-xs uppercase tracking-[0.2em] text-white/75">Saldo total</p>
@@ -289,7 +304,7 @@ export function InicioClient() {
             Disponible estimado entre cuentas y flujo del período.
           </p>
         </div>
-      </Card>
+      </SurfaceCard>
 
       <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
       {financialHealthError ? (
@@ -300,7 +315,7 @@ export function InicioClient() {
         />
       ) : null}
 
-      <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+      <SurfaceCard variant="highlight" padding="sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Análisis inteligente</p>
@@ -315,29 +330,29 @@ export function InicioClient() {
             {financialInsightsLoading ? "Analizando..." : "Analizar mis finanzas"}
           </Button>
         </div>
-      </Card>
+      </SurfaceCard>
 
       {error ? (
         <ErrorStateCard title="No se pudo cargar la vista" description={error} onRetry={() => void loadData()} />
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2">
-        <Card className="rounded-[24px] border border-violet-100 bg-white p-4 shadow-soft">
+        <SurfaceCard variant="soft" padding="sm" className="border-violet-100">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Ingresos</p>
           <p className="mt-2 text-2xl font-semibold text-emerald-600">
             {loading ? "..." : formatCurrency(incomes)}
           </p>
-        </Card>
-        <Card className="rounded-[24px] border border-fuchsia-100 bg-white p-4 shadow-soft">
+        </SurfaceCard>
+        <SurfaceCard variant="soft" padding="sm" className="border-fuchsia-100">
           <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Gastos</p>
           <p className="mt-2 text-2xl font-semibold text-fuchsia-600">
             {loading ? "..." : formatCurrency(expenses)}
           </p>
-        </Card>
+        </SurfaceCard>
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+        <SurfaceCard variant="soft" padding="sm">
           <div className="mb-2 flex items-start justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calendario mensual</p>
@@ -388,8 +403,8 @@ export function InicioClient() {
               );
             })}
           </div>
-        </Card>
-        <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+        </SurfaceCard>
+        <SurfaceCard variant="soft" padding="sm">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Calculadora dinámica</p>
             <p className="text-lg font-semibold text-slate-900">Haz cuentas sin salir del dashboard</p>
@@ -451,10 +466,10 @@ export function InicioClient() {
               =
             </button>
           </div>
-        </Card>
+        </SurfaceCard>
       </section>
 
-      <Card className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
+      <SurfaceCard variant="soft" padding="sm">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-base font-semibold text-slate-900">Movimientos recientes</h3>
           <span className="text-xs text-slate-500">{movements.length} registros</span>
@@ -496,7 +511,7 @@ export function InicioClient() {
             </div>
           ))}
         </div>
-      </Card>
+      </SurfaceCard>
 
       <FinancialInsightsPanel
         loading={financialInsightsLoading}
@@ -504,14 +519,10 @@ export function InicioClient() {
         response={financialInsights}
       />
 
-      <button
-        type="button"
-        onClick={() => setOpenModal(true)}
-        className="fixed bottom-24 right-5 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white shadow-[0_18px_32px_rgba(124,58,237,0.38)] transition hover:scale-[1.03]"
-        aria-label="Nueva transacción"
-      >
-        <Plus className="h-6 w-6" />
-      </button>
+      <MobileStickyAction type="button" onClick={() => setOpenModal(true)} aria-label="Nueva transacción">
+        <Plus className="mr-2 h-5 w-5" />
+        Nueva transacción
+      </MobileStickyAction>
 
       <div className="hidden sm:block">
         <Button

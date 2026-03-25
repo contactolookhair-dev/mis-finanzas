@@ -1,3 +1,4 @@
+import { StatPill } from "@/components/ui/stat-pill";
 import { SETTINGS_SECTIONS } from "@/shared/types/settings";
 
 export function SettingsSectionsNav() {
@@ -6,9 +7,14 @@ export function SettingsSectionsNav() {
       {SETTINGS_SECTIONS.map((section) => (
         <button
           key={section.code}
-          className="rounded-2xl border border-border bg-white/80 px-4 py-3 text-left transition hover:bg-white"
+          className="rounded-[24px] border border-white/75 bg-white/82 px-4 py-4 text-left shadow-[0_10px_24px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:bg-white"
         >
-          <p className="text-sm font-semibold">{section.title}</p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-slate-900">{section.title}</p>
+            <StatPill tone="neutral" className="px-2.5 py-1 text-[10px]">
+              {section.code}
+            </StatPill>
+          </div>
           <p className="mt-1 text-xs text-neutral-500">{section.description}</p>
         </button>
       ))}

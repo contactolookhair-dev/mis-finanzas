@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Clock3, Download, FileClock, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
+import { StatPill } from "@/components/ui/stat-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import {
   appendMonthlyReportHistory,
@@ -101,7 +102,7 @@ export function MonthlyReportSection({
   }
 
   return (
-    <Card className="space-y-4 rounded-[28px] border border-white/75 bg-white/90 p-4 shadow-[0_14px_38px_rgba(15,23,42,0.07)] sm:p-5">
+    <SurfaceCard variant="highlight" padding="sm" className="space-y-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -113,6 +114,7 @@ export function MonthlyReportSection({
           <h3 className="text-base font-semibold text-slate-900 sm:text-lg">Exportación y historial</h3>
           <p className="text-sm text-neutral-500">{summary}</p>
         </div>
+        <StatPill tone="premium">{history.length} historial</StatPill>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -216,6 +218,6 @@ export function MonthlyReportSection({
           </div>
         )}
       </div>
-    </Card>
+    </SurfaceCard>
   );
 }

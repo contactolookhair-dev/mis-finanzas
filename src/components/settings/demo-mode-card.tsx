@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { StatPill } from "@/components/ui/stat-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import type { AuthSessionResponse } from "@/shared/types/auth";
 
@@ -83,10 +84,17 @@ export function DemoModeCard() {
   }
 
   return (
-    <Card className="space-y-4 rounded-[24px] border border-dashed border-slate-200 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
+    <SurfaceCard variant="highlight" padding="sm" className="space-y-4 border-dashed">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-neutral-500">Modo demo</p>
+          <p className="text-base font-semibold text-slate-900">Datos de prueba seguros</p>
+        </div>
+        <StatPill tone={canUseDemo ? "success" : "warning"}>
+          {authLoading ? "Validando" : canUseDemo ? "Disponible" : "Solo administradores"}
+        </StatPill>
+      </div>
       <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-neutral-500">Modo demo</p>
-        <p className="text-base font-semibold text-slate-900">Datos de prueba seguros</p>
         <p className="text-sm text-neutral-500">
           Carga registros ficticios, borra todo lo generado o reinicia el conjunto cuando quieras.
         </p>
@@ -112,6 +120,6 @@ export function DemoModeCard() {
 
       {message ? <p className="text-sm text-emerald-600">{message}</p> : null}
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-    </Card>
+    </SurfaceCard>
   );
 }
