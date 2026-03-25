@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import {
   appendMonthlyReportHistory,
   createMonthlyReportHistoryEntry,
@@ -148,11 +149,7 @@ function AccountList({
   }
 
   if (accounts.length === 0) {
-    return (
-      <Card className="rounded-[28px] border border-dashed border-slate-200 bg-white/70 p-4 text-center text-sm text-slate-600 shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-        Aún no tienes cuentas registradas.
-      </Card>
-    );
+    return <EmptyStateCard title="Aun no tienes cuentas" description="Crea tu primera cartera para ver tu dinero distribuido." actionLabel="Crear cuenta" onAction={() => (window.location.href = "/cuentas")} />;
   }
 
   return (
@@ -433,10 +430,16 @@ function RecentTransactionsList({ items }: { items: DashboardSnapshot["recentTra
       </div>
       <div className="space-y-3">
         {items.length === 0 ? (
-          <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-center">
-            <p className="text-sm font-medium text-slate-600">No hay movimientos en este rango</p>
-            <p className="mt-1 text-xs text-slate-500">Cambia filtros o importa nuevos datos para ver actividad.</p>
-          </div>
+          <EmptyStateCard
+            title="Sin movimientos en este rango"
+            description="Registra un gasto o ajusta filtros para ver actividad."
+            actionLabel="Agregar gasto"
+            onAction={() => {
+              const button = document.querySelector<HTMLButtonElement>('button[aria-label="Nueva transacción"]');
+              button?.click();
+            }}
+            className="shadow-none"
+          />
         ) : null}
         {items.map((item) => (
           <div
@@ -705,19 +708,15 @@ export function DashboardClient() {
   return (
     <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
       {error ? (
-        <Card className="rounded-[28px] border border-sky-100 bg-sky-50/75 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-          <p className="text-sm text-sky-800">{error}</p>
-        </Card>
+        <ErrorStateCard
+          title="No se pudo cargar el dashboard"
+          details={error}
+          onRetry={() => window.location.reload()}
+        />
       ) : null}
 
       {loading && !snapshot ? (
-        <Card className="rounded-[28px] border border-white/70 bg-white/84 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
-          <div className="space-y-3">
-            <div className="h-3 w-32 animate-shimmer rounded-full bg-slate-200/80" />
-            <div className="h-9 w-44 animate-shimmer rounded-xl bg-slate-200/70" />
-            <div className="h-3 w-56 animate-shimmer rounded-full bg-slate-200/70" />
-          </div>
-        </Card>
+        <SkeletonCard lines={4} />
       ) : null}
 
       {snapshot && kpis ? (

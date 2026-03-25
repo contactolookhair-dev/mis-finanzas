@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Download, Eye, PencilLine, Clock3 } from "lucide-react";
+import { CheckCircle2, Download, Eye, PencilLine, Clock3, CreditCard, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/formatters/currency";
@@ -490,7 +491,13 @@ export function DeudasClient({
         </div>
       </Card>
 
-      {error ? <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">{error}</Card> : null}
+      {error ? (
+        <ErrorStateCard
+          title="No se pudieron cargar las deudas"
+          details={error}
+          onRetry={() => window.location.reload()}
+        />
+      ) : null}
       {message ? <Card className="rounded-[20px] border border-emerald-100 bg-emerald-50/70 p-3 text-sm text-emerald-700">{message}</Card> : null}
 
       {selectedDebt ? (
@@ -840,9 +847,7 @@ export function DeudasClient({
         </Card>
       ) : null}
 
-      {loading ? (
-        <Card className="rounded-[24px] p-4 text-sm text-neutral-500">Cargando deudas...</Card>
-      ) : null}
+      {loading ? <SkeletonCard lines={4} /> : null}
 
       {!loading && payload ? (
         <Card className="rounded-[24px] p-4">
@@ -934,7 +939,11 @@ export function DeudasClient({
           {tab === "empresas" ? (
             <div className="space-y-2">
               {payload.companies.length === 0 ? (
-                <p className="text-sm text-neutral-500">No hay deudas de empresas registradas.</p>
+                <EmptyStateCard
+                  icon={CreditCard}
+                  title="Sin deudas de empresas"
+                  description="Registra un gasto empresarial pagado por ti para que aparezca aqui."
+                />
               ) : (
                 payload.companies.map((item) => (
                   <div
@@ -985,7 +994,11 @@ export function DeudasClient({
           ) : (
             <div className="space-y-2">
               {payload.people.length === 0 ? (
-                <p className="text-sm text-neutral-500">No hay personas con deuda registrada.</p>
+                <EmptyStateCard
+                  icon={Users}
+                  title="Sin deudas de personas"
+                  description="Registra una deuda de persona o tarjeta prestada para verla aqui."
+                />
               ) : (
                 payload.people.map((item) => (
                   <div

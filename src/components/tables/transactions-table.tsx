@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { getAccountIcon, getCategoryIcon } from "@/lib/ui/icon-maps";
@@ -63,16 +65,25 @@ export function TransactionsTable() {
 
   return (
     <div className="space-y-2">
-      {loading ? (
-        <Card className="premium-surface p-4 text-sm text-slate-500">Cargando movimientos...</Card>
-      ) : null}
+      {loading ? <SkeletonCard lines={4} /> : null}
       {!loading && error ? (
-        <Card className="premium-surface p-4 text-sm text-rose-600">{error}</Card>
+        <ErrorStateCard
+          title="No se pudieron cargar los movimientos"
+          details={error}
+          onRetry={() => window.location.reload()}
+        />
       ) : null}
       {!loading && !error && rows.length === 0 ? (
-        <Card className="premium-surface p-4 text-sm text-slate-500">
-          No hay movimientos registrados todavía.
-        </Card>
+        <EmptyStateCard
+          icon={Receipt}
+          title="Aun no hay movimientos"
+          description="Registra tu primer gasto o ingreso para ver actividad aqui."
+          actionLabel="Agregar movimiento"
+          onAction={() => {
+            const anchor = document.getElementById("agregar-gasto");
+            anchor?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        />
       ) : null}
 
       {!loading &&

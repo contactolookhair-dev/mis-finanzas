@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { Building2, CircleDollarSign, CreditCard, Edit2, Trash2 } from "lucide-react";
+import { Building2, CircleDollarSign, CreditCard, Edit2, Trash2, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { formatCurrency } from "@/lib/formatters/currency";
 
 type AccountItem = {
@@ -200,9 +201,20 @@ export function CuentasClient() {
       </Card>
 
       <div className="space-y-2">
-        {loading ? <Card className="rounded-[20px] p-4 text-sm text-slate-500">Cargando carteras...</Card> : null}
-        {!loading && accounts.length === 0 ? (
-          <Card className="rounded-[20px] p-4 text-sm text-slate-500">Aún no hay carteras registradas.</Card>
+        {loading ? <SkeletonCard lines={3} /> : null}
+        {!loading && error ? (
+          <ErrorStateCard
+            title="No se pudieron cargar tus carteras"
+            details={error}
+            onRetry={loadAccounts}
+          />
+        ) : null}
+        {!loading && !error && accounts.length === 0 ? (
+          <EmptyStateCard
+            icon={WalletCards}
+            title="Aun no tienes carteras"
+            description="Crea tu primera tarjeta o billetera desde el formulario de arriba."
+          />
         ) : null}
         {accounts.map((account) => {
           const Icon = typeIcon[account.type];
