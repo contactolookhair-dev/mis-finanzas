@@ -19,7 +19,6 @@ import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/st
 import { SectionHeader } from "@/components/ui/section-header";
 import { StatPill } from "@/components/ui/stat-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
-import { MobileStickyAction } from "@/components/ui/mobile-sticky-action";
 import { formatCurrency } from "@/lib/formatters/currency";
 
 const fieldLabelClass = "text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500";
@@ -617,10 +616,21 @@ export function CuentasClient() {
         ) : null}
       </div>
 
-      <MobileStickyAction type="button" onClick={openCreate}>
-        <Plus className="mr-2 h-5 w-5" />
-        Nueva cuenta
-      </MobileStickyAction>
+      <div
+        className="fixed right-4 z-40 sm:hidden"
+        style={{
+          bottom: "calc(80px + env(safe-area-inset-bottom))"
+        }}
+      >
+        <Button
+          type="button"
+          onClick={openCreate}
+          className="h-12 rounded-full px-4 shadow-[0_18px_40px_rgba(37,99,235,0.22)]"
+        >
+          <Plus className="h-5 w-5" />
+          <span className="ml-2 hidden font-semibold min-[380px]:inline">Cuenta</span>
+        </Button>
+      </div>
 
       <AccountUpsertModal
         open={isUpsertOpen}
