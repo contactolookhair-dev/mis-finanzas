@@ -42,7 +42,7 @@ function parseRelativeDateRange(question: string) {
   return undefined;
 }
 
-function detectIntentFromRules(question: string): AIIntent {
+export function detectIntentFromRules(question: string): AIIntent {
   const normalized = question.toLowerCase();
 
   if (
@@ -86,7 +86,7 @@ function matchNameInQuestion(question: string, names: string[]) {
   return names.find((name) => normalized.includes(name.toLowerCase()));
 }
 
-function fallbackInterpret(question: string, businessUnits: string[], categories: string[]): LLMInterpretedQuery {
+export function fallbackInterpret(question: string, businessUnits: string[], categories: string[]): LLMInterpretedQuery {
   const normalized = question.toLowerCase();
   const transactionType = normalized.includes("gaste") || normalized.includes("egreso")
     ? "EGRESO"
@@ -110,6 +110,28 @@ function fallbackInterpret(question: string, businessUnits: string[], categories
   };
 }
 
+function shouldFallbackToAI(interpreted: LLMInterpretedQuery) {
+  switch (interpreted.intent) {
+    case "overview":
+      return true;
+    case "monthly_trend":
+      return !interpreted.dateRange && !interpreted.businessUnitName && !interpreted.categoryName;
+    case "by_category":
+      return !interpreted.categoryName;
+    case "by_business_unit":
+      return !interpreted.businessUnitName;
+    case "personal_money_in_business":
+      return !interpreted.businessUnitName && !interpreted.financialOrigin;
+    case "transactions_lookup":
+      return !interpreted.searchText || interpreted.searchText.trim().length < 4;
+    case "analysis":
+    case "insights":
+      return false;
+    default:
+      return true;
+  }
+}
+
 export async function interpretFinancialQuery(input: {
   provider: AIProvider;
   question: string;
@@ -119,6 +141,12 @@ export async function interpretFinancialQuery(input: {
   businessUnits: string[];
   categories: string[];
 }) {
+  const ruleBased = fallbackInterpret(input.question, input.businessUnits, input.categories);
+
+  if (!shouldFallbackToAI(ruleBased)) {
+    return ruleBased;
+  }
+
   try {
     const interpreted = await input.provider.interpret({
       systemPrompt: input.systemPrompt,
@@ -130,12 +158,12 @@ export async function interpretFinancialQuery(input: {
       nowIso: new Date().toISOString()
     });
 
-    if (interpreted) {
+    if (interpreted && !shouldFallbackToAI(interpreted)) {
       return interpreted;
     }
   } catch {
     // Fallback silencioso a reglas locales para mantener disponibilidad.
   }
 
-  return fallbackInterpret(input.question, input.businessUnits, input.categories);
+  return ruleBased;
 }

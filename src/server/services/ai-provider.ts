@@ -95,7 +95,7 @@ export class OpenAICompatibleProvider implements AIProvider {
           role: "system",
           content:
             `${input.systemPrompt ?? "Interpreta consultas financieras sin inventar datos."}\n` +
-            "Tu trabajo es extraer una estructura JSON valida. No respondas texto fuera del JSON."
+            "Tu trabajo es extraer una estructura JSON valida. No calcules métricas, no recomiendes acciones y no respondas texto fuera del JSON."
         },
         {
           role: "user",
@@ -161,7 +161,7 @@ export class OpenAICompatibleProvider implements AIProvider {
             `${input.systemPrompt ?? "Responde como asistente financiero."}\n` +
             `Tono: ${input.tone ?? "claro-profesional"}.\n` +
             `Nivel de detalle: ${input.detailLevel ?? "medio"}.\n` +
-            "Nunca inventes cifras. Usa solo el contexto entregado."
+            "Nunca inventes cifras. Usa solo el contexto entregado. Limítate a reescribir y explicar resultados ya verificados, sin realizar cálculos financieros nuevos."
         },
         {
           role: "user",

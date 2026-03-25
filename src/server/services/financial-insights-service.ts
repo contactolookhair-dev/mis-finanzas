@@ -18,6 +18,26 @@ type FinancialInsightsSummaryInput = {
   filters: DashboardFilters;
 };
 
+export type FinancialInsightsCore = {
+  workspaceId: string;
+  filters: DashboardFilters;
+  normalizedFilters: DashboardFilters;
+  transactionFilters: TransactionFilterInput;
+  analysis: Awaited<ReturnType<typeof buildFinancialAnalysisContext>>;
+  receivables: number;
+  topCategories: FinancialInsightCategory[];
+  gastosHormiga: FinancialInsightHormiga[];
+  alerts: FinancialInsightAlert[];
+  recommendations: FinancialInsightRecommendation[];
+  summaryPayload: Record<string, unknown>;
+  fallbackSummary: string;
+  period: {
+    startDate: string;
+    endDate: string;
+    label: string;
+  };
+};
+
 type GeminiFinancialInsightsPayload = {
   summary: string;
   alerts: Array<{
@@ -220,7 +240,7 @@ function normalizeAIOutput(payload: GeminiFinancialInsightsPayload) {
   };
 }
 
-export async function buildFinancialInsights(input: FinancialInsightsSummaryInput): Promise<FinancialInsightsResponse> {
+export async function getFinancialInsightsCore(input: FinancialInsightsSummaryInput): Promise<FinancialInsightsCore> {
   const normalizedFilters = normalizeDashboardFilters(input.filters);
   const transactionFilters = buildTransactionFilters(input.workspaceId, normalizedFilters);
   const analysis = await buildFinancialAnalysisContext({
@@ -288,13 +308,6 @@ export async function buildFinancialInsights(input: FinancialInsightsSummaryInpu
     recommendations: recommendationCandidates
   };
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const generated = await callGeminiFinancialInsights({
-    summary: summaryPayload,
-    model
-  }).catch(() => null);
-
-  const aiOutput = generated ? normalizeAIOutput(generated) : null;
   const fallback = buildFallbackAnswer({
     summary: { workspaceId: input.workspaceId, filters: normalizedFilters },
     analysis,
@@ -305,18 +318,69 @@ export async function buildFinancialInsights(input: FinancialInsightsSummaryInpu
     recommendations: recommendationCandidates
   });
 
-  return financialInsightsResponseSchema.parse({
-    summary: aiOutput?.summary?.trim() || fallback.summary,
+  return {
+    workspaceId: input.workspaceId,
+    filters: input.filters,
+    normalizedFilters,
+    transactionFilters,
+    analysis,
+    receivables,
     topCategories,
     gastosHormiga,
-    alerts: aiOutput?.alerts.length ? aiOutput.alerts : fallback.alerts,
-    recommendations: aiOutput?.recommendations.length ? aiOutput.recommendations : fallback.recommendations,
+    alerts: alertCandidates,
+    recommendations: recommendationCandidates,
+    summaryPayload,
+    fallbackSummary: fallback.summary,
     period: {
       startDate: normalizedFilters.startDate!,
       endDate: normalizedFilters.endDate!,
       label: buildPeriodLabel(normalizedFilters)
-    },
-    model,
-    source: aiOutput ? "gemini" : "fallback"
+    }
+  };
+}
+
+export async function enhanceWithAI(input: {
+  core: FinancialInsightsCore;
+  model?: string;
+}): Promise<{
+  summary?: string;
+  alerts?: FinancialInsightAlert[];
+  recommendations?: FinancialInsightRecommendation[];
+  source: "gemini" | "fallback";
+}> {
+  const model = input.model ?? process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+  const generated = await callGeminiFinancialInsights({
+    summary: input.core.summaryPayload,
+    model
+  }).catch(() => null);
+
+  const aiOutput = generated ? normalizeAIOutput(generated) : null;
+  if (!aiOutput) {
+    return {
+      source: "fallback"
+    };
+  }
+
+  return {
+    summary: aiOutput.summary?.trim() || undefined,
+    alerts: aiOutput.alerts,
+    recommendations: aiOutput.recommendations,
+    source: "gemini"
+  };
+}
+
+export async function buildFinancialInsights(input: FinancialInsightsSummaryInput): Promise<FinancialInsightsResponse> {
+  const core = await getFinancialInsightsCore(input);
+  const aiOutput = await enhanceWithAI({ core });
+
+  return financialInsightsResponseSchema.parse({
+    summary: aiOutput?.summary?.trim() || core.fallbackSummary,
+    topCategories: core.topCategories,
+    gastosHormiga: core.gastosHormiga,
+    alerts: aiOutput?.alerts?.length ? aiOutput.alerts : core.alerts,
+    recommendations: aiOutput?.recommendations?.length ? aiOutput.recommendations : core.recommendations,
+    period: core.period,
+    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    source: aiOutput?.source ?? "fallback"
   });
 }
