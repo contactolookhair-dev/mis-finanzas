@@ -1,30 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
+import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 
 type DebtsTotals = {
   pendingTotal: number;
   collectedTotal: number;
 };
 
-type DebtsCommitments = {
-  activeInstallmentDebts: number;
-  monthlyCommittedTotal: number;
-  upcomingCount: number;
-  overdueCount: number;
-  nextDueDate: string | null;
-  nextDueDebtName: string | null;
-};
-
 export function ResumenClient() {
   const [spent, setSpent] = useState<number | null>(null);
   const [collected, setCollected] = useState<number | null>(null);
   const [pending, setPending] = useState<number | null>(null);
-  const [commitments, setCommitments] = useState<DebtsCommitments | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [financialHealth, setFinancialHealth] = useState<FinancialHealthResponse | null>(null);
+  const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
+  const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSummary() {
@@ -42,13 +37,12 @@ export function ResumenClient() {
         const dashboard = (await dashboardResponse.json()) as DashboardSnapshot;
         const debts = (await debtsResponse.json()) as {
           totals: DebtsTotals;
-          commitments: DebtsCommitments;
         };
 
         setSpent(Math.abs(dashboard.kpis.expenses));
         setCollected(Math.abs(debts.totals.collectedTotal));
         setPending(Math.abs(debts.totals.pendingTotal));
-        setCommitments(debts.commitments);
+        void loadFinancialHealth(dashboard.filters);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Error cargando resumen.");
       }
@@ -56,6 +50,39 @@ export function ResumenClient() {
 
     void loadSummary();
   }, []);
+
+  async function loadFinancialHealth(filters: DashboardSnapshot["filters"]) {
+    try {
+      setFinancialHealthLoading(true);
+      setFinancialHealthError(null);
+
+      const params = new URLSearchParams();
+      Object.entries(filters ?? {}).forEach(([key, value]) => {
+        if (value) {
+          params.set(key, value);
+        }
+      });
+
+      const response = await fetch(
+        `/api/health/financial${params.toString() ? `?${params.toString()}` : ""}`,
+        { cache: "no-store" }
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? "No se pudo cargar la salud financiera.");
+      }
+
+      const payload = (await response.json()) as FinancialHealthResponse;
+      setFinancialHealth(payload);
+    } catch (loadError) {
+      setFinancialHealthError(
+        loadError instanceof Error ? loadError.message : "No se pudo cargar la salud financiera."
+      );
+    } finally {
+      setFinancialHealthLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -66,6 +93,12 @@ export function ResumenClient() {
         <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Resumen</p>
         <h2 className="mt-1 text-lg font-semibold">Vista rápida del negocio</h2>
       </Card>
+      <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
+      {financialHealthError ? (
+        <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
+          {financialHealthError}
+        </Card>
+      ) : null}
       <section className="grid gap-3 sm:grid-cols-3">
         <Card className="rounded-[24px] p-4">
           <p className="text-xs text-neutral-500">Gastado</p>
@@ -81,44 +114,6 @@ export function ResumenClient() {
         </Card>
       </section>
 
-      {commitments && commitments.activeInstallmentDebts > 0 ? (
-        <section className="grid gap-3 lg:grid-cols-2">
-          <Card className="rounded-[24px] border border-violet-100 bg-violet-50/50 p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-violet-500">
-              Compromisos del mes
-            </p>
-            <p className="mt-2 text-2xl font-semibold text-slate-900">
-              {formatCurrency(commitments.monthlyCommittedTotal)}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              {commitments.activeInstallmentDebts} deudas activas con cuotas pendientes.
-            </p>
-          </Card>
-          <Card className="rounded-[24px] border border-slate-200 bg-white p-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <p className="text-xs text-neutral-500">Proximos</p>
-                <p className="mt-2 text-xl font-semibold">{commitments.upcomingCount}</p>
-              </div>
-              <div>
-                <p className="text-xs text-neutral-500">Vencidas</p>
-                <p className="mt-2 text-xl font-semibold">{commitments.overdueCount}</p>
-              </div>
-              <div>
-                <p className="text-xs text-neutral-500">Siguiente</p>
-                <p className="mt-2 text-sm font-semibold">
-                  {commitments.nextDueDate
-                    ? new Date(commitments.nextDueDate).toLocaleDateString("es-CL")
-                    : "Sin fecha"}
-                </p>
-                <p className="text-xs text-neutral-500">
-                  {commitments.nextDueDebtName ?? "Sin deuda prioritaria"}
-                </p>
-              </div>
-            </div>
-          </Card>
-        </section>
-      ) : null}
     </div>
   );
 }
