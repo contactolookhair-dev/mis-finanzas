@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ExportActions } from "@/components/exports/export-actions";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { MonthlyReportSection } from "@/components/reports/monthly-report-section";
+import { PageContainer } from "@/components/ui/page-container";
 import { SectionHeader } from "@/components/ui/section-header";
 import { ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { StatPill } from "@/components/ui/stat-pill";
@@ -78,7 +79,7 @@ export function ReportesClient() {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <PageContainer className="space-y-6">
       <SectionHeader
         eyebrow="Reportes"
         title="Centro de reportes"
@@ -102,7 +103,7 @@ export function ReportesClient() {
             </SurfaceCard>
             <SurfaceCard variant="soft" padding="sm">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Gastos</p>
-              <p className="mt-2 text-2xl font-semibold text-fuchsia-600">
+              <p className="mt-2 text-2xl font-semibold text-rose-600">
                 {formatCurrency(Math.abs(snapshot.kpis.expenses))}
               </p>
             </SurfaceCard>
@@ -146,7 +147,6 @@ export function ReportesClient() {
           </div>
         </>
       ) : null}
-    </div>
+    </PageContainer>
   );
 }
-

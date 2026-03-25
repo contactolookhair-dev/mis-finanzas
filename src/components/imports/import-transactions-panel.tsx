@@ -11,9 +11,10 @@ import type {
 } from "@/shared/types/imports";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { ErrorStateCard } from "@/components/ui/states";
+import { SurfaceCard } from "@/components/ui/surface-card";
 
 type ReferenceOption = { id: string; name: string; type?: string | null; institution?: string | null };
 
@@ -68,11 +69,11 @@ function SuggestionBadge({ suggestion }: { suggestion?: ImportFieldSuggestion })
 
   const tone =
     suggestion.source === "rule"
-      ? "bg-sky-50 text-sky-700 border-sky-200"
+      ? "bg-blue-50 text-blue-700 border-blue-200"
       : suggestion.source === "history"
-        ? "bg-violet-50 text-violet-700 border-violet-200"
+        ? "bg-slate-100 text-slate-700 border-slate-200"
         : suggestion.source === "manual"
-          ? "bg-neutral-100 text-neutral-700 border-neutral-200"
+          ? "bg-slate-100 text-slate-700 border-slate-200"
           : "bg-emerald-50 text-emerald-700 border-emerald-200";
 
   return (
@@ -275,25 +276,31 @@ export function ImportTransactionsPanel() {
 
   return (
     <div className="space-y-4" id="importar">
-      <Card className="space-y-4">
+      <SurfaceCard variant="soft" padding="sm" className="space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/70">
-              Importacion real
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+              Importación
             </p>
-            <h3 className="mt-1 text-lg font-semibold">Subir cartolas y revisar antes de guardar</h3>
-            <p className="mt-1 text-sm text-neutral-500">
-              Soporta `CSV`, `Excel (.xlsx)` y una primera capa útil para `PDF` bancario con texto seleccionable.
+            <h3 className="mt-1 text-lg font-semibold text-slate-900">
+              Vista previa antes de guardar
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Soporta CSV, Excel (.xlsx) y PDF con texto seleccionable.
             </p>
           </div>
-          <div className="hidden rounded-2xl bg-accent/70 p-3 text-primary md:block">
+          <div className="hidden rounded-2xl border border-slate-200 bg-white/80 p-3 text-slate-700 md:block">
             <FileSpreadsheet className="h-5 w-5" />
           </div>
         </div>
 
-        {authLoading ? <p className="text-sm text-neutral-500">Validando permisos...</p> : null}
+        {authLoading ? <p className="text-sm text-slate-600">Validando permisos...</p> : null}
         {!authLoading && !canImport ? (
-          <p className="text-sm text-danger">Tu rol actual no tiene permisos para importar movimientos.</p>
+          <ErrorStateCard
+            title="Permisos insuficientes"
+            description="Tu rol actual no tiene permisos para importar movimientos."
+            className="shadow-none"
+          />
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
@@ -386,21 +393,25 @@ export function ImportTransactionsPanel() {
         ) : null}
 
         {preview?.warnings.length ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          <SurfaceCard
+            variant="soft"
+            padding="sm"
+            className="border-amber-200 bg-amber-50/80 text-sm text-amber-700"
+          >
             {preview.warnings.join(" ")}
-          </div>
+          </SurfaceCard>
         ) : null}
 
-        {error ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            {error}
-          </div>
-        ) : null}
+        {error ? <ErrorStateCard title="No se pudo generar la vista previa" description={error} /> : null}
 
         {success ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <SurfaceCard
+            variant="soft"
+            padding="sm"
+            className="border-emerald-200 bg-emerald-50/80 text-sm text-emerald-700"
+          >
             {success}
-          </div>
+          </SurfaceCard>
         ) : null}
 
         {commitSummary ? (
@@ -412,14 +423,14 @@ export function ImportTransactionsPanel() {
             <p>Errores: {commitSummary.errors.length}</p>
           </div>
         ) : null}
-      </Card>
+      </SurfaceCard>
 
       {preview && rows.length > 0 ? (
-        <Card className="space-y-4">
+        <SurfaceCard variant="soft" padding="sm" className="space-y-4">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold">Revision previa</h3>
-              <p className="text-sm text-neutral-500">
+              <h3 className="text-lg font-semibold text-slate-900">Revisión previa</h3>
+              <p className="text-sm text-slate-600">
                 Corrige y clasifica antes de confirmar la importacion.
               </p>
             </div>
@@ -440,12 +451,12 @@ export function ImportTransactionsPanel() {
               const duplicateLabel = getDuplicateLabel(row.duplicateStatus);
 
               return (
-                <div key={row.id} className="rounded-[24px] border border-border bg-white/80 p-4">
+                <div key={row.id} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="text-sm font-semibold">Fila #{row.rowNumber}</p>
+                      <p className="text-sm font-semibold text-slate-900">Fila #{row.rowNumber}</p>
                       {row.sourceAccountName ? (
-                        <p className="text-xs text-neutral-500">Origen detectado: {row.sourceAccountName}</p>
+                        <p className="text-xs text-slate-500">Origen detectado: {row.sourceAccountName}</p>
                       ) : null}
                     </div>
                     <label className="flex items-center gap-2 text-sm">
@@ -646,7 +657,7 @@ export function ImportTransactionsPanel() {
               );
             })}
           </div>
-        </Card>
+        </SurfaceCard>
       ) : null}
     </div>
   );
