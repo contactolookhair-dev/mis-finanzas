@@ -42,15 +42,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:hidden">
-                <Link
-                  href="/movimientos"
-                  className={cn(buttonVariants({ variant: "secondary" }), "h-10 border-slate-200 bg-white text-xs font-semibold")}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Nueva transacción
-                </Link>
-              </div>
             </div>
           </header>
 

@@ -294,7 +294,10 @@ export function InicioClient() {
         }
       />
 
-      <MobileHomeStack onOpenCalculator={() => setCalculatorOpen(true)} />
+      <MobileHomeStack
+        onOpenCalculator={() => setCalculatorOpen(true)}
+        onOpenTransaction={() => setOpenModal(true)}
+      />
 
       <OnboardingBanner
         accountsCount={accounts.length}
@@ -317,32 +320,32 @@ export function InicioClient() {
           <SurfaceCard
             key={account.id}
             variant="soft"
-            className="aspect-[1/1] min-h-[148px] overflow-hidden bg-gradient-to-br from-white/84 to-white/28 p-4 sm:aspect-auto sm:min-h-[176px] sm:p-5"
+            className="aspect-[1/1] min-h-[154px] overflow-hidden bg-gradient-to-br from-white/84 to-white/28 p-3.5 sm:aspect-auto sm:min-h-[176px] sm:p-5"
           >
-            <div className="flex h-full flex-col justify-between gap-4">
-              <div className="flex items-start justify-between gap-3">
+            <div className="flex h-full flex-col justify-between gap-3">
+              <div className="flex items-start justify-between gap-2.5">
                 <div className="min-w-0 space-y-1">
                   <p className="truncate text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
                     {account.bank || account.type}
                   </p>
-                  <p className="truncate text-[13px] font-semibold tracking-[-0.02em] text-slate-900">
+                  <p className="line-clamp-2 min-h-[2.6rem] text-[13px] font-semibold leading-[1.25rem] tracking-[-0.02em] text-slate-900">
                     {account.name}
                   </p>
                 </div>
                 <span
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-white shadow"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl text-white shadow"
                   style={{
                     background: account.color ? account.color : accountCardGradient
                   }}
                 >
-                  <span className="text-[15px]">{account.icon ?? "💳"}</span>
+                  <span className="text-[13px]">{account.icon ?? "💳"}</span>
                 </span>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500">
+                <p className="text-[9px] uppercase tracking-[0.22em] text-slate-500">
                   Saldo disponible
                 </p>
-                <p className="mt-1 text-[1.15rem] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
+                <p className="mt-1 text-[1.05rem] font-semibold tracking-[-0.03em] text-slate-900 sm:text-[1.3rem]">
                   {formatCurrency(account.balance)}
                 </p>
               </div>
@@ -576,6 +579,7 @@ export function InicioClient() {
           </div>
         </div>
       ) : null}
+
     </div>
   );
 }
