@@ -12,6 +12,11 @@ import type { DashboardSnapshot } from "@/shared/types/dashboard";
 type AccountItem = {
   id: string;
   balance: number;
+  name: string;
+  bank: string;
+  type: "CREDITO" | "DEBITO" | "EFECTIVO";
+  color: string | null;
+  icon: string | null;
 };
 
 type AccountsPayload = {
@@ -55,6 +60,7 @@ export function InicioClient() {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [accountsTotal, setAccountsTotal] = useState(0);
   const [movements, setMovements] = useState<TransactionItem[]>([]);
+  const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openModal, setOpenModal] = useState(false);
@@ -88,6 +94,7 @@ export function InicioClient() {
       setAccountsTotal(
         (accountsPayload.items ?? []).reduce((acc, account) => acc + account.balance, 0)
       );
+      setAccounts(accountsPayload.items ?? []);
       setMovements(transactionsPayload.items ?? []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Error cargando inicio.");
@@ -108,6 +115,40 @@ export function InicioClient() {
 
   return (
     <div className="space-y-4 pb-20 sm:space-y-5">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {accounts.length === 0 ? (
+          <Card className="rounded-[26px] border border-dashed border-slate-200 bg-white/70 p-5 text-sm text-slate-500">
+            Aún no tienes cuentas registradas.
+          </Card>
+        ) : null}
+        {accounts.map((account) => (
+          <Card
+            key={account.id}
+            className="rounded-[26px] border border-white/60 bg-gradient-to-br from-white/80 to-white/30 p-5 shadow-[0_20px_40px_rgba(15,15,15,0.08)]"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  {account.bank}
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{account.name}</p>
+              </div>
+              <span
+                className="inline-flex h-10 w-10 items-center justify-center rounded-2xl text-white shadow"
+                style={{
+                  background: account.color
+                    ? account.color
+                    : "linear-gradient(135deg,#8b5cf6,#ec4899,#14b8a6)"
+                }}
+              >
+                {account.icon ?? "💳"}
+              </span>
+            </div>
+            <p className="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">Saldo disponible</p>
+            <p className="text-2xl font-semibold text-slate-900">{formatCurrency(account.balance)}</p>
+          </Card>
+        ))}
+      </section>
       <Card className="relative overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 p-5 text-white shadow-[0_28px_56px_rgba(124,58,237,0.32)]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.28),transparent_40%)]" />
         <div className="relative">
