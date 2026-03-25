@@ -678,7 +678,6 @@ export function DashboardClient() {
         }
         skipNextFilteredFetchRef.current = true;
         setSnapshot(payload);
-        setHasSnapshot(true);
         setFilters(payload.filters);
         initializedRef.current = true;
         void loadFinancialHealth(payload.filters);
@@ -755,7 +754,6 @@ export function DashboardClient() {
           throw new Error(payload.message ?? "No se pudo cargar el dashboard.");
         }
         setSnapshot(payload);
-        setHasSnapshot(true);
         void loadFinancialHealth(payload.filters);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Error cargando dashboard.");
@@ -918,7 +916,6 @@ export function DashboardClient() {
   };
 
   const visibleWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
-  const [hasSnapshot, setHasSnapshot] = useState(false);
   const [clientReady, setClientReady] = useState(false);
   const widgetSizeMap: Record<WidgetSize, string> = {
     compact: "lg:col-span-1",
@@ -1112,9 +1109,19 @@ export function DashboardClient() {
     setWidgetSizes((current) => ({ ...current, [id]: size }));
   };
 
-  if (typeof window !== "undefined") {
-    console.log("dashboard/render", { hasSnapshot, customizeOpen, visibleWidgetsCount: visibleWidgets.length });
-  }
+  const renderedWidgets = visibleWidgets.map((id) => {
+    const size = widgetSizes[id] ?? "standard";
+    const element = renderWidget(id, size) ?? widgetElements[id];
+    if (!element) return null;
+
+    return (
+      <div key={id} className={cn("animate-fade-up space-y-3", widgetSizeMap[size])}>
+        {element}
+      </div>
+    );
+  });
+
+  const hasRenderedWidgets = renderedWidgets.some(Boolean);
 
   return (
     <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
@@ -1268,20 +1275,19 @@ export function DashboardClient() {
         </Card>
       ) : null}
 
-      {hasSnapshot ? (
-        <div className="space-y-4">
-          {visibleWidgets.map((id) => {
-            const size = widgetSizes[id] ?? "standard";
-            const element = renderWidget(id, size) ?? widgetElements[id];
-            if (!element) return null;
-            return (
-              <div key={id} className={cn("animate-fade-up space-y-3", widgetSizeMap[size])}>
-                {element}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      <div className="space-y-4">
+        {hasRenderedWidgets ? (
+          renderedWidgets
+        ) : (
+          <EmptyStateCard
+            title="Widgets pendientes"
+            description="Agrega widgets para personalizar tu dashboard."
+            actionLabel="Agregar widgets"
+            onAction={() => setCustomizeOpen(true)}
+            className="shadow-none"
+          />
+        )}
+      </div>
 
       <Button
         variant="secondary"
