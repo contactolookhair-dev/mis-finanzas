@@ -903,6 +903,157 @@ export function DashboardClient() {
     featured: "lg:col-span-2"
   };
 
+  const renderWidget = (id: WidgetId, size: WidgetSize): JSX.Element | null => {
+    switch (id) {
+      case "hero":
+        return widgetElements.hero ?? null;
+      case "quickActions":
+        return widgetElements.quickActions ?? null;
+      case "summary":
+        return widgetElements.summary ?? null;
+      case "health": {
+        const compact = size === "compact";
+        return widgetElements.health
+          ? (
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                      Salud financiera
+                    </p>
+                    <h2 className="text-lg font-semibold text-slate-900">Tu semáforo y foco</h2>
+                  </div>
+                  {financialHealth ? (
+                    <span
+                      className={cn(
+                        "rounded-full px-3 py-1 text-[12px] font-semibold",
+                        financialHealth.status === "saludable"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : financialHealth.status === "atencion"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-rose-50 text-rose-700"
+                      )}
+                    >
+                      {financialHealth.status === "saludable"
+                        ? "Saludable"
+                        : financialHealth.status === "atencion"
+                          ? "Atención"
+                          : "Crítico"}
+                    </span>
+                  ) : null}
+                </div>
+                {compact && financialHealth ? (
+                  <Card className="rounded-[20px] border border-slate-200 bg-white/92 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Puntaje</p>
+                        <p className="text-2xl font-semibold text-slate-900">{financialHealth.score}/100</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Estado</p>
+                        <p className="text-sm font-semibold text-slate-700">
+                          {financialHealth.status === "saludable"
+                            ? "Saludable"
+                            : financialHealth.status === "atencion"
+                              ? "Atención"
+                              : "Crítico"}
+                        </p>
+                      </div>
+                    </div>
+                  </Card>
+                ) : (
+                  widgetElements.health
+                )}
+              </section>
+            )
+          : null;
+      }
+      case "accounts": {
+        const compact = size === "compact";
+        if (!snapshot) return null;
+        return (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-neutral-500">
+                  Tus cuentas
+                </p>
+                <h2 className="text-lg font-semibold text-slate-900">Dónde está tu dinero</h2>
+              </div>
+              <p className="text-sm font-semibold text-slate-500">{accounts.length} cuentas</p>
+            </div>
+            {compact ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {accounts.slice(0, 4).map((account) => (
+                  <Card
+                    key={account.id}
+                    className="rounded-[18px] border border-slate-200 bg-white/90 p-3 shadow-[0_10px_22px_rgba(15,23,42,0.05)]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[12px] font-semibold text-slate-900 line-clamp-1">{account.name}</p>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                        {account.type}
+                      </span>
+                    </div>
+                    <p className={cn("mt-1 text-lg font-semibold", account.balance >= 0 ? "text-emerald-600" : "text-rose-600")}>
+                      {formatCurrency(account.balance)}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              widgetElements.accounts
+            )}
+          </section>
+        );
+      }
+      case "recent": {
+        const compact = size === "compact";
+        if (!snapshot) return null;
+        const items = compact ? snapshot.recentTransactions.slice(0, 3) : snapshot.recentTransactions;
+        return <RecentTransactionsList items={items} />;
+      }
+      case "reports":
+        return widgetElements.reports ?? null;
+      case "filters":
+        return widgetElements.filters ?? null;
+      case "summary": {
+        if (!widgetElements.summary) return null;
+        if (size === "compact" && kpis && snapshot) {
+          return (
+            <Card className="rounded-[22px] border border-slate-200 bg-white/92 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.05)]">
+              <div className="grid grid-cols-3 gap-2 text-center text-sm font-semibold">
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Ingresos</p>
+                  <p className="text-emerald-600">{formatCurrency(kpis.incomes)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Gastos</p>
+                  <p className="text-rose-600">{formatCurrency(kpis.expenses)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Flujo</p>
+                  <p className={kpis.netFlow >= 0 ? "text-emerald-600" : "text-rose-600"}>
+                    {formatCurrency(kpis.netFlow)}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          );
+        }
+        return widgetElements.summary;
+      }
+      case "trend":
+        return widgetElements.trend ?? null;
+      case "insights":
+        return widgetElements.insights ?? null;
+      case "goals":
+        return widgetElements.goals ?? null;
+      default:
+        return null;
+    }
+  };
+
   const widgetMeta: Record<
     WidgetId,
     { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
@@ -1073,7 +1224,8 @@ export function DashboardClient() {
                           </div>
                         </div>
                         <div className="mt-2 rounded-[12px] border border-dashed border-slate-200 bg-slate-50/80 p-2 text-[12px] text-slate-500">
-                          Mini preview: {widgetMeta[id].label}
+                          Mini preview ({size === "featured" ? "Destacado" : size === "compact" ? "Compacto" : "Estándar"}):
+                          <span className="ml-1 font-semibold text-slate-700">{widgetMeta[id].label}</span>
                         </div>
                       </div>
                     );
@@ -1086,13 +1238,16 @@ export function DashboardClient() {
       ) : null}
 
       {snapshot
-        ? visibleWidgets.map((id) =>
-            widgetElements[id] ? (
-              <div key={id} className={cn("animate-fade-up space-y-3", widgetSizeMap[widgetSizes[id] ?? "standard"])}>
-                {widgetElements[id]}
+        ? visibleWidgets.map((id) => {
+            const size = widgetSizes[id] ?? "standard";
+            const element = renderWidget(id, size) ?? widgetElements[id];
+            if (!element) return null;
+            return (
+              <div key={id} className={cn("animate-fade-up space-y-3", widgetSizeMap[size])}>
+                {element}
               </div>
-            ) : null
-          )
+            );
+          })
         : null}
 
       <Button
