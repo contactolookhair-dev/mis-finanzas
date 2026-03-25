@@ -21,6 +21,11 @@ export {
 export { buildDashboardTransactionFilters, getDashboardSnapshot } from "@/server/services/dashboard-service";
 export { getFinancialHealthSnapshot } from "@/server/services/financial-health-service";
 export { getAutomaticInsights } from "@/server/services/insights-service";
+export {
+  seedDemoData,
+  clearDemoData,
+  resetDemoData
+} from "@/server/services/demo-data-service";
 export { getReimbursementSummary } from "@/server/services/reimbursement-service";
 export { getResolvedSettings, updateConfigSettings } from "@/server/services/settings-service";
 export {

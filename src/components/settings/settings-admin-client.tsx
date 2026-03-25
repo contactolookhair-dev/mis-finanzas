@@ -90,6 +90,10 @@ export function SettingsAdminClient() {
   const [baselineSettings, setBaselineSettings] = useState<SettingsSnapshot | null>(null);
   const [savingSection, setSavingSection] = useState<EditableSettingsSection | null>(null);
   const [lastSavedChanges, setLastSavedChanges] = useState<SectionChangeSummary[]>([]);
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoMessage, setDemoMessage] = useState<string | null>(null);
+  const [demoError, setDemoError] = useState<string | null>(null);
+  const [demoLoadingAction, setDemoLoadingAction] = useState<"seed" | "clear" | "reset" | null>(null);
 
   const [aiSuggestedQuestionsInput, setAiSuggestedQuestionsInput] = useState("");
   const [aiInsightParametersInput, setAiInsightParametersInput] = useState("{}");
@@ -194,6 +198,49 @@ export function SettingsAdminClient() {
   };
 
   const hasDirtyChanges = Object.values(dirtyBySection).some(Boolean);
+
+  async function handleDemoAction(action: "seed" | "clear" | "reset") {
+    if (action === "clear") {
+      const confirm = window.confirm("Vas a borrar los datos de prueba. ¿Deseas continuar?");
+      if (!confirm) return;
+    }
+
+    setDemoLoading(true);
+    setDemoLoadingAction(action);
+    setDemoError(null);
+    setDemoMessage(null);
+
+    try {
+      const response = await fetch(`/api/demo/${action}`, {
+        method: action === "clear" ? "DELETE" : "POST",
+        cache: "no-store"
+      });
+      const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok) {
+        throw new Error((payload.message as string) ?? "No se pudo ejecutar la acción demo.");
+      }
+      let details = "";
+      if (payload.summary) {
+        const summary = payload.summary as {
+          accounts?: number;
+          transactions?: number;
+          debts?: number;
+          debtPayments?: number;
+          categories?: number;
+        };
+        details = `Cuentas ${summary.accounts ?? 0} · Movimientos ${summary.transactions ?? 0} · Deudas ${summary.debts ?? 0}`;
+      } else if (payload.result) {
+        const result = payload.result as { deletedEntities?: number };
+        details = `Entidades eliminadas: ${result.deletedEntities ?? 0}`;
+      }
+      setDemoMessage(((payload.message as string) ?? "Operación demo completada.") + (details ? ` · ${details}` : ""));
+    } catch (error) {
+      setDemoError(error instanceof Error ? error.message : "Error ejecutando operación demo.");
+    } finally {
+      setDemoLoading(false);
+      setDemoLoadingAction(null);
+    }
+  }
 
   useEffect(() => {
     if (!hasDirtyChanges) return;
@@ -516,6 +563,42 @@ export function SettingsAdminClient() {
             );
           })}
         </div>
+      </Card>
+      <Card className="space-y-4 rounded-[24px] border border-dashed border-slate-200 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-neutral-500">Modo demo</p>
+          </div>
+          <p className="text-base font-semibold text-slate-900">Datos de prueba seguros</p>
+          <p className="text-sm text-neutral-500">
+            Carga registros ficticios, borra todo lo generado o reinicia el conjunto cuando quieras.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            variant="secondary"
+            disabled={demoLoading}
+            onClick={() => void handleDemoAction("seed")}
+          >
+            {demoLoading && demoLoadingAction === "seed" ? "Cargando datos..." : "Cargar datos de prueba"}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={demoLoading}
+            onClick={() => void handleDemoAction("clear")}
+          >
+            {demoLoading && demoLoadingAction === "clear" ? "Borrando datos..." : "Borrar datos de prueba"}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={demoLoading}
+            onClick={() => void handleDemoAction("reset")}
+          >
+            {demoLoading && demoLoadingAction === "reset" ? "Reiniciando datos..." : "Recargar datos de prueba"}
+          </Button>
+        </div>
+        {demoMessage ? <p className="text-sm text-emerald-600">{demoMessage}</p> : null}
+        {demoError ? <p className="text-sm text-rose-600">{demoError}</p> : null}
       </Card>
 
       {currentSummary?.changed ? (
@@ -904,4 +987,3 @@ export function SettingsAdminClient() {
     </div>
   );
 }
-

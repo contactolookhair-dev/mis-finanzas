@@ -128,6 +128,7 @@ model Workspace {
   adminAuditLogs    AdminAuditLog[]
   importTemplates   ImportTemplateConfig[]
   importBatches     ImportBatch[]
+  demoEntities      DemoEntity[]
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 }
@@ -529,6 +530,18 @@ model ImportBatch {
 
   @@index([workspaceId, createdAt])
   @@index([workspaceId, status])
+}
+
+model DemoEntity {
+  id         String    @id @default(cuid())
+  workspaceId String
+  entityType String
+  entityId   String
+  createdAt  DateTime  @default(now())
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, entityType])
 }
 
 model WorkspaceModule {
