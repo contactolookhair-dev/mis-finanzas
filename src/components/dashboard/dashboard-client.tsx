@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCcw, Sparkles, TrendingDown, TrendingUp } from "lucide-react";
 import { LineChartCard } from "@/components/charts/chart-card";
+import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { InsightList } from "@/components/dashboard/insight-list";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Building, CreditCard, ShieldCheck, Wallet } from "lucide-react";
@@ -14,6 +15,7 @@ import { Select } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import type { DashboardFilters, DashboardSnapshot } from "@/shared/types/dashboard";
+import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 
 function getDefaultRange() {
   const end = new Date();
@@ -555,6 +557,9 @@ export function DashboardClient() {
   const [filters, setFilters] = useState<DashboardFilters | null>(null);
   const [loading, setLoading] = useState(true);
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [financialHealth, setFinancialHealth] = useState<FinancialHealthResponse | null>(null);
+  const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
+  const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -573,6 +578,41 @@ export function DashboardClient() {
     return params.toString();
   }, [filters]);
 
+  async function loadFinancialHealth(inputFilters: DashboardFilters | null) {
+    if (!inputFilters) return;
+
+    try {
+      setFinancialHealthLoading(true);
+      setFinancialHealthError(null);
+
+      const params = new URLSearchParams();
+      Object.entries(inputFilters).forEach(([key, value]) => {
+        if (value) {
+          params.set(key, value);
+        }
+      });
+
+      const response = await fetch(
+        `/api/health/financial${params.toString() ? `?${params.toString()}` : ""}`,
+        { cache: "no-store" }
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? "No se pudo cargar la salud financiera.");
+      }
+
+      const payload = (await response.json()) as FinancialHealthResponse;
+      setFinancialHealth(payload);
+    } catch (loadError) {
+      setFinancialHealthError(
+        loadError instanceof Error ? loadError.message : "No se pudo cargar la salud financiera."
+      );
+    } finally {
+      setFinancialHealthLoading(false);
+    }
+  }
+
   useEffect(() => {
     async function loadInitialDashboard() {
       try {
@@ -590,6 +630,7 @@ export function DashboardClient() {
         setSnapshot(payload);
         setFilters(payload.filters);
         initializedRef.current = true;
+        void loadFinancialHealth(payload.filters);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Error cargando dashboard.");
       } finally {
@@ -620,6 +661,7 @@ export function DashboardClient() {
           throw new Error(payload.message ?? "No se pudo cargar el dashboard.");
         }
         setSnapshot(payload);
+        void loadFinancialHealth(payload.filters);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Error cargando dashboard.");
       } finally {
@@ -695,6 +737,15 @@ export function DashboardClient() {
 
       {snapshot && kpis ? (
         <>
+          <section className="space-y-3">
+            <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
+            {financialHealthError ? (
+              <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
+                {financialHealthError}
+              </Card>
+            ) : null}
+          </section>
+
           <section className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
