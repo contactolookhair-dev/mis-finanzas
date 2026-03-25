@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
+import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
 export type TransactionRow = {
   id: string;
@@ -95,7 +96,7 @@ export function useTransactionsWithFilters() {
         if (!response.ok) throw new Error("No se pudieron cargar los movimientos.");
         const payload = (await response.json()) as { items: TransactionRow[] };
         if (!active) return;
-        setRows(payload.items);
+        setRows(payload.items.filter((row) => row.description !== BASE_TRANSACTION_MARKER));
       } catch (loadError) {
         if (!active) return;
         setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los movimientos.");
