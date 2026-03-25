@@ -551,6 +551,62 @@ function ComparisonSummary({ snapshot }: { snapshot: DashboardSnapshot }) {
   );
 }
 
+function DashboardWidgetToolbar({
+  customizeOpen,
+  onToggle,
+  visibleWidgetsCount
+}: {
+  customizeOpen: boolean;
+  onToggle: () => void;
+  visibleWidgetsCount: number;
+}) {
+  useEffect(() => {
+    console.log("mount widget toolbar");
+    return () => {
+      console.log("unmount widget toolbar");
+    };
+  }, []);
+
+  console.log("render widget header", {
+    customizeOpen,
+    visibleWidgetsCount
+  });
+  console.log("render widget button", {
+    customizeOpen
+  });
+
+  return (
+    <div
+      data-widget-toolbar="true"
+      className="relative z-[200] flex min-h-[72px] items-center justify-between gap-3 border-4 border-red-500 bg-yellow-200 p-4 opacity-100 shadow-none"
+      style={{
+        visibility: "visible",
+        display: "flex",
+        pointerEvents: "auto"
+      }}
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-black">Tus widgets</p>
+        <p className="text-xs text-black/80">Zona modular fija para depurar render y visibilidad.</p>
+      </div>
+
+      <button
+        type="button"
+        data-widget-button="true"
+        onClick={onToggle}
+        className="relative z-[210] shrink-0 border-4 border-black bg-white px-4 py-2 text-sm font-bold text-black opacity-100"
+        style={{
+          visibility: "visible",
+          display: "block",
+          pointerEvents: "auto"
+        }}
+      >
+        {customizeOpen ? "Cerrar widgets" : "Agregar widgets"}
+      </button>
+    </div>
+  );
+}
+
 export function DashboardClient() {
   const router = useRouter();
   const [filters, setFilters] = useState<DashboardFilters | null>(null);
@@ -1123,6 +1179,16 @@ export function DashboardClient() {
 
   const hasRenderedWidgets = renderedWidgets.some(Boolean);
 
+  useEffect(() => {
+    console.log("render modular layer", {
+      customizeOpen,
+      visibleWidgetsCount: visibleWidgets.length,
+      hasRenderedWidgets,
+      snapshot: Boolean(snapshot),
+      accountsCount: accounts.length
+    });
+  }, [customizeOpen, visibleWidgets.length, hasRenderedWidgets, snapshot, accounts.length]);
+
   return (
     <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
       {error ? (
@@ -1160,22 +1226,11 @@ export function DashboardClient() {
       ) : null}
 
       {/* Capa modular debajo de Saldo total */}
-      <Card className="flex items-start justify-between gap-3 rounded-[20px] border border-slate-200 bg-white/92 p-3 sm:p-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
-            Personalizar widgets
-          </p>
-          <p className="text-sm text-slate-600">Mostrar/ocultar, ordenar y elegir tamaño.</p>
-        </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="h-9 rounded-full px-3 text-xs font-semibold"
-          onClick={() => setCustomizeOpen((v) => !v)}
-        >
-          {customizeOpen ? "Cerrar" : "Agregar widgets"}
-        </Button>
-      </Card>
+      <DashboardWidgetToolbar
+        customizeOpen={customizeOpen}
+        onToggle={() => setCustomizeOpen((value) => !value)}
+        visibleWidgetsCount={visibleWidgets.length}
+      />
 
       {customizeOpen && clientReady ? (
         <Card className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
