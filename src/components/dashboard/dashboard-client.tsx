@@ -70,7 +70,6 @@ type WidgetSize = "compact" | "standard" | "featured";
 
 const DASHBOARD_WIDGET_STORAGE = "mis-finanzas.dashboard.widgets.v1";
 const defaultWidgetOrder: WidgetId[] = [
-  "hero",
   "quickActions",
   "summary",
   "health",
@@ -82,6 +81,22 @@ const defaultWidgetOrder: WidgetId[] = [
   "insights",
   "filters"
 ];
+const widgetMeta: Record<
+  WidgetId,
+  { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
+> = {
+  hero: { label: "Saldo total", description: "Disponible consolidado.", category: "Esenciales" },
+  quickActions: { label: "Acciones rápidas", description: "Gasto, ingreso, deuda, reportes.", category: "Esenciales" },
+  summary: { label: "Resumen financiero", description: "Ingresos, egresos y flujo neto.", category: "Esenciales" },
+  health: { label: "Semáforo financiero", description: "Estado general y alertas clave.", category: "Inteligencia" },
+  accounts: { label: "Cuentas", description: "Distribución por billeteras y bancos.", category: "Control" },
+  goals: { label: "Metas de ahorro", description: "Progreso hacia tu meta mensual.", category: "Planeación" },
+  trend: { label: "Tendencia mensual", description: "Evolución de ingresos y gastos.", category: "Inteligencia" },
+  recent: { label: "Movimientos recientes", description: "Últimos registros del período.", category: "Control" },
+  reports: { label: "Reportes", description: "Exporta tu resumen en PDF/Excel.", category: "Planeación" },
+  insights: { label: "Alertas / Insights", description: "Hallazgos y recomendaciones.", category: "Inteligencia" },
+  filters: { label: "Filtros", description: "Acota rango, unidad y categoría.", category: "Esenciales" }
+};
 
 const accountTypeMap: Record<
   string,
@@ -1054,23 +1069,6 @@ export function DashboardClient() {
     }
   };
 
-  const widgetMeta: Record<
-    WidgetId,
-    { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
-  > = {
-    hero: { label: "Saldo total", description: "Disponible consolidado.", category: "Esenciales" },
-    quickActions: { label: "Acciones rápidas", description: "Gasto, ingreso, deuda, reportes.", category: "Esenciales" },
-    summary: { label: "Resumen financiero", description: "Ingresos, egresos y flujo neto.", category: "Esenciales" },
-    health: { label: "Semáforo financiero", description: "Estado general y alertas clave.", category: "Inteligencia" },
-    accounts: { label: "Cuentas", description: "Distribución por billeteras y bancos.", category: "Control" },
-    goals: { label: "Metas de ahorro", description: "Progreso hacia tu meta mensual.", category: "Planeación" },
-    trend: { label: "Tendencia mensual", description: "Evolución de ingresos y gastos.", category: "Inteligencia" },
-    recent: { label: "Movimientos recientes", description: "Últimos registros del período.", category: "Control" },
-    reports: { label: "Reportes", description: "Exporta tu resumen en PDF/Excel.", category: "Planeación" },
-    insights: { label: "Alertas / Insights", description: "Hallazgos y recomendaciones.", category: "Inteligencia" },
-    filters: { label: "Filtros", description: "Acota rango, unidad y categoría.", category: "Esenciales" }
-  };
-
   const categorizedWidgets = useMemo(() => {
     const groups: Record<string, WidgetId[]> = {
       Esenciales: [],
@@ -1082,7 +1080,7 @@ export function DashboardClient() {
       groups[widgetMeta[id].category].push(id);
     });
     return groups;
-  }, [widgetMeta]);
+  }, []);
 
   const moveWidget = (id: WidgetId, direction: "up" | "down") => {
     setWidgetOrder((current) => {
@@ -1120,13 +1118,36 @@ export function DashboardClient() {
         <SkeletonCard lines={4} />
       ) : null}
 
+      {/* Capa fija superior: hero y saldo total (se mantiene intacta) */}
+      {snapshot && kpis ? (
+        <div className="space-y-5">
+          <DashboardHero
+            snapshot={snapshot}
+            filters={filters ?? getDefaultRange()}
+            displayBalance={accountsTotal}
+            financialHealth={financialHealth}
+            onMonthlyReport={handleMonthlyReportExport}
+            monthlyReportLoading={monthlyReportLoading}
+            onRefresh={() => setRefreshKey((value) => value + 1)}
+            loading={loading}
+          />
+
+          {monthlyReportError ? (
+            <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
+              {monthlyReportError}
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Capa modular debajo de Saldo total */}
       {snapshot ? (
         <Card className="flex items-start justify-between gap-3 rounded-[20px] border border-slate-200 bg-white/92 p-3 sm:p-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
-              Personalizar dashboard
+              Personalizar widgets
             </p>
-            <p className="text-sm text-slate-600">Elige qué widgets ver, su orden y tamaño.</p>
+            <p className="text-sm text-slate-600">Mostrar/ocultar, ordenar y elegir tamaño.</p>
           </div>
           <Button
             size="sm"
@@ -1237,8 +1258,9 @@ export function DashboardClient() {
         </Card>
       ) : null}
 
-      {snapshot
-        ? visibleWidgets.map((id) => {
+      {snapshot ? (
+        <div className="space-y-4">
+          {visibleWidgets.map((id) => {
             const size = widgetSizes[id] ?? "standard";
             const element = renderWidget(id, size) ?? widgetElements[id];
             if (!element) return null;
@@ -1247,8 +1269,9 @@ export function DashboardClient() {
                 {element}
               </div>
             );
-          })
-        : null}
+          })}
+        </div>
+      ) : null}
 
       <Button
         variant="secondary"
