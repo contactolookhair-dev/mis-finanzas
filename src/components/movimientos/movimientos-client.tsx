@@ -11,7 +11,10 @@ import { SkeletonCard, ErrorStateCard, EmptyStateCard } from "@/components/ui/st
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
-import { useTransactionsWithFilters } from "@/hooks/use-transactions-with-filters";
+import {
+  buildTransactionQuery,
+  useTransactionsWithFilters
+} from "@/hooks/use-transactions-with-filters";
 
 const QUICK_RANGE_LABELS: Record<string, string> = {
   today: "Hoy",
@@ -27,6 +30,11 @@ const TYPE_TONE: Record<string, "success" | "danger" | "warning" | "neutral"> = 
 
 export function MovimientosClient() {
   const [openModal, setOpenModal] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  const [clearInput, setClearInput] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const {
     rows,
     loading,
@@ -57,11 +65,31 @@ export function MovimientosClient() {
         title="Movimientos"
         description="Lista operativa de ingresos, gastos y transferencias."
         actions={
-          <Button onClick={() => setOpenModal(true)} className="h-10 rounded-full px-4">
-            Nuevo movimiento
-          </Button>
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => setOpenModal(true)} className="h-10 rounded-full px-4">
+              Nuevo movimiento
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-10 rounded-full px-4 text-sm font-semibold"
+              onClick={() => setClearOpen(true)}
+            >
+              Borrar todos los movimientos
+            </Button>
+          </div>
         }
       />
+
+      {successMessage ? (
+        <SurfaceCard
+          variant="soft"
+          padding="sm"
+          className="border-emerald-200/80 bg-emerald-50/70 text-emerald-700"
+        >
+          {successMessage}
+        </SurfaceCard>
+      ) : null}
 
       <div className="space-y-3 rounded-2xl border border-slate-200 bg-white/80 p-3 text-xs font-semibold uppercase tracking-[0.25em] text-slate-500 shadow-[0_10px_30px_rgba(15,23,42,0.08)] backdrop-blur sm:flex sm:items-center sm:justify-between sm:gap-3 sm:text-[0.75rem]">
         <div className="flex flex-wrap gap-2">
@@ -194,6 +222,73 @@ export function MovimientosClient() {
           </div>
         </div>
       )}
+
+      {clearOpen ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/50 p-4">
+          <SurfaceCard variant="soft" padding="lg" className="max-w-xl space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-rose-500">Eliminar movimientos</p>
+              <h3 className="text-lg font-semibold text-slate-900">Borrar todo el historial</h3>
+              <p className="mt-2 text-sm text-slate-500">
+                Esta acción eliminará todos los movimientos registrados. Las cuentas, pendientes,
+                widgets y configuraciones no se verán afectadas.
+              </p>
+            </div>
+            <p className="text-sm font-semibold text-rose-600">
+              Escribe <span className="font-mono">ELIMINAR</span> para confirmar.
+            </p>
+            <Input
+              placeholder="Escribe ELIMINAR"
+              value={clearInput}
+              onChange={(event) => setClearInput(event.target.value.toUpperCase())}
+              autoFocus
+            />
+            {clearError ? <p className="text-xs text-rose-600">{clearError}</p> : null}
+            <div className="flex flex-wrap justify-end gap-3">
+              <Button
+                variant="secondary"
+                className="h-10 rounded-full px-4"
+                onClick={() => {
+                  setClearOpen(false);
+                  setClearInput("");
+                  setClearError(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="h-10 rounded-full px-4"
+                disabled={clearInput !== "ELIMINAR" || clearing}
+                onClick={async () => {
+                  setClearing(true);
+                  setClearError(null);
+                  setSuccessMessage(null);
+                  try {
+                    const response = await fetch(`/api/transactions/clear?${buildTransactionQuery(filters)}`, {
+                      method: "POST"
+                    });
+                    if (!response.ok) {
+                      const body = await response.json();
+                      throw new Error(body.message ?? "No se pudieron borrar los movimientos.");
+                    }
+                    setSuccessMessage("Todos los movimientos se eliminaron correctamente.");
+                    refresh();
+                    setClearOpen(false);
+                    setClearInput("");
+                  } catch (error) {
+                    setClearError(error instanceof Error ? error.message : "No se pudo completar la operación.");
+                  } finally {
+                    setClearing(false);
+                  }
+                }}
+              >
+                Confirmar eliminación
+              </Button>
+            </div>
+          </SurfaceCard>
+        </div>
+      ) : null}
 
       <NewTransactionModal open={openModal} onOpenChange={setOpenModal} onSuccess={refresh} />
     </div>

@@ -56,7 +56,7 @@ function getRangeDates(range: FilterRange) {
   };
 }
 
-function buildQuery(filters: TransactionFilters) {
+export function buildTransactionQuery(filters: TransactionFilters) {
   const params = new URLSearchParams();
   params.set("take", "80");
   const { start, end } = getRangeDates(filters.range);
@@ -77,7 +77,7 @@ export function useTransactionsWithFilters() {
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
 
-  const query = useMemo(() => buildQuery(filters), [filters]);
+  const query = useMemo(() => buildTransactionQuery(filters), [filters]);
 
   const refresh = useCallback(() => {
     setFilters((prev) => ({ ...prev }));
