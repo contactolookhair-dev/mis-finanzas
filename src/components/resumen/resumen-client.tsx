@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
+import { MonthlyReportSection } from "@/components/reports/monthly-report-section";
 import { Card } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
@@ -20,6 +21,8 @@ export function ResumenClient() {
   const [financialHealth, setFinancialHealth] = useState<FinancialHealthResponse | null>(null);
   const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
   const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
+  const [reportFilters, setReportFilters] = useState<DashboardSnapshot["filters"] | null>(null);
+  const [reportPeriodLabel, setReportPeriodLabel] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSummary() {
@@ -42,6 +45,8 @@ export function ResumenClient() {
         setSpent(Math.abs(dashboard.kpis.expenses));
         setCollected(Math.abs(debts.totals.collectedTotal));
         setPending(Math.abs(debts.totals.pendingTotal));
+        setReportFilters(dashboard.filters);
+        setReportPeriodLabel(dashboard.comparisons.currentPeriodLabel);
         void loadFinancialHealth(dashboard.filters);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Error cargando resumen.");
@@ -93,6 +98,7 @@ export function ResumenClient() {
         <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Resumen</p>
         <h2 className="mt-1 text-lg font-semibold">Vista rápida del negocio</h2>
       </Card>
+      <MonthlyReportSection filters={reportFilters} periodLabel={reportPeriodLabel} />
       <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
       {financialHealthError ? (
         <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">

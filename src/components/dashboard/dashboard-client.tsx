@@ -12,6 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import {
+  appendMonthlyReportHistory,
+  createMonthlyReportHistoryEntry,
+  downloadMonthlyReportPdf
+} from "@/shared/lib/monthly-report";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import type { DashboardFilters, DashboardSnapshot } from "@/shared/types/dashboard";
@@ -641,31 +646,14 @@ export function DashboardClient() {
     try {
       setMonthlyReportLoading(true);
       setMonthlyReportError(null);
-
-      const response = await fetch("/api/reports/monthly", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ filters: activeFilters })
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string };
-        throw new Error(payload.message ?? "No se pudo generar el reporte mensual.");
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      const contentDisposition = response.headers.get("Content-Disposition");
-      const match = contentDisposition?.match(/filename=\"?([^"]+)\"?/);
-      anchor.href = url;
-      anchor.download = match?.[1] ?? "reporte-mensual.pdf";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
+      const { fileName } = await downloadMonthlyReportPdf(activeFilters);
+      appendMonthlyReportHistory(
+        createMonthlyReportHistoryEntry({
+          periodLabel: snapshot?.comparisons.currentPeriodLabel ?? "Período mensual",
+          filters: activeFilters,
+          fileName
+        })
+      );
     } catch (exportError) {
       setMonthlyReportError(
         exportError instanceof Error ? exportError.message : "Error exportando reporte mensual."
