@@ -1,6 +1,7 @@
-import { DebtorStatus, ReimbursementStatus } from "@prisma/client";
+import { DebtorStatus, ExpenseFrequency, ReimbursementStatus } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
 import { toAmountNumber } from "@/server/lib/amounts";
+import { buildDebtInstallmentPlan } from "@/server/services/debt-installments";
 
 export type CompanyDebtItem = {
   id: string;
@@ -30,6 +31,15 @@ export type PersonDebtItem = {
   status: DebtorStatus;
   startDate: string;
   estimatedPayDate: string | null;
+  isInstallmentDebt: boolean;
+  installmentCount: number;
+  installmentValue: number;
+  paidInstallments: number;
+  installmentFrequency: ExpenseFrequency;
+  nextInstallmentDate: string | null;
+  installmentsPending: number;
+  installmentProgress: number;
+  installmentRemainingAmount: number;
   notes: string | null;
   payments: Array<{
     id: string;
@@ -92,6 +102,17 @@ export async function getDebtsSnapshot(workspaceId: string) {
     const paymentSum = debtor.payments.reduce((acc, payment) => acc + toAmountNumber(payment.amount), 0);
     const paidAmount = Math.max(toAmountNumber(debtor.paidAmount), paymentSum);
     const totalAmount = toAmountNumber(debtor.totalAmount);
+    const installmentPlan = buildDebtInstallmentPlan({
+      isInstallmentDebt: debtor.isInstallmentDebt,
+      installmentCount: debtor.installmentCount,
+      installmentValue: debtor.installmentValue,
+      paidInstallments: debtor.paidInstallments,
+      installmentFrequency: debtor.installmentFrequency,
+      startDate: debtor.startDate,
+      nextInstallmentDate: debtor.nextInstallmentDate,
+      totalAmount: debtor.totalAmount,
+      paidAmount
+    });
     return {
       id: debtor.id,
       name: debtor.name,
@@ -102,6 +123,15 @@ export async function getDebtsSnapshot(workspaceId: string) {
       status: debtor.status,
       startDate: debtor.startDate.toISOString(),
       estimatedPayDate: debtor.estimatedPayDate?.toISOString() ?? null,
+      isInstallmentDebt: installmentPlan.enabled,
+      installmentCount: installmentPlan.totalInstallments,
+      installmentValue: installmentPlan.installmentValue,
+      paidInstallments: installmentPlan.paidInstallments,
+      installmentFrequency: installmentPlan.frequency,
+      nextInstallmentDate: installmentPlan.nextInstallmentDate,
+      installmentsPending: installmentPlan.pendingInstallments,
+      installmentProgress: installmentPlan.progressPercent,
+      installmentRemainingAmount: installmentPlan.remainingAmount,
       notes: debtor.notes ?? null,
       payments: debtor.payments
         .slice()

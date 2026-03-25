@@ -12,6 +12,13 @@ type DebtExportBundle = {
   buffer: Buffer;
 };
 
+const installmentFrequencyLabel: Record<string, string> = {
+  SEMANAL: "Semanal",
+  QUINCENAL: "Quincenal",
+  MENSUAL: "Mensual",
+  ANUAL: "Anual"
+};
+
 function createPdfBuffer(draw: (doc: PDFKit.PDFDocument) => void) {
   return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: "A4" });
@@ -74,6 +81,22 @@ export async function generateDebtPdfBundle(input: {
         `Inicio: ${formatDate(debt.startDate)}`,
         `Estimado de pago: ${formatDate(debt.estimatedPayDate)}`
       ]);
+
+      drawSectionTitle(doc, "Cuotas");
+      if (debt.isInstallmentDebt) {
+        drawBulletList(doc, [
+          `Modalidad: En cuotas`,
+          `Frecuencia: ${installmentFrequencyLabel[debt.installmentFrequency] ?? debt.installmentFrequency}`,
+          `Total de cuotas: ${debt.installmentCount}`,
+          `Valor por cuota: ${formatCurrency(debt.installmentValue)}`,
+          `Cuotas pagadas: ${debt.paidInstallments}`,
+          `Cuotas pendientes: ${debt.installmentsPending}`,
+          `Progreso: ${debt.paidInstallments}/${debt.installmentCount}`,
+          `Próxima cuota: ${formatDate(debt.nextInstallmentDate)}`
+        ]);
+      } else {
+        drawBulletList(doc, ["Modalidad: Pago único"]);
+      }
 
       if (debt.notes) {
         drawSectionTitle(doc, "Notas");

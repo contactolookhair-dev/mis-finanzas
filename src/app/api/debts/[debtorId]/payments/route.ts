@@ -3,6 +3,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db/prisma";
 import { toAmountNumber } from "@/server/lib/amounts";
+import {
+  computeNextInstallmentDate,
+  inferPaidInstallmentsFromAmount
+} from "@/server/services/debt-installments";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 
 const DEV_MODE = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
@@ -53,6 +57,24 @@ export async function POST(
 
       const nextPaidAmount = toAmountNumber(debtor.paidAmount) + input.amount;
       const totalAmount = toAmountNumber(debtor.totalAmount);
+      const nextPaidInstallments = debtor.isInstallmentDebt
+        ? Math.max(
+            debtor.paidInstallments,
+            inferPaidInstallmentsFromAmount(
+              debtor.installmentValue,
+              nextPaidAmount,
+              debtor.installmentCount
+            )
+          )
+        : debtor.paidInstallments;
+      const nextInstallmentDate = debtor.isInstallmentDebt
+        ? computeNextInstallmentDate(
+            debtor.startDate,
+            debtor.installmentFrequency,
+            nextPaidInstallments,
+            debtor.installmentCount
+          )
+        : debtor.nextInstallmentDate;
       const nextStatus =
         nextPaidAmount >= totalAmount
           ? DebtorStatus.PAGADO
@@ -64,6 +86,8 @@ export async function POST(
         where: { id: debtor.id },
         data: {
           paidAmount: nextPaidAmount,
+          paidInstallments: nextPaidInstallments,
+          nextInstallmentDate,
           status: nextStatus
         }
       });

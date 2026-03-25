@@ -20,11 +20,16 @@ export function DebtorForm() {
     formState: { errors }
   } = useForm<DebtorValues>({
     resolver: zodResolver(debtorSchema),
-    defaultValues: {
-      status: "Pendiente",
-      paidAmount: 0
-    }
-  });
+        defaultValues: {
+          status: "Pendiente",
+          paidAmount: 0,
+          isInstallmentDebt: "no",
+          installmentCount: 0,
+          installmentValue: 0,
+          paidInstallments: 0,
+          installmentFrequency: "MENSUAL"
+        }
+      });
 
   return (
     <Card className="space-y-5">
@@ -57,12 +62,44 @@ export function DebtorForm() {
           <Input type="number" placeholder="0" {...register("paidAmount")} />
         </label>
         <label className="space-y-2">
+          <span className="text-sm font-medium">Modalidad</span>
+          <Select {...register("isInstallmentDebt")}>
+            <option value="no">Pago único</option>
+            <option value="si">En cuotas</option>
+          </Select>
+        </label>
+        <label className="space-y-2">
+          <span className="text-sm font-medium">Total de cuotas</span>
+          <Input type="number" placeholder="12" {...register("installmentCount")} />
+        </label>
+        <label className="space-y-2">
+          <span className="text-sm font-medium">Valor por cuota</span>
+          <Input type="number" placeholder="50000" {...register("installmentValue")} />
+        </label>
+        <label className="space-y-2">
+          <span className="text-sm font-medium">Cuotas pagadas</span>
+          <Input type="number" placeholder="0" {...register("paidInstallments")} />
+        </label>
+        <label className="space-y-2">
+          <span className="text-sm font-medium">Frecuencia</span>
+          <Select {...register("installmentFrequency")}>
+            <option value="MENSUAL">Mensual</option>
+            <option value="QUINCENAL">Quincenal</option>
+            <option value="SEMANAL">Semanal</option>
+            <option value="ANUAL">Anual</option>
+          </Select>
+        </label>
+        <label className="space-y-2">
           <span className="text-sm font-medium">Fecha de inicio</span>
           <Input type="date" {...register("startDate")} />
         </label>
         <label className="space-y-2">
           <span className="text-sm font-medium">Pago estimado</span>
           <Input type="date" {...register("estimatedPayDate")} />
+        </label>
+        <label className="space-y-2">
+          <span className="text-sm font-medium">Próxima cuota</span>
+          <Input type="date" {...register("nextInstallmentDate")} />
         </label>
         <label className="space-y-2">
           <span className="text-sm font-medium">Estado</span>

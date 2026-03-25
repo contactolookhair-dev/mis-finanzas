@@ -37,6 +37,15 @@ type PersonDebt = {
   status: "PENDIENTE" | "ABONANDO" | "PAGADO" | "ATRASADO";
   startDate: string;
   estimatedPayDate: string | null;
+  isInstallmentDebt: boolean;
+  installmentCount: number;
+  installmentValue: number;
+  paidInstallments: number;
+  installmentFrequency: "SEMANAL" | "QUINCENAL" | "MENSUAL" | "ANUAL";
+  nextInstallmentDate: string | null;
+  installmentsPending: number;
+  installmentProgress: number;
+  installmentRemainingAmount: number;
   notes: string | null;
   payments: Array<{
     id: string;
@@ -66,6 +75,13 @@ const statusLabel: Record<PersonDebt["status"], string> = {
   ABONANDO: "Abonando",
   PAGADO: "Pagado",
   ATRASADO: "Atrasado"
+};
+
+const installmentFrequencyLabel: Record<PersonDebt["installmentFrequency"], string> = {
+  SEMANAL: "Semanal",
+  QUINCENAL: "Quincenal",
+  MENSUAL: "Mensual",
+  ANUAL: "Anual"
 };
 
 function todayDate() {
@@ -103,6 +119,12 @@ export function DeudasClient({
     totalAmount: "",
     startDate: todayDate(),
     estimatedPayDate: "",
+    isInstallmentDebt: "no",
+    installmentCount: "",
+    installmentValue: "",
+    paidInstallments: "",
+    installmentFrequency: "MENSUAL",
+    nextInstallmentDate: "",
     notes: ""
   });
   const [paymentForm, setPaymentForm] = useState({
@@ -117,6 +139,12 @@ export function DeudasClient({
     totalAmount: "",
     status: "PENDIENTE",
     estimatedPayDate: "",
+    isInstallmentDebt: "no",
+    installmentCount: "",
+    installmentValue: "",
+    paidInstallments: "",
+    installmentFrequency: "MENSUAL",
+    nextInstallmentDate: "",
     notes: ""
   });
 
@@ -174,7 +202,13 @@ export function DeudasClient({
         body: JSON.stringify({
           ...createForm,
           totalAmount: Number(createForm.totalAmount),
+          isInstallmentDebt: createForm.isInstallmentDebt === "si",
+          installmentCount: createForm.installmentCount ? Number(createForm.installmentCount) : 0,
+          installmentValue: createForm.installmentValue ? Number(createForm.installmentValue) : 0,
+          paidInstallments: createForm.paidInstallments ? Number(createForm.paidInstallments) : 0,
+          installmentFrequency: createForm.isInstallmentDebt === "si" ? createForm.installmentFrequency : "MENSUAL",
           estimatedPayDate: createForm.estimatedPayDate || null,
+          nextInstallmentDate: createForm.nextInstallmentDate || null,
           notes: createForm.notes || null
         })
       });
@@ -187,6 +221,12 @@ export function DeudasClient({
         totalAmount: "",
         startDate: todayDate(),
         estimatedPayDate: "",
+        isInstallmentDebt: "no",
+        installmentCount: "",
+        installmentValue: "",
+        paidInstallments: "",
+        installmentFrequency: "MENSUAL",
+        nextInstallmentDate: "",
         notes: ""
       });
       await loadDebts();
@@ -241,7 +281,13 @@ export function DeudasClient({
         body: JSON.stringify({
           ...editForm,
           totalAmount: Number(editForm.totalAmount),
+          isInstallmentDebt: editForm.isInstallmentDebt === "si",
+          installmentCount: editForm.installmentCount ? Number(editForm.installmentCount) : 0,
+          installmentValue: editForm.installmentValue ? Number(editForm.installmentValue) : 0,
+          paidInstallments: editForm.paidInstallments ? Number(editForm.paidInstallments) : 0,
+          installmentFrequency: editForm.isInstallmentDebt === "si" ? editForm.installmentFrequency : "MENSUAL",
           estimatedPayDate: editForm.estimatedPayDate || null,
+          nextInstallmentDate: editForm.nextInstallmentDate || null,
           notes: editForm.notes || null
         })
       });
@@ -266,6 +312,12 @@ export function DeudasClient({
       totalAmount: `${debt.totalAmount}`,
       status: debt.status,
       estimatedPayDate: debt.estimatedPayDate ? debt.estimatedPayDate.slice(0, 10) : "",
+      isInstallmentDebt: debt.isInstallmentDebt ? "si" : "no",
+      installmentCount: debt.installmentCount ? `${debt.installmentCount}` : "",
+      installmentValue: debt.installmentValue ? `${debt.installmentValue}` : "",
+      paidInstallments: debt.paidInstallments ? `${debt.paidInstallments}` : "",
+      installmentFrequency: debt.installmentFrequency,
+      nextInstallmentDate: debt.nextInstallmentDate ? debt.nextInstallmentDate.slice(0, 10) : "",
       notes: debt.notes ?? ""
     });
   }
@@ -295,6 +347,17 @@ export function DeudasClient({
     : selectedCompany
       ? "No aplica"
       : "Sin fecha estimada";
+  const selectedInstallmentLabel = selectedPerson?.isInstallmentDebt
+    ? `${selectedPerson.paidInstallments}/${selectedPerson.installmentCount}`
+    : "Pago único";
+  const selectedInstallmentFrequencyLabel = selectedPerson
+    ? installmentFrequencyLabel[selectedPerson.installmentFrequency]
+    : "Mensual";
+  const selectedInstallmentNextLabel = selectedPerson?.isInstallmentDebt
+    ? selectedPerson.nextInstallmentDate
+      ? formatDate(selectedPerson.nextInstallmentDate)
+      : "Sin próxima fecha"
+    : "No aplica";
 
   async function exportDebt(debt: SelectedDebt) {
     setExportingDebt(debt.id);
@@ -456,6 +519,41 @@ export function DeudasClient({
             </div>
           </div>
 
+          {selectedPerson?.isInstallmentDebt ? (
+            <div className="mt-3 rounded-[24px] border border-white/10 bg-white/6 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Cuotas</p>
+                  <p className="mt-1 text-sm text-white/70">Progreso {selectedInstallmentLabel} · Frecuencia {selectedInstallmentFrequencyLabel}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[11px] uppercase tracking-[0.2em] text-white/55">Próxima cuota</p>
+                  <p className="mt-1 text-sm font-medium text-white">{selectedInstallmentNextLabel}</p>
+                </div>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-300 via-cyan-300 to-violet-300"
+                  style={{ width: `${Math.max(0, Math.min(100, selectedPerson.installmentProgress))}%` }}
+                />
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="rounded-[18px] bg-white/8 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Valor cuota</p>
+                  <p className="mt-1 text-lg font-semibold">{formatCurrency(selectedPerson.installmentValue)}</p>
+                </div>
+                <div className="rounded-[18px] bg-white/8 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Cuotas pendientes</p>
+                  <p className="mt-1 text-lg font-semibold">{selectedPerson.installmentsPending}</p>
+                </div>
+                <div className="rounded-[18px] bg-white/8 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/55">Monto restante</p>
+                  <p className="mt-1 text-lg font-semibold">{formatCurrency(selectedPerson.installmentRemainingAmount)}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
               <div className="flex items-center gap-2">
@@ -522,6 +620,62 @@ export function DeudasClient({
             <Input type="number" placeholder="Monto total" value={createForm.totalAmount} onChange={(event) => setCreateForm((c) => ({ ...c, totalAmount: event.target.value }))} />
             <Input type="date" value={createForm.startDate} onChange={(event) => setCreateForm((c) => ({ ...c, startDate: event.target.value }))} />
             <Input type="date" value={createForm.estimatedPayDate} onChange={(event) => setCreateForm((c) => ({ ...c, estimatedPayDate: event.target.value }))} />
+            <Select
+              value={createForm.isInstallmentDebt}
+              onChange={(event) =>
+                setCreateForm((c) => ({
+                  ...c,
+                  isInstallmentDebt: event.target.value,
+                  ...(event.target.value === "no"
+                    ? {
+                        installmentCount: "",
+                        installmentValue: "",
+                        paidInstallments: "",
+                        nextInstallmentDate: ""
+                      }
+                    : {})
+                }))
+              }
+            >
+              <option value="no">Pago único</option>
+              <option value="si">En cuotas</option>
+            </Select>
+            {createForm.isInstallmentDebt === "si" ? (
+              <>
+                <Input
+                  type="number"
+                  placeholder="Total de cuotas"
+                  value={createForm.installmentCount}
+                  onChange={(event) => setCreateForm((c) => ({ ...c, installmentCount: event.target.value }))}
+                />
+                <Input
+                  type="number"
+                  placeholder="Valor por cuota"
+                  value={createForm.installmentValue}
+                  onChange={(event) => setCreateForm((c) => ({ ...c, installmentValue: event.target.value }))}
+                />
+                <Input
+                  type="number"
+                  placeholder="Cuotas pagadas"
+                  value={createForm.paidInstallments}
+                  onChange={(event) => setCreateForm((c) => ({ ...c, paidInstallments: event.target.value }))}
+                />
+                <Select
+                  value={createForm.installmentFrequency}
+                  onChange={(event) => setCreateForm((c) => ({ ...c, installmentFrequency: event.target.value }))}
+                >
+                  <option value="MENSUAL">Mensual</option>
+                  <option value="QUINCENAL">Quincenal</option>
+                  <option value="SEMANAL">Semanal</option>
+                  <option value="ANUAL">Anual</option>
+                </Select>
+                <Input
+                  type="date"
+                  value={createForm.nextInstallmentDate}
+                  onChange={(event) => setCreateForm((c) => ({ ...c, nextInstallmentDate: event.target.value }))}
+                />
+              </>
+            ) : null}
             <Input placeholder="Observaciones" value={createForm.notes} onChange={(event) => setCreateForm((c) => ({ ...c, notes: event.target.value }))} />
             <div className="sm:col-span-2">
               <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar deuda"}</Button>
@@ -564,6 +718,63 @@ export function DeudasClient({
               <option value="ATRASADO">Atrasado</option>
             </Select>
             <Input type="date" value={editForm.estimatedPayDate} onChange={(event) => setEditForm((c) => ({ ...c, estimatedPayDate: event.target.value }))} />
+            <Select
+              value={editForm.isInstallmentDebt}
+              onChange={(event) =>
+                setEditForm((c) => ({
+                  ...c,
+                  isInstallmentDebt: event.target.value,
+                  ...(event.target.value === "no"
+                    ? {
+                        installmentCount: "",
+                        installmentValue: "",
+                        paidInstallments: "",
+                        nextInstallmentDate: ""
+                      }
+                    : {})
+                }))
+              }
+            >
+              <option value="no">Pago único</option>
+              <option value="si">En cuotas</option>
+            </Select>
+            {editForm.isInstallmentDebt === "si" ? (
+              <>
+                <Input
+                  type="number"
+                  value={editForm.installmentCount}
+                  onChange={(event) => setEditForm((c) => ({ ...c, installmentCount: event.target.value }))}
+                  placeholder="Total de cuotas"
+                />
+                <Input
+                  type="number"
+                  value={editForm.installmentValue}
+                  onChange={(event) => setEditForm((c) => ({ ...c, installmentValue: event.target.value }))}
+                  placeholder="Valor por cuota"
+                />
+                <Input
+                  type="number"
+                  value={editForm.paidInstallments}
+                  onChange={(event) => setEditForm((c) => ({ ...c, paidInstallments: event.target.value }))}
+                  placeholder="Cuotas pagadas"
+                />
+                <Select
+                  value={editForm.installmentFrequency}
+                  onChange={(event) => setEditForm((c) => ({ ...c, installmentFrequency: event.target.value }))}
+                >
+                  <option value="MENSUAL">Mensual</option>
+                  <option value="QUINCENAL">Quincenal</option>
+                  <option value="SEMANAL">Semanal</option>
+                  <option value="ANUAL">Anual</option>
+                </Select>
+                <Input
+                  type="date"
+                  value={editForm.nextInstallmentDate}
+                  onChange={(event) => setEditForm((c) => ({ ...c, nextInstallmentDate: event.target.value }))}
+                  placeholder="Próxima cuota"
+                />
+              </>
+            ) : null}
             <Input value={editForm.notes} onChange={(event) => setEditForm((c) => ({ ...c, notes: event.target.value }))} placeholder="Observaciones" />
             <div className="sm:col-span-2">
               <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</Button>
@@ -672,8 +883,33 @@ export function DeudasClient({
                       <p>Abonado: {formatCurrency(item.paidAmount)}</p>
                       <p>Saldo: {formatCurrency(item.pendingAmount)}</p>
                     </div>
+                    <div className="mt-3 rounded-[18px] bg-slate-50 px-3 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+                          {item.isInstallmentDebt ? "Cuotas" : "Modalidad"}
+                        </p>
+                        <p className="text-xs font-medium text-neutral-600">
+                          {item.isInstallmentDebt ? `${item.paidInstallments}/${item.installmentCount}` : "Pago único"}
+                        </p>
+                      </div>
+                      {item.isInstallmentDebt ? (
+                        <>
+                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-violet-400 via-fuchsia-400 to-cyan-400"
+                              style={{ width: `${Math.max(0, Math.min(100, item.installmentProgress))}%` }}
+                            />
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-[11px] text-neutral-500">
+                            <span>Cuota: {formatCurrency(item.installmentValue)}</span>
+                            <span>Restan: {item.installmentsPending}</span>
+                          </div>
+                        </>
+                      ) : null}
+                    </div>
                     <p className="mt-1 text-[11px] text-neutral-500">
-                      Inicio: {formatDate(item.startDate)} {item.estimatedPayDate ? `· Estimado: ${formatDate(item.estimatedPayDate)}` : ""}
+                      Inicio: {formatDate(item.startDate)} {item.estimatedPayDate ? `· Estimado: ${formatDate(item.estimatedPayDate)}` : ""}{" "}
+                      {item.isInstallmentDebt && item.nextInstallmentDate ? `· Próxima: ${formatDate(item.nextInstallmentDate)}` : ""}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button

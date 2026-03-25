@@ -1,4 +1,4 @@
-import { DebtorStatus } from "@prisma/client";
+import { DebtorStatus, ExpenseFrequency } from "@prisma/client";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db/prisma";
@@ -13,6 +13,12 @@ const createDebtorSchema = z.object({
   totalAmount: z.coerce.number().positive(),
   startDate: z.string().min(1),
   estimatedPayDate: z.string().optional().nullable(),
+  isInstallmentDebt: z.coerce.boolean().optional(),
+  installmentCount: z.coerce.number().int().min(0).optional(),
+  installmentValue: z.coerce.number().min(0).optional(),
+  paidInstallments: z.coerce.number().int().min(0).optional(),
+  installmentFrequency: z.nativeEnum(ExpenseFrequency).optional(),
+  nextInstallmentDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable()
 });
 
@@ -58,6 +64,14 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as unknown;
     const input = createDebtorSchema.parse(body);
     const totalAmount = input.totalAmount;
+    const requestedInstallmentCount = input.installmentCount ?? 0;
+    const requestedInstallmentValue = input.installmentValue ?? 0;
+    const isInstallmentDebt =
+      input.isInstallmentDebt ?? (requestedInstallmentCount > 0 || requestedInstallmentValue > 0);
+    const installmentCount = isInstallmentDebt ? requestedInstallmentCount : 0;
+    const installmentValue = isInstallmentDebt ? requestedInstallmentValue : 0;
+    const paidInstallments = isInstallmentDebt ? input.paidInstallments ?? 0 : 0;
+    const paidAmount = isInstallmentDebt ? installmentValue * paidInstallments : 0;
 
     const created = await prisma.debtor.create({
       data: {
@@ -65,10 +79,20 @@ export async function POST(request: NextRequest) {
         name: input.name,
         reason: input.reason,
         totalAmount,
-        paidAmount: 0,
+        paidAmount,
         startDate: new Date(`${input.startDate}T12:00:00`),
         estimatedPayDate: input.estimatedPayDate ? new Date(`${input.estimatedPayDate}T12:00:00`) : null,
         status: DebtorStatus.PENDIENTE,
+        isInstallmentDebt,
+        installmentCount,
+        installmentValue,
+        paidInstallments,
+        installmentFrequency: isInstallmentDebt
+          ? input.installmentFrequency ?? ExpenseFrequency.MENSUAL
+          : ExpenseFrequency.MENSUAL,
+        nextInstallmentDate: isInstallmentDebt && input.nextInstallmentDate
+          ? new Date(`${input.nextInstallmentDate}T12:00:00`)
+          : null,
         notes: input.notes ?? null
       }
     });

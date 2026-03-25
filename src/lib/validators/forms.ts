@@ -19,6 +19,12 @@ export const debtorSchema = z.object({
   paidAmount: z.coerce.number().min(0, "No puede ser negativo"),
   startDate: z.string().min(1, "Selecciona una fecha"),
   estimatedPayDate: z.string().min(1, "Selecciona una fecha estimada"),
+  isInstallmentDebt: z.enum(["no", "si"]).default("no"),
+  installmentCount: z.coerce.number().int().min(0).default(0),
+  installmentValue: z.coerce.number().min(0).default(0),
+  paidInstallments: z.coerce.number().int().min(0).default(0),
+  installmentFrequency: z.enum(["SEMANAL", "QUINCENAL", "MENSUAL", "ANUAL"]).default("MENSUAL"),
+  nextInstallmentDate: z.string().optional().nullable(),
   status: z.enum(appConfig.debtorStatuses),
   notes: z.string().optional()
 });

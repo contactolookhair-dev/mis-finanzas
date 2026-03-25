@@ -56,6 +56,8 @@ export async function POST(
           where: { id: debtor.id },
           data: {
             paidAmount: toAmountNumber(debtor.totalAmount),
+            paidInstallments: debtor.isInstallmentDebt ? debtor.installmentCount : debtor.paidInstallments,
+            nextInstallmentDate: debtor.isInstallmentDebt ? null : debtor.nextInstallmentDate,
             status: DebtorStatus.PAGADO
           }
         });

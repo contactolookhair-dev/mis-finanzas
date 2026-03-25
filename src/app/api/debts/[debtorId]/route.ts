@@ -1,4 +1,4 @@
-import { DebtorStatus } from "@prisma/client";
+import { DebtorStatus, ExpenseFrequency } from "@prisma/client";
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db/prisma";
@@ -12,6 +12,12 @@ const updateDebtorSchema = z.object({
   totalAmount: z.coerce.number().positive().optional(),
   status: z.nativeEnum(DebtorStatus).optional(),
   estimatedPayDate: z.string().optional().nullable(),
+  isInstallmentDebt: z.coerce.boolean().optional(),
+  installmentCount: z.coerce.number().int().min(0).optional(),
+  installmentValue: z.coerce.number().min(0).optional(),
+  paidInstallments: z.coerce.number().int().min(0).optional(),
+  installmentFrequency: z.nativeEnum(ExpenseFrequency).optional(),
+  nextInstallmentDate: z.string().optional().nullable(),
   notes: z.string().optional().nullable()
 });
 
@@ -50,6 +56,16 @@ export async function PATCH(
         reason: payload.reason,
         totalAmount: payload.totalAmount,
         status: payload.status,
+        isInstallmentDebt: payload.isInstallmentDebt,
+        installmentCount: payload.installmentCount,
+        installmentValue: payload.installmentValue,
+        paidInstallments: payload.paidInstallments,
+        installmentFrequency: payload.installmentFrequency,
+        nextInstallmentDate: payload.nextInstallmentDate
+          ? new Date(`${payload.nextInstallmentDate}T12:00:00`)
+          : payload.nextInstallmentDate === null
+            ? null
+            : undefined,
         estimatedPayDate: payload.estimatedPayDate
           ? new Date(`${payload.estimatedPayDate}T12:00:00`)
           : payload.estimatedPayDate === null

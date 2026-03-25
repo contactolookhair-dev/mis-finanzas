@@ -395,6 +395,12 @@ model Debtor {
   startDate        DateTime
   estimatedPayDate DateTime?
   status           DebtorStatus   @default(PENDIENTE)
+  isInstallmentDebt Boolean       @default(false)
+  installmentCount Int            @default(0)
+  installmentValue Decimal        @default(0) @db.Decimal(14, 2)
+  paidInstallments Int            @default(0)
+  installmentFrequency ExpenseFrequency @default(MENSUAL)
+  nextInstallmentDate DateTime?
   notes            String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
