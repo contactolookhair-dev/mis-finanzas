@@ -5,7 +5,9 @@ import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { Skeleton } from "@/components/ui/states";
+import { StatPill } from "@/components/ui/stat-pill";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 
 type AccountItem = {
@@ -54,6 +56,10 @@ function getToday() {
   const day = `${now.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+const fieldLabelClass = "text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500";
+const textareaClass =
+  "min-h-[92px] w-full rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-sm outline-none focus:border-violet-400";
 
 export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const [kind, setKind] = useState<TransactionKind>("GASTO");
@@ -277,11 +283,21 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/35 p-0 sm:items-center sm:p-4">
-      <div className="w-full rounded-t-[28px] bg-white p-4 shadow-[0_-16px_40px_rgba(15,23,42,0.18)] sm:max-w-2xl sm:rounded-[30px] sm:p-6">
+      <div className="w-full rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(248,250,252,0.98)_100%)] p-4 shadow-[0_-20px_50px_rgba(15,23,42,0.18)] sm:max-w-2xl sm:rounded-[32px] sm:p-6">
         <div className="mb-4 flex items-center justify-between">
-          <div>
+          <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-violet-500">Nueva transacción</p>
             <h3 className="text-lg font-semibold text-slate-900">Registrar movimiento</h3>
+            <div className="flex flex-wrap gap-2">
+              <StatPill tone="premium">
+                {kind === "GASTO" ? "Gasto" : kind === "INGRESO" ? "Ingreso" : "Transferencia"}
+              </StatPill>
+              {accountId ? (
+                <StatPill tone="neutral">
+                  {accounts.find((account) => account.id === accountId)?.name ?? "Cuenta seleccionada"}
+                </StatPill>
+              ) : null}
+            </div>
           </div>
           <button
             type="button"
@@ -297,159 +313,233 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <label className="block space-y-2">
-            <span className="text-xs font-medium text-slate-500">Monto</span>
-            <Input
-              type="number"
-              inputMode="decimal"
-              placeholder="0"
-              className="h-14 text-center text-3xl font-semibold tracking-tight"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-            />
-          </label>
-
-          <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
-            {(["GASTO", "INGRESO", "TRANSFERENCIA"] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setKind(value)}
-                className={`h-9 rounded-xl text-xs font-semibold transition ${
-                  kind === value
-                    ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
-                    : "text-slate-500"
-                }`}
-              >
-                {value === "GASTO" ? "Gasto" : value === "INGRESO" ? "Ingreso" : "Transferencia"}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <Select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-              <option value="">Categoría</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </Select>
-
-            <Select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-              <option value="">Cuenta</option>
-              {accounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} · {account.bank}
-                </option>
-              ))}
-            </Select>
-
-            <Input
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-            />
-
-            <Input
-              placeholder="Descripción"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </div>
-
-          <label className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-            <input type="checkbox" checked={isOwed} onChange={(event) => setIsOwed(event.target.checked)} />
-            <span className="text-sm text-slate-600">¿Alguien me debe este gasto?</span>
-          </label>
-
-          {isOwed ? (
-            <div className="grid gap-2.5 rounded-2xl bg-slate-50 p-3 sm:grid-cols-2">
-              <Select value={owedByType} onChange={(event) => setOwedByType(event.target.value as "PERSONA" | "EMPRESA")}>
-                <option value="PERSONA">Persona</option>
-                <option value="EMPRESA">Empresa</option>
-              </Select>
-
+          <SurfaceCard variant="highlight" padding="sm" className="space-y-3">
+            <label className="block space-y-2">
+              <span className={fieldLabelClass}>Monto</span>
               <Input
                 type="number"
-                placeholder="Monto adeudado"
-                value={owedAmount}
-                onChange={(event) => setOwedAmount(event.target.value)}
+                inputMode="decimal"
+                placeholder="0"
+                className="h-16 border-white/70 bg-white/95 text-center text-3xl font-semibold tracking-tight"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
               />
+            </label>
 
-              {owedByType === "EMPRESA" ? (
-                <Select
-                  className="sm:col-span-2"
-                  value={owedBusinessUnitId}
-                  onChange={(event) => setOwedBusinessUnitId(event.target.value)}
+            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
+              {(["GASTO", "INGRESO", "TRANSFERENCIA"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setKind(value)}
+                  className={`h-10 rounded-xl text-xs font-semibold transition ${
+                    kind === value
+                      ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
+                      : "text-slate-500"
+                  }`}
                 >
-                  <option value="">Empresa que debe</option>
-                  {dashboardSnapshot?.references.businessUnits.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unit.name}
+                  {value === "GASTO" ? "Gasto" : value === "INGRESO" ? "Ingreso" : "Transferencia"}
+                </button>
+              ))}
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard variant="soft" padding="sm" className="space-y-4">
+            <div className="space-y-1">
+              <p className={fieldLabelClass}>Datos del movimiento</p>
+              <p className="text-sm text-slate-500">
+                Completa solo lo esencial para registrar tu dinero en pocos toques.
+              </p>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <label className="space-y-2">
+                <span className={fieldLabelClass}>Categoría</span>
+                <Select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+                  <option value="">Selecciona categoría</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
                     </option>
                   ))}
                 </Select>
-              ) : (
-                <>
-                  <Select
-                    value={owedDebtorMode}
-                    onChange={(event) => setOwedDebtorMode(event.target.value as "EXISTING" | "NEW")}
-                  >
-                    <option value="NEW">Crear persona</option>
-                    <option value="EXISTING">Usar persona existente</option>
+              </label>
+
+              <label className="space-y-2">
+                <span className={fieldLabelClass}>Cuenta</span>
+                <Select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+                  <option value="">Selecciona cuenta</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name} · {account.bank}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+
+              <label className="space-y-2">
+                <span className={fieldLabelClass}>Fecha</span>
+                <Input
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                />
+              </label>
+
+              <label className="space-y-2">
+                <span className={fieldLabelClass}>Descripción</span>
+                <Input
+                  placeholder="Ej: Supermercado, sueldo, Uber"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                />
+              </label>
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard variant={isOwed ? "highlight" : "soft"} padding="sm" className="space-y-4">
+            <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/85 px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">¿Alguien me debe este gasto?</p>
+                <p className="text-xs text-slate-500">
+                  Si aplica, se crea o actualiza la cuenta por cobrar sin salir del flujo.
+                </p>
+              </div>
+              <input type="checkbox" checked={isOwed} onChange={(event) => setIsOwed(event.target.checked)} />
+            </label>
+
+            {isOwed ? (
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <label className="space-y-2">
+                  <span className={fieldLabelClass}>Quién debe</span>
+                  <Select value={owedByType} onChange={(event) => setOwedByType(event.target.value as "PERSONA" | "EMPRESA")}>
+                    <option value="PERSONA">Persona</option>
+                    <option value="EMPRESA">Empresa</option>
                   </Select>
-                  {owedDebtorMode === "EXISTING" ? (
-                    <Select value={owedDebtorId} onChange={(event) => setOwedDebtorId(event.target.value)}>
-                      <option value="">Selecciona persona</option>
-                      {debtors.map((debtor) => (
-                        <option key={debtor.id} value={debtor.id}>
-                          {debtor.name}
+                </label>
+
+                <label className="space-y-2">
+                  <span className={fieldLabelClass}>Monto adeudado</span>
+                  <Input
+                    type="number"
+                    placeholder="Monto adeudado"
+                    value={owedAmount}
+                    onChange={(event) => setOwedAmount(event.target.value)}
+                  />
+                </label>
+
+                {owedByType === "EMPRESA" ? (
+                  <label className="space-y-2 sm:col-span-2">
+                    <span className={fieldLabelClass}>Empresa que debe</span>
+                    <Select
+                      value={owedBusinessUnitId}
+                      onChange={(event) => setOwedBusinessUnitId(event.target.value)}
+                    >
+                      <option value="">Selecciona empresa</option>
+                      {dashboardSnapshot?.references.businessUnits.map((unit) => (
+                        <option key={unit.id} value={unit.id}>
+                          {unit.name}
                         </option>
                       ))}
                     </Select>
-                  ) : (
-                    <Input
-                      placeholder="Nombre deudor"
-                      value={owedDebtorName}
-                      onChange={(event) => setOwedDebtorName(event.target.value)}
-                    />
-                  )}
-                </>
-              )}
+                  </label>
+                ) : (
+                  <>
+                    <label className="space-y-2">
+                      <span className={fieldLabelClass}>Modo</span>
+                      <Select
+                        value={owedDebtorMode}
+                        onChange={(event) => setOwedDebtorMode(event.target.value as "EXISTING" | "NEW")}
+                      >
+                        <option value="NEW">Crear persona</option>
+                        <option value="EXISTING">Usar persona existente</option>
+                      </Select>
+                    </label>
+                    {owedDebtorMode === "EXISTING" ? (
+                      <label className="space-y-2">
+                        <span className={fieldLabelClass}>Persona</span>
+                        <Select value={owedDebtorId} onChange={(event) => setOwedDebtorId(event.target.value)}>
+                          <option value="">Selecciona persona</option>
+                          {debtors.map((debtor) => (
+                            <option key={debtor.id} value={debtor.id}>
+                              {debtor.name}
+                            </option>
+                          ))}
+                        </Select>
+                      </label>
+                    ) : (
+                      <label className="space-y-2">
+                        <span className={fieldLabelClass}>Nombre</span>
+                        <Input
+                          placeholder="Nombre de quien te debe"
+                          value={owedDebtorName}
+                          onChange={(event) => setOwedDebtorName(event.target.value)}
+                        />
+                      </label>
+                    )}
+                  </>
+                )}
 
-              <Input
-                className="sm:col-span-2"
-                placeholder="Nota deuda (opcional)"
-                value={owedNote}
-                onChange={(event) => setOwedNote(event.target.value)}
-              />
-            </div>
+                <label className="space-y-2 sm:col-span-2">
+                  <span className={fieldLabelClass}>Nota de deuda</span>
+                  <Input
+                    placeholder="Ej: Compra con mi tarjeta, pago compartido, etc."
+                    value={owedNote}
+                    onChange={(event) => setOwedNote(event.target.value)}
+                  />
+                </label>
+              </div>
+            ) : null}
+          </SurfaceCard>
+
+          <label className="block space-y-2">
+            <span className={fieldLabelClass}>Notas internas</span>
+            <textarea
+              className={textareaClass}
+              placeholder="Agrega contexto si quieres recordar algo del movimiento."
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
+          </label>
+
+          {error ? (
+            <SurfaceCard variant="soft" padding="sm" className="border-rose-200/80 bg-rose-50/80 text-rose-700">
+              <p className="text-sm font-medium">{error}</p>
+            </SurfaceCard>
           ) : null}
-
-          <Input
-            placeholder="Nota (opcional)"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-          />
-
-          {error ? <p className="text-sm text-rose-600">{error}</p> : null}
           {loading ? (
-            <div className="rounded-2xl border border-slate-200 bg-white/60 p-3">
+            <SurfaceCard variant="soft" padding="sm" className="space-y-3">
               <div className="flex items-center justify-between">
                 <Skeleton className="h-3 w-36" />
                 <Skeleton className="h-3 w-16" />
               </div>
-              <div className="mt-2 space-y-2">
+              <div className="space-y-2">
                 <Skeleton className="h-3 w-64" />
                 <Skeleton className="h-3 w-52" />
               </div>
-            </div>
+            </SurfaceCard>
           ) : null}
 
-          <Button type="submit" className="h-11 w-full" disabled={saving || loading}>
-            {saving ? "Guardando..." : "Guardar transacción"}
-          </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-11 rounded-2xl"
+              onClick={() => {
+                onOpenChange(false);
+                resetForm();
+              }}
+              disabled={saving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              className="h-11 rounded-2xl sm:min-w-[220px]"
+              disabled={saving || loading}
+            >
+              {saving ? "Guardando..." : "Guardar transacción"}
+            </Button>
+          </div>
         </form>
       </div>
     </div>

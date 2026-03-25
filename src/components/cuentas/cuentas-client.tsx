@@ -151,44 +151,74 @@ export function CuentasClient() {
           </p>
         </div>
         <form className="grid gap-2.5 sm:grid-cols-2" onSubmit={handleCreate}>
-          <Input
-            placeholder="Nombre visible"
-            value={form.name}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-          />
-          <Input
-            placeholder="Banco"
-            value={form.bank}
-            onChange={(event) => setForm((current) => ({ ...current, bank: event.target.value }))}
-          />
-          <Select
-            value={form.type}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, type: event.target.value as AccountItem["type"] }))
-            }
-          >
-            <option value="DEBITO">Débito</option>
-            <option value="CREDITO">Crédito</option>
-            <option value="EFECTIVO">Efectivo</option>
-          </Select>
-          <Input
-            type="number"
-            placeholder="Saldo inicial (opcional)"
-            value={form.openingBalance}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, openingBalance: event.target.value }))
-            }
-          />
-          <Input
-            placeholder="Color opcional (#9333ea)"
-            value={form.color}
-            onChange={(event) => setForm((current) => ({ ...current, color: event.target.value }))}
-          />
-          <Input
-            placeholder="Icono opcional (💳)"
-            value={form.icon}
-            onChange={(event) => setForm((current) => ({ ...current, icon: event.target.value }))}
-          />
+          <label className="space-y-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Nombre visible
+            </span>
+            <Input
+              placeholder="Ej: Falabella, Billetera, Cuenta corriente"
+              value={form.name}
+              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Banco o institución
+            </span>
+            <Input
+              placeholder="Ej: Banco de Chile, Scotiabank, Efectivo"
+              value={form.bank}
+              onChange={(event) => setForm((current) => ({ ...current, bank: event.target.value }))}
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Tipo de cuenta
+            </span>
+            <Select
+              value={form.type}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, type: event.target.value as AccountItem["type"] }))
+              }
+            >
+              <option value="DEBITO">Débito</option>
+              <option value="CREDITO">Crédito</option>
+              <option value="EFECTIVO">Efectivo</option>
+            </Select>
+          </label>
+          <label className="space-y-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Saldo inicial
+            </span>
+            <Input
+              type="number"
+              placeholder="Opcional"
+              value={form.openingBalance}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, openingBalance: event.target.value }))
+              }
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Color de la card
+            </span>
+            <Input
+              placeholder="Opcional (#9333ea)"
+              value={form.color}
+              onChange={(event) => setForm((current) => ({ ...current, color: event.target.value }))}
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Ícono
+            </span>
+            <Input
+              placeholder="Opcional (💳)"
+              value={form.icon}
+              onChange={(event) => setForm((current) => ({ ...current, icon: event.target.value }))}
+            />
+          </label>
           <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
             <Button
               type="submit"
@@ -212,8 +242,20 @@ export function CuentasClient() {
             ) : null}
           </div>
         </form>
-        {error ? <p className="text-sm text-rose-600">{error}</p> : null}
-        {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
+        {error ? (
+          <SurfaceCard variant="soft" padding="sm" className="border-rose-200/80 bg-rose-50/80 text-rose-700">
+            <p className="text-sm font-medium">{error}</p>
+          </SurfaceCard>
+        ) : null}
+        {success ? (
+          <SurfaceCard
+            variant="soft"
+            padding="sm"
+            className="border-emerald-200/80 bg-emerald-50/80 text-emerald-700"
+          >
+            <p className="text-sm font-medium">{success}</p>
+          </SurfaceCard>
+        ) : null}
       </SurfaceCard>
 
       <div className="space-y-2">
@@ -239,7 +281,7 @@ export function CuentasClient() {
               key={account.id}
               variant="soft"
               padding="sm"
-              className="transition hover:-translate-y-0.5"
+              className="space-y-4 transition hover:-translate-y-0.5"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -264,11 +306,17 @@ export function CuentasClient() {
                   {formatCurrency(account.balance)}
                 </p>
               </div>
-              <div className="mt-3 flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatPill tone={account.balance >= 0 ? "success" : "danger"}>
+                  {account.balance >= 0 ? "Disponible" : "Saldo negativo"}
+                </StatPill>
+                <StatPill tone="neutral">{typeLabel[account.type]}</StatPill>
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-xs font-semibold border border-slate-200"
+                  className="rounded-full border border-slate-200 text-xs font-semibold"
                   onClick={() => {
                     setEditingId(account.id);
                     setForm({
@@ -289,7 +337,7 @@ export function CuentasClient() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-xs font-semibold text-rose-600"
+                  className="rounded-full text-xs font-semibold text-rose-600"
                   onClick={async () => {
                     if (!window.confirm("¿Eliminar esta cuenta?")) return;
                     setSaving(true);

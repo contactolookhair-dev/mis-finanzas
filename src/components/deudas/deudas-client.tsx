@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Eye, PencilLine, Clock3, CreditCard, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
 import { MobileStickyAction } from "@/components/ui/mobile-sticky-action";
@@ -146,6 +145,10 @@ function todayDate() {
   const day = `${now.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+const formFieldLabelClass = "text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500";
+const formTextareaClass =
+  "min-h-[96px] w-full rounded-2xl border border-white/80 bg-white/85 px-4 py-3 text-sm outline-none focus:border-violet-400";
 
 export function DeudasClient({
   initialTab,
@@ -513,14 +516,22 @@ export function DeudasClient({
           onRetry={() => window.location.reload()}
         />
       ) : null}
-      {message ? <Card className="rounded-[20px] border border-emerald-100 bg-emerald-50/70 p-3 text-sm text-emerald-700">{message}</Card> : null}
+      {message ? (
+        <SurfaceCard
+          variant="soft"
+          padding="sm"
+          className="border-emerald-200/80 bg-emerald-50/80 text-emerald-700"
+        >
+          <p className="text-sm font-medium">{message}</p>
+        </SurfaceCard>
+      ) : null}
 
       <MobileStickyAction type="button" onClick={() => setFormMode("nueva")}>
         Registrar deuda
       </MobileStickyAction>
 
       {selectedDebt ? (
-        <Card className="overflow-hidden rounded-[28px] border border-white/80 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">
+        <SurfaceCard className="overflow-hidden rounded-[28px] border border-white/80 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
               <p className="text-[11px] uppercase tracking-[0.22em] text-white/55">
@@ -691,59 +702,92 @@ export function DeudasClient({
               </div>
             </div>
           </div>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {formMode === "nueva" ? (
-        <Card className="rounded-[24px] p-4">
-          <h3 className="text-base font-semibold">Registrar deuda</h3>
+        <SurfaceCard variant="highlight" className="space-y-4">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">Nueva deuda</p>
+            <h3 className="text-base font-semibold tracking-tight text-slate-900">Registrar deuda</h3>
+            <p className="text-sm text-slate-500">Completa el monto, la fecha y si aplica el plan de cuotas.</p>
+          </div>
           <form className="mt-3 grid gap-2.5 sm:grid-cols-2" onSubmit={handleCreateDebt}>
-            <Input placeholder="Nombre" value={createForm.name} onChange={(event) => setCreateForm((c) => ({ ...c, name: event.target.value }))} />
-            <Input placeholder="Motivo" value={createForm.reason} onChange={(event) => setCreateForm((c) => ({ ...c, reason: event.target.value }))} />
-            <Input type="number" placeholder="Monto total" value={createForm.totalAmount} onChange={(event) => setCreateForm((c) => ({ ...c, totalAmount: event.target.value }))} />
-            <Input type="date" value={createForm.startDate} onChange={(event) => setCreateForm((c) => ({ ...c, startDate: event.target.value }))} />
-            <Input type="date" value={createForm.estimatedPayDate} onChange={(event) => setCreateForm((c) => ({ ...c, estimatedPayDate: event.target.value }))} />
-            <Select
-              value={createForm.isInstallmentDebt}
-              onChange={(event) =>
-                setCreateForm((c) => ({
-                  ...c,
-                  isInstallmentDebt: event.target.value,
-                  ...(event.target.value === "no"
-                    ? {
-                        installmentCount: "",
-                        installmentValue: "",
-                        paidInstallments: "",
-                        nextInstallmentDate: ""
-                      }
-                    : {})
-                }))
-              }
-            >
-              <option value="no">Pago único</option>
-              <option value="si">En cuotas</option>
-            </Select>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Nombre</span>
+              <Input placeholder="Nombre" value={createForm.name} onChange={(event) => setCreateForm((c) => ({ ...c, name: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Motivo</span>
+              <Input placeholder="Motivo" value={createForm.reason} onChange={(event) => setCreateForm((c) => ({ ...c, reason: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Monto total</span>
+              <Input type="number" placeholder="Monto total" value={createForm.totalAmount} onChange={(event) => setCreateForm((c) => ({ ...c, totalAmount: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Fecha de inicio</span>
+              <Input type="date" value={createForm.startDate} onChange={(event) => setCreateForm((c) => ({ ...c, startDate: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Fecha estimada</span>
+              <Input type="date" value={createForm.estimatedPayDate} onChange={(event) => setCreateForm((c) => ({ ...c, estimatedPayDate: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Modalidad</span>
+              <Select
+                value={createForm.isInstallmentDebt}
+                onChange={(event) =>
+                  setCreateForm((c) => ({
+                    ...c,
+                    isInstallmentDebt: event.target.value,
+                    ...(event.target.value === "no"
+                      ? {
+                          installmentCount: "",
+                          installmentValue: "",
+                          paidInstallments: "",
+                          nextInstallmentDate: ""
+                        }
+                      : {})
+                  }))
+                }
+              >
+                <option value="no">Pago único</option>
+                <option value="si">En cuotas</option>
+              </Select>
+            </label>
             {createForm.isInstallmentDebt === "si" ? (
               <>
-                <Input
+                <label className="space-y-2">
+                  <span className={formFieldLabelClass}>Total de cuotas</span>
+                  <Input
                   type="number"
                   placeholder="Total de cuotas"
                   value={createForm.installmentCount}
                   onChange={(event) => setCreateForm((c) => ({ ...c, installmentCount: event.target.value }))}
                 />
-                <Input
+                </label>
+                <label className="space-y-2">
+                  <span className={formFieldLabelClass}>Valor por cuota</span>
+                  <Input
                   type="number"
                   placeholder="Valor por cuota"
                   value={createForm.installmentValue}
                   onChange={(event) => setCreateForm((c) => ({ ...c, installmentValue: event.target.value }))}
                 />
-                <Input
+                </label>
+                <label className="space-y-2">
+                  <span className={formFieldLabelClass}>Cuotas pagadas</span>
+                  <Input
                   type="number"
                   placeholder="Cuotas pagadas"
                   value={createForm.paidInstallments}
                   onChange={(event) => setCreateForm((c) => ({ ...c, paidInstallments: event.target.value }))}
                 />
-                <Select
+                </label>
+                <label className="space-y-2">
+                  <span className={formFieldLabelClass}>Frecuencia</span>
+                  <Select
                   value={createForm.installmentFrequency}
                   onChange={(event) => setCreateForm((c) => ({ ...c, installmentFrequency: event.target.value }))}
                 >
@@ -752,56 +796,87 @@ export function DeudasClient({
                   <option value="SEMANAL">Semanal</option>
                   <option value="ANUAL">Anual</option>
                 </Select>
-                <Input
+                </label>
+                <label className="space-y-2">
+                  <span className={formFieldLabelClass}>Próxima cuota</span>
+                  <Input
                   type="date"
                   value={createForm.nextInstallmentDate}
                   onChange={(event) => setCreateForm((c) => ({ ...c, nextInstallmentDate: event.target.value }))}
                 />
+                </label>
               </>
             ) : null}
-            <Input placeholder="Observaciones" value={createForm.notes} onChange={(event) => setCreateForm((c) => ({ ...c, notes: event.target.value }))} />
-            <div className="sm:col-span-2">
-              <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar deuda"}</Button>
+            <label className="space-y-2 sm:col-span-2">
+              <span className={formFieldLabelClass}>Observaciones</span>
+              <textarea className={formTextareaClass} placeholder="Observaciones" value={createForm.notes} onChange={(event) => setCreateForm((c) => ({ ...c, notes: event.target.value }))} />
+            </label>
+            <div className="sm:col-span-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" className="rounded-2xl" onClick={() => setFormMode("none")}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar deuda"}</Button>
             </div>
           </form>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {formMode === "abono" ? (
-        <Card className="rounded-[24px] p-4">
-          <h3 className="text-base font-semibold">Registrar abono</h3>
+        <SurfaceCard variant="highlight" className="space-y-4">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">Nuevo abono</p>
+            <h3 className="text-base font-semibold tracking-tight text-slate-900">Registrar abono</h3>
+          </div>
           <form className="mt-3 grid gap-2.5 sm:grid-cols-2" onSubmit={handleCreatePayment}>
-            <Select value={paymentForm.debtorId} onChange={(event) => setPaymentForm((c) => ({ ...c, debtorId: event.target.value }))}>
-              <option value="">Selecciona deuda</option>
-              {payload?.people.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </Select>
-            <Input type="number" placeholder="Monto abonado" value={paymentForm.amount} onChange={(event) => setPaymentForm((c) => ({ ...c, amount: event.target.value }))} />
-            <Input type="date" value={paymentForm.paidAt} onChange={(event) => setPaymentForm((c) => ({ ...c, paidAt: event.target.value }))} />
-            <Input placeholder="Observaciones" value={paymentForm.notes} onChange={(event) => setPaymentForm((c) => ({ ...c, notes: event.target.value }))} />
-            <div className="sm:col-span-2">
-              <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar abono"}</Button>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Deuda</span>
+              <Select value={paymentForm.debtorId} onChange={(event) => setPaymentForm((c) => ({ ...c, debtorId: event.target.value }))}>
+                <option value="">Selecciona deuda</option>
+                {payload?.people.map((item) => (
+                  <option key={item.id} value={item.id}>{item.name}</option>
+                ))}
+              </Select>
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Monto abonado</span>
+              <Input type="number" placeholder="Monto abonado" value={paymentForm.amount} onChange={(event) => setPaymentForm((c) => ({ ...c, amount: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Fecha del abono</span>
+              <Input type="date" value={paymentForm.paidAt} onChange={(event) => setPaymentForm((c) => ({ ...c, paidAt: event.target.value }))} />
+            </label>
+            <label className="space-y-2">
+              <span className={formFieldLabelClass}>Observaciones</span>
+              <Input placeholder="Observaciones" value={paymentForm.notes} onChange={(event) => setPaymentForm((c) => ({ ...c, notes: event.target.value }))} />
+            </label>
+            <div className="sm:col-span-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" className="rounded-2xl" onClick={() => setFormMode("none")}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar abono"}</Button>
             </div>
           </form>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {formMode === "editar" && selectedDebtor ? (
-        <Card className="rounded-[24px] p-4">
-          <h3 className="text-base font-semibold">Editar deuda</h3>
+        <SurfaceCard variant="highlight" className="space-y-4">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/70">Edición</p>
+            <h3 className="text-base font-semibold tracking-tight text-slate-900">Editar deuda</h3>
+          </div>
           <form className="mt-3 grid gap-2.5 sm:grid-cols-2" onSubmit={handleEditDebt}>
-            <Input value={editForm.name} onChange={(event) => setEditForm((c) => ({ ...c, name: event.target.value }))} />
-            <Input value={editForm.reason} onChange={(event) => setEditForm((c) => ({ ...c, reason: event.target.value }))} />
-            <Input type="number" value={editForm.totalAmount} onChange={(event) => setEditForm((c) => ({ ...c, totalAmount: event.target.value }))} />
-            <Select value={editForm.status} onChange={(event) => setEditForm((c) => ({ ...c, status: event.target.value }))}>
+            <label className="space-y-2"><span className={formFieldLabelClass}>Nombre</span><Input value={editForm.name} onChange={(event) => setEditForm((c) => ({ ...c, name: event.target.value }))} /></label>
+            <label className="space-y-2"><span className={formFieldLabelClass}>Motivo</span><Input value={editForm.reason} onChange={(event) => setEditForm((c) => ({ ...c, reason: event.target.value }))} /></label>
+            <label className="space-y-2"><span className={formFieldLabelClass}>Monto total</span><Input type="number" value={editForm.totalAmount} onChange={(event) => setEditForm((c) => ({ ...c, totalAmount: event.target.value }))} /></label>
+            <label className="space-y-2"><span className={formFieldLabelClass}>Estado</span><Select value={editForm.status} onChange={(event) => setEditForm((c) => ({ ...c, status: event.target.value }))}>
               <option value="PENDIENTE">Pendiente</option>
               <option value="ABONANDO">Abonando</option>
               <option value="PAGADO">Pagado</option>
               <option value="ATRASADO">Atrasado</option>
-            </Select>
-            <Input type="date" value={editForm.estimatedPayDate} onChange={(event) => setEditForm((c) => ({ ...c, estimatedPayDate: event.target.value }))} />
-            <Select
+            </Select></label>
+            <label className="space-y-2"><span className={formFieldLabelClass}>Fecha estimada</span><Input type="date" value={editForm.estimatedPayDate} onChange={(event) => setEditForm((c) => ({ ...c, estimatedPayDate: event.target.value }))} /></label>
+            <label className="space-y-2"><span className={formFieldLabelClass}>Modalidad</span><Select
               value={editForm.isInstallmentDebt}
               onChange={(event) =>
                 setEditForm((c) => ({
@@ -820,28 +895,28 @@ export function DeudasClient({
             >
               <option value="no">Pago único</option>
               <option value="si">En cuotas</option>
-            </Select>
+            </Select></label>
             {editForm.isInstallmentDebt === "si" ? (
               <>
-                <Input
+                <label className="space-y-2"><span className={formFieldLabelClass}>Total de cuotas</span><Input
                   type="number"
                   value={editForm.installmentCount}
                   onChange={(event) => setEditForm((c) => ({ ...c, installmentCount: event.target.value }))}
                   placeholder="Total de cuotas"
-                />
-                <Input
+                /></label>
+                <label className="space-y-2"><span className={formFieldLabelClass}>Valor por cuota</span><Input
                   type="number"
                   value={editForm.installmentValue}
                   onChange={(event) => setEditForm((c) => ({ ...c, installmentValue: event.target.value }))}
                   placeholder="Valor por cuota"
-                />
-                <Input
+                /></label>
+                <label className="space-y-2"><span className={formFieldLabelClass}>Cuotas pagadas</span><Input
                   type="number"
                   value={editForm.paidInstallments}
                   onChange={(event) => setEditForm((c) => ({ ...c, paidInstallments: event.target.value }))}
                   placeholder="Cuotas pagadas"
-                />
-                <Select
+                /></label>
+                <label className="space-y-2"><span className={formFieldLabelClass}>Frecuencia</span><Select
                   value={editForm.installmentFrequency}
                   onChange={(event) => setEditForm((c) => ({ ...c, installmentFrequency: event.target.value }))}
                 >
@@ -849,27 +924,30 @@ export function DeudasClient({
                   <option value="QUINCENAL">Quincenal</option>
                   <option value="SEMANAL">Semanal</option>
                   <option value="ANUAL">Anual</option>
-                </Select>
-                <Input
+                </Select></label>
+                <label className="space-y-2"><span className={formFieldLabelClass}>Próxima cuota</span><Input
                   type="date"
                   value={editForm.nextInstallmentDate}
                   onChange={(event) => setEditForm((c) => ({ ...c, nextInstallmentDate: event.target.value }))}
                   placeholder="Próxima cuota"
-                />
+                /></label>
               </>
             ) : null}
-            <Input value={editForm.notes} onChange={(event) => setEditForm((c) => ({ ...c, notes: event.target.value }))} placeholder="Observaciones" />
-            <div className="sm:col-span-2">
-              <Button type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</Button>
+            <label className="space-y-2 sm:col-span-2"><span className={formFieldLabelClass}>Observaciones</span><textarea className={formTextareaClass} value={editForm.notes} onChange={(event) => setEditForm((c) => ({ ...c, notes: event.target.value }))} placeholder="Observaciones" /></label>
+            <div className="sm:col-span-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" className="rounded-2xl" onClick={() => setFormMode("none")}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="rounded-2xl" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</Button>
             </div>
           </form>
-        </Card>
+        </SurfaceCard>
       ) : null}
 
       {loading ? <SkeletonCard lines={4} /> : null}
 
       {!loading && payload ? (
-        <Card className="rounded-[24px] p-4">
+        <SurfaceCard variant="soft" className="space-y-4">
           <div className="mb-3 grid gap-2 sm:grid-cols-3">
             <div className="rounded-xl bg-muted/60 px-3 py-2">
               <p className="text-xs text-neutral-500">Pendiente empresas</p>
@@ -1121,7 +1199,7 @@ export function DeudasClient({
               )}
             </div>
           )}
-        </Card>
+        </SurfaceCard>
       ) : null}
     </div>
   );
