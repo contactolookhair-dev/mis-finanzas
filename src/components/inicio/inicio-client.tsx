@@ -89,7 +89,7 @@ export function InicioClient() {
   const [financialHealth, setFinancialHealth] = useState<FinancialHealthResponse | null>(null);
   const [financialHealthLoading, setFinancialHealthLoading] = useState(false);
   const [financialHealthError, setFinancialHealthError] = useState<string | null>(null);
-  const [debugWidgetPanelOpen, setDebugWidgetPanelOpen] = useState(false);
+  const [widgetPanelOpen, setWidgetPanelOpen] = useState(false);
 
   const monthGrid = useMemo(() => buildMonthGrid(new Date()), []);
   const movementDateKeys = useMemo(
@@ -187,22 +187,6 @@ export function InicioClient() {
   }, [selectedDate]);
   const onboardingInsightReady = Boolean(snapshot && accounts.length > 0 && movements.length > 0);
   const totalAvailableTone = availableTotal < 0 ? "negative" : "positive";
-
-  useEffect(() => {
-    console.log("inicio/debug-toolbar mount");
-    return () => {
-      console.log("inicio/debug-toolbar unmount");
-    };
-  }, []);
-
-  useEffect(() => {
-    console.log("inicio/debug-toolbar render", {
-      debugWidgetPanelOpen,
-      hasSnapshot: Boolean(snapshot),
-      accountsCount: accounts.length,
-      movementsCount: movements.length
-    });
-  }, [debugWidgetPanelOpen, snapshot, accounts.length, movements.length]);
 
   useEffect(() => {
     if (loading || !snapshot) {
@@ -409,46 +393,39 @@ export function InicioClient() {
         </div>
       </SurfaceCard>
 
-      <div
-        data-debug-toolbar="true"
-        className="relative z-[200] flex items-center justify-between gap-3 border-4 border-red-500 bg-yellow-200 px-4 py-3"
-        style={{
-          display: "flex",
-          visibility: "visible",
-          opacity: 1,
-          pointerEvents: "auto"
-        }}
-      >
-        <div>
-          <p className="text-sm font-bold text-black">DEBUG TOOLBAR ACTIVO</p>
-          <p className="text-xs text-black">Este bloque debe aparecer siempre debajo de Saldo total.</p>
-        </div>
-        <button
-          type="button"
-          data-debug-widget-button="true"
-          onClick={() => setDebugWidgetPanelOpen((value) => !value)}
-          className="border-4 border-black bg-white px-4 py-2 text-sm font-bold text-black"
-          style={{
-            display: "block",
-            visibility: "visible",
-            opacity: 1,
-            pointerEvents: "auto"
-          }}
-        >
-          {debugWidgetPanelOpen ? "Cerrar widgets" : "Agregar widgets"}
-        </button>
-      </div>
-
-      {debugWidgetPanelOpen ? (
-        <div
-          data-debug-widget-panel="true"
-          className="relative z-[200] border-4 border-blue-600 bg-white px-4 py-3"
-        >
-          <p className="text-sm font-bold text-slate-900">Panel debug de widgets</p>
-          <p className="mt-1 text-xs text-slate-600">
-            Si ves este bloque, el render de la zona modular en /inicio ya esta confirmado.
+      <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tus widgets</p>
+          <p className="mt-1 line-clamp-2 text-sm text-slate-600">
+            Personaliza tu panel con la información que más te importa.
           </p>
         </div>
+        <Button
+          type="button"
+          onClick={() => setWidgetPanelOpen(true)}
+          className="h-10 shrink-0 rounded-full bg-slate-900 px-4 text-sm font-semibold text-white shadow-[0_16px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800"
+        >
+          Agregar widgets
+        </Button>
+      </SurfaceCard>
+
+      {widgetPanelOpen ? (
+        <SurfaceCard variant="soft" padding="sm" className="space-y-2">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Personalización
+              </p>
+              <p className="mt-1 text-base font-semibold text-slate-900">Widgets disponibles</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Vamos a conectar este panel con el sistema modular sin afectar cálculos.
+              </p>
+            </div>
+            <Button type="button" variant="secondary" className="rounded-full" onClick={() => setWidgetPanelOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </SurfaceCard>
       ) : null}
 
       <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
