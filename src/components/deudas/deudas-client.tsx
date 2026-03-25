@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { Input } from "@/components/ui/input";
+import { MobileStickyAction } from "@/components/ui/mobile-sticky-action";
+import { SectionHeader } from "@/components/ui/section-header";
 import { Select } from "@/components/ui/select";
+import { StatPill } from "@/components/ui/stat-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 
@@ -460,8 +464,19 @@ export function DeudasClient({
   }
 
   return (
-    <div className="space-y-4 sm:space-y-5">
-      <Card className="rounded-[24px] p-4">
+    <div className="space-y-5 sm:space-y-6">
+      <SectionHeader
+        eyebrow="Pendientes"
+        title="Deudas y abonos"
+        description="Controla empresas y personas que te deben dinero con una vista clara y accionable."
+        actions={
+          <StatPill tone="warning" icon={<Users className="h-3.5 w-3.5" />}>
+            {payload ? payload.totals.pendingTotal > 0 ? "Con saldo pendiente" : "Sin pendientes" : "Cargando"}
+          </StatPill>
+        }
+      />
+
+      <SurfaceCard variant="highlight" padding="sm">
         <div className="flex flex-wrap gap-2">
           <Button
             variant={tab === "empresas" ? "default" : "secondary"}
@@ -489,7 +504,7 @@ export function DeudasClient({
             Ver saldo pendiente
           </Button>
         </div>
-      </Card>
+      </SurfaceCard>
 
       {error ? (
         <ErrorStateCard
@@ -499,6 +514,10 @@ export function DeudasClient({
         />
       ) : null}
       {message ? <Card className="rounded-[20px] border border-emerald-100 bg-emerald-50/70 p-3 text-sm text-emerald-700">{message}</Card> : null}
+
+      <MobileStickyAction type="button" onClick={() => setFormMode("nueva")}>
+        Registrar deuda
+      </MobileStickyAction>
 
       {selectedDebt ? (
         <Card className="overflow-hidden rounded-[28px] border border-white/80 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 p-4 text-white shadow-[0_22px_48px_rgba(15,23,42,0.18)]">

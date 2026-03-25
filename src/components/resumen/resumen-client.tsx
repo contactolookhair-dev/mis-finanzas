@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { FinancialHealthCenter } from "@/components/health/financial-health-center";
 import { MonthlyReportSection } from "@/components/reports/monthly-report-section";
-import { Card } from "@/components/ui/card";
+import { ErrorStateCard } from "@/components/ui/states";
+import { SectionHeader } from "@/components/ui/section-header";
+import { StatPill } from "@/components/ui/stat-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 import type { FinancialHealthResponse } from "@/shared/types/financial-health";
@@ -90,36 +93,46 @@ export function ResumenClient() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5 sm:space-y-6">
+      <SectionHeader
+        eyebrow="Resumen"
+        title="Vista rápida"
+        description="Una lectura simple de lo que ya gastaste, cobraste y sigues teniendo pendiente."
+        actions={<StatPill tone="premium">Estado mensual</StatPill>}
+      />
+
       {error ? (
-        <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-4 text-sm text-rose-700">{error}</Card>
+        <ErrorStateCard title="No se pudo cargar el resumen" description={error} />
       ) : null}
-      <Card className="rounded-[24px] p-4">
-        <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Resumen</p>
-        <h2 className="mt-1 text-lg font-semibold">Vista rápida del negocio</h2>
-      </Card>
+
       <MonthlyReportSection filters={reportFilters} periodLabel={reportPeriodLabel} />
       <FinancialHealthCenter data={financialHealth} loading={financialHealthLoading} />
       {financialHealthError ? (
-        <Card className="rounded-[20px] border border-rose-100 bg-rose-50/70 p-3 text-sm text-rose-700">
-          {financialHealthError}
-        </Card>
+        <ErrorStateCard
+          title="No se pudo cargar la salud financiera"
+          description={financialHealthError}
+        />
       ) : null}
       <section className="grid gap-3 sm:grid-cols-3">
-        <Card className="rounded-[24px] p-4">
+        <SurfaceCard variant="soft" padding="sm">
           <p className="text-xs text-neutral-500">Gastado</p>
-          <p className="mt-2 text-xl font-semibold">{spent === null ? "..." : formatCurrency(spent)}</p>
-        </Card>
-        <Card className="rounded-[24px] p-4">
+          <p className="mt-2 text-xl font-semibold text-slate-900">
+            {spent === null ? "..." : formatCurrency(spent)}
+          </p>
+        </SurfaceCard>
+        <SurfaceCard variant="soft" padding="sm">
           <p className="text-xs text-neutral-500">Cobrado</p>
-          <p className="mt-2 text-xl font-semibold">{collected === null ? "..." : formatCurrency(collected)}</p>
-        </Card>
-        <Card className="rounded-[24px] p-4">
+          <p className="mt-2 text-xl font-semibold text-slate-900">
+            {collected === null ? "..." : formatCurrency(collected)}
+          </p>
+        </SurfaceCard>
+        <SurfaceCard variant="soft" padding="sm">
           <p className="text-xs text-neutral-500">Pendiente</p>
-          <p className="mt-2 text-xl font-semibold">{pending === null ? "..." : formatCurrency(pending)}</p>
-        </Card>
+          <p className="mt-2 text-xl font-semibold text-slate-900">
+            {pending === null ? "..." : formatCurrency(pending)}
+          </p>
+        </SurfaceCard>
       </section>
-
     </div>
   );
 }

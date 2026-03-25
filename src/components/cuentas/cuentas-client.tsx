@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { Building2, CircleDollarSign, CreditCard, Edit2, Trash2, WalletCards } from "lucide-react";
+import { Building2, CircleDollarSign, CreditCard, Edit2, Landmark, Trash2, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
+import { SectionHeader } from "@/components/ui/section-header";
+import { StatPill } from "@/components/ui/stat-pill";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 
 type AccountItem = {
@@ -120,19 +122,33 @@ export function CuentasClient() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-5">
-      <Card className="relative overflow-hidden rounded-[28px] border border-violet-100 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 p-5 text-white shadow-[0_26px_48px_rgba(124,58,237,0.28)]">
+    <div className="space-y-5 sm:space-y-6">
+      <SectionHeader
+        eyebrow="Carteras"
+        title="Tus cuentas"
+        description="Administra tarjetas, cuentas y efectivo con una vista clara y consistente."
+        actions={
+          <StatPill tone="premium" icon={<Landmark className="h-3.5 w-3.5" />}>
+            {accounts.length} cuentas
+          </StatPill>
+        }
+      />
+
+      <SurfaceCard variant="dark" className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-fuchsia-600 to-emerald-500 text-white">
         <p className="text-xs uppercase tracking-[0.2em] text-white/70">Total disponible</p>
         <p className="mt-2 text-4xl font-semibold tracking-tight">{formatCurrency(totalAvailable)}</p>
         <p className="mt-2 text-xs text-white/80">Suma de todas tus carteras y efectivo.</p>
-      </Card>
+      </SurfaceCard>
 
-      <Card className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft">
-        <div>
+      <SurfaceCard variant="highlight" className="space-y-4">
+        <div className="space-y-2">
           <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Nueva cartera</p>
-          <h2 className="mt-1 text-lg font-semibold text-slate-900">
+          <h2 className="text-lg font-semibold text-slate-900">
             {isEditing ? "Editar tarjeta o efectivo" : "Agregar tarjeta o efectivo"}
           </h2>
+          <p className="text-sm text-slate-500">
+            Mantiene una base simple para que siempre sepas donde esta tu dinero.
+          </p>
         </div>
         <form className="grid gap-2.5 sm:grid-cols-2" onSubmit={handleCreate}>
           <Input
@@ -198,7 +214,7 @@ export function CuentasClient() {
         </form>
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}
         {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
-      </Card>
+      </SurfaceCard>
 
       <div className="space-y-2">
         {loading ? <SkeletonCard lines={3} /> : null}
@@ -219,9 +235,11 @@ export function CuentasClient() {
         {accounts.map((account) => {
           const Icon = typeIcon[account.type];
           return (
-            <Card
+            <SurfaceCard
               key={account.id}
-              className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-soft transition hover:-translate-y-0.5"
+              variant="soft"
+              padding="sm"
+              className="transition hover:-translate-y-0.5"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -306,7 +324,7 @@ export function CuentasClient() {
                   Eliminar
                 </Button>
               </div>
-            </Card>
+            </SurfaceCard>
           );
         })}
       </div>

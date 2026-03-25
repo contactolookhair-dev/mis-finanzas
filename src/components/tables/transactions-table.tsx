@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
+import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { getAccountIcon, getCategoryIcon } from "@/lib/ui/icon-maps";
@@ -92,7 +92,12 @@ export function TransactionsTable() {
           const CategoryIcon = getCategoryIcon(transaction.category);
           const AccountIcon = getAccountIcon(transaction.account);
           return (
-            <Card key={transaction.id} className="premium-surface animate-fade-up p-4">
+            <SurfaceCard
+              key={transaction.id}
+              variant="soft"
+              padding="sm"
+              className="animate-fade-up"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-900">
@@ -132,7 +137,7 @@ export function TransactionsTable() {
                   </div>
                 </div>
               </div>
-            </Card>
+            </SurfaceCard>
           );
         })}
     </div>

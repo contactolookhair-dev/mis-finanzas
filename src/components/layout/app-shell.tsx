@@ -7,6 +7,7 @@ import { Plus } from "lucide-react";
 import { navigationItems } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { PageContainer } from "@/components/ui/page-container";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -55,7 +56,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          <main className="pb-24">{children}</main>
+          <main className="pb-24">
+            <PageContainer size="wide">{children}</PageContainer>
+          </main>
         </div>
 
         <nav className="glass-panel fixed inset-x-4 bottom-4 z-30 rounded-[28px] border-white/70 bg-white/86 p-2 shadow-[0_12px_28px_rgba(15,23,42,0.12)] lg:inset-x-auto lg:left-6 lg:top-1/2 lg:h-fit lg:w-[94px] lg:-translate-y-1/2">
