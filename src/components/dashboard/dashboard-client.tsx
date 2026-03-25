@@ -678,6 +678,7 @@ export function DashboardClient() {
         }
         skipNextFilteredFetchRef.current = true;
         setSnapshot(payload);
+        setHasSnapshot(true);
         setFilters(payload.filters);
         initializedRef.current = true;
         void loadFinancialHealth(payload.filters);
@@ -689,6 +690,10 @@ export function DashboardClient() {
     }
 
     void loadInitialDashboard();
+  }, []);
+
+  useEffect(() => {
+    setClientReady(true);
   }, []);
 
   useEffect(() => {
@@ -750,6 +755,7 @@ export function DashboardClient() {
           throw new Error(payload.message ?? "No se pudo cargar el dashboard.");
         }
         setSnapshot(payload);
+        setHasSnapshot(true);
         void loadFinancialHealth(payload.filters);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Error cargando dashboard.");
@@ -912,6 +918,8 @@ export function DashboardClient() {
   };
 
   const visibleWidgets = widgetOrder.filter((id) => !hiddenWidgets.includes(id));
+  const [hasSnapshot, setHasSnapshot] = useState(false);
+  const [clientReady, setClientReady] = useState(false);
   const widgetSizeMap: Record<WidgetSize, string> = {
     compact: "lg:col-span-1",
     standard: "lg:col-span-1",
@@ -1104,6 +1112,10 @@ export function DashboardClient() {
     setWidgetSizes((current) => ({ ...current, [id]: size }));
   };
 
+  if (typeof window !== "undefined") {
+    console.log("dashboard/render", { hasSnapshot, customizeOpen, visibleWidgetsCount: visibleWidgets.length });
+  }
+
   return (
     <div className="space-y-5 pb-24 sm:space-y-6 sm:pb-20">
       {error ? (
@@ -1141,26 +1153,24 @@ export function DashboardClient() {
       ) : null}
 
       {/* Capa modular debajo de Saldo total */}
-      {snapshot ? (
-        <Card className="flex items-start justify-between gap-3 rounded-[20px] border border-slate-200 bg-white/92 p-3 sm:p-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
-              Personalizar widgets
-            </p>
-            <p className="text-sm text-slate-600">Mostrar/ocultar, ordenar y elegir tamaño.</p>
-          </div>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="h-9 rounded-full px-3 text-xs font-semibold"
-            onClick={() => setCustomizeOpen((v) => !v)}
-          >
-            {customizeOpen ? "Cerrar" : "Agregar widgets"}
-          </Button>
-        </Card>
-      ) : null}
+      <Card className="flex items-start justify-between gap-3 rounded-[20px] border border-slate-200 bg-white/92 p-3 sm:p-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-500">
+            Personalizar widgets
+          </p>
+          <p className="text-sm text-slate-600">Mostrar/ocultar, ordenar y elegir tamaño.</p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-9 rounded-full px-3 text-xs font-semibold"
+          onClick={() => setCustomizeOpen((v) => !v)}
+        >
+          {customizeOpen ? "Cerrar" : "Agregar widgets"}
+        </Button>
+      </Card>
 
-      {customizeOpen ? (
+      {customizeOpen && clientReady ? (
         <Card className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">Widgets disponibles</h3>
@@ -1258,7 +1268,7 @@ export function DashboardClient() {
         </Card>
       ) : null}
 
-      {snapshot ? (
+      {hasSnapshot ? (
         <div className="space-y-4">
           {visibleWidgets.map((id) => {
             const size = widgetSizes[id] ?? "standard";
