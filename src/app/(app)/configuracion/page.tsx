@@ -1,4 +1,5 @@
 import { ClassificationRulesPanel } from "@/components/settings/classification-rules-panel";
+import { DemoModeCard } from "@/components/settings/demo-mode-card";
 import { ImportTemplatesPanel } from "@/components/settings/import-templates-panel";
 import { SettingsAdminClient } from "@/components/settings/settings-admin-client";
 import { SettingsPanel } from "@/components/settings/settings-panel";
@@ -13,6 +14,7 @@ export default function ConfiguracionPage() {
         title="Configuración"
         description="Panel diseñado para editar categorías, negocios, reglas, etiquetas y módulos desde la web sin depender de cambios de código."
       />
+      <DemoModeCard />
       <SettingsSectionsNav />
       <SettingsPanel />
       <SettingsAdminClient />
