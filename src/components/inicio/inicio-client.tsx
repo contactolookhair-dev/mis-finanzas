@@ -759,7 +759,7 @@ export function InicioClient() {
   }
 
   return (
-    <div className="space-y-5 pb-20 sm:space-y-6">
+    <div className="space-y-4 pb-20 sm:space-y-5">
       <SectionHeader
         eyebrow="Inicio"
         title="Tu dinero en un vistazo"
@@ -787,9 +787,9 @@ export function InicioClient() {
       ) : null}
 
       <SurfaceCard
-        variant="soft"
+        variant="highlight"
         padding="sm"
-        className="space-y-4 border border-slate-200/70 bg-white/92 shadow-[0_18px_44px_rgba(15,23,42,0.08)]"
+        className="animate-fade-up space-y-4"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -799,7 +799,7 @@ export function InicioClient() {
             <p className="mt-1 text-base font-semibold text-slate-900">
               Lo importante, al tiro
             </p>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 hidden text-sm text-slate-600 sm:block">
               Disponible, deuda y pendientes en una mirada.
             </p>
           </div>
@@ -822,34 +822,34 @@ export function InicioClient() {
           ) : null}
         </div>
 
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Disponible real</p>
-            <p className={`mt-2 text-xl font-semibold tracking-tight ${availableTotal >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          <div className="col-span-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 lg:col-span-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Disponible real</p>
+            <p className={`mt-2 text-2xl font-semibold tracking-tight ${availableTotal >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
               {loading ? "..." : formatCurrency(availableTotal)}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Deuda tarjetas</p>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Deuda tarjetas</p>
             <p className={`mt-2 text-xl font-semibold tracking-tight ${creditDebtTotal > 0 ? "text-rose-700" : "text-slate-900"}`}>
               {loading ? "..." : formatCurrency(creditDebtTotal)}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pendientes por pagar</p>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Pendientes por pagar</p>
             <p className={`mt-2 text-xl font-semibold tracking-tight ${payablesOverdueCount > 0 ? "text-rose-700" : "text-slate-900"}`}>
               {payablesLoading ? "..." : formatCurrency(payablesPendingTotal)}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-100 bg-white/80 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Me deben</p>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Me deben</p>
             <p className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
               {debtsLoading ? "..." : formatCurrency(debtsPendingTotal)}
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-white/75 px-3.5 py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-white/80 px-3.5 py-3">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Alerta principal</p>
             <p className="mt-1 text-sm font-semibold text-slate-900">
@@ -877,9 +877,9 @@ export function InicioClient() {
       <div className="grid gap-3 lg:grid-cols-2">
         {coachMensajes.length ? (
           <SurfaceCard
-            variant="soft"
+            variant="highlight"
             padding="sm"
-            className="border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.92)_0%,rgba(255,255,255,0.92)_100%)] shadow-[0_16px_40px_rgba(15,23,42,0.08)]"
+            className="animate-fade-up border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.92)_0%,rgba(255,255,255,0.92)_100%)]"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -901,12 +901,12 @@ export function InicioClient() {
           </SurfaceCard>
         ) : null}
 
-        <SurfaceCard variant="soft" padding="sm" className="space-y-3">
+        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Prioridades del mes</p>
               <p className="mt-1 text-base font-semibold text-slate-900">Qué mirar primero</p>
-              <p className="mt-1 text-sm text-slate-600">Checklist corto para ordenar el mes.</p>
+              <p className="mt-1 hidden text-sm text-slate-600 sm:block">Checklist corto para ordenar el mes.</p>
             </div>
           </div>
           <div className="space-y-2">
@@ -958,14 +958,14 @@ export function InicioClient() {
           </div>
         </SurfaceCard>
       ) : sortedCreditAttention.length ? (
-        <SurfaceCard variant="soft" padding="sm" className="space-y-3">
+        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
                 Tarjetas que requieren atención
               </p>
               <p className="mt-1 text-base font-semibold text-slate-900">Revisa lo más importante</p>
-              <p className="mt-1 text-sm text-slate-600">Máximo 3 tarjetas, con contexto claro.</p>
+              <p className="mt-1 hidden text-sm text-slate-600 sm:block">Máximo 3 tarjetas, con contexto claro.</p>
             </div>
             <Button
               type="button"
@@ -1069,7 +1069,7 @@ export function InicioClient() {
         </div>
       </SurfaceCard>
 
-      <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
+      <SurfaceCard variant="soft" padding="sm" className="animate-fade-up flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tus widgets</p>
           <p className="mt-1 line-clamp-2 text-sm text-slate-600">
