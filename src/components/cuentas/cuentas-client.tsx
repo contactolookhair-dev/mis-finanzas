@@ -77,6 +77,18 @@ type CreditHealthItem = {
   periodLabel: string;
   utilizationPct: number | null;
   importBatchId: string;
+  totals: {
+    interest: number;
+    fees: number;
+    cashAdvances: number;
+    dubiousCount: number;
+  };
+  deltas: {
+    billed: number | null;
+    used: number | null;
+    interest: number | null;
+    fees: number | null;
+  };
   badges: Array<{ key: string; label: string; tone: "alert" | "attention" | "positive" | "info" }>;
   priority: number;
 };
@@ -194,6 +206,115 @@ function resolveAccountVisual(account: AccountItem): {
           : "bg-blue-50 text-blue-700 ring-blue-100";
 
   return { kind, icon, label, chipClassName };
+}
+
+type CreditAttentionTone = "alert" | "attention" | "positive" | "info";
+
+function creditToneToClasses(tone: CreditAttentionTone) {
+  return tone === "alert"
+    ? "border-rose-200 bg-rose-50 text-rose-700"
+    : tone === "attention"
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : tone === "positive"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+        : "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function getCreditAttentionSeverity(item: CreditHealthItem) {
+  const utilization = item.utilizationPct ?? 0;
+  const hasAdv = item.totals.cashAdvances > 0;
+  const hasInterest = item.totals.interest > 0;
+  const hasFees = item.totals.fees > 0;
+  const needsReview = item.badges.some((b) => b.key === "review");
+  const debtUp = (item.deltas.used ?? 0) > 0;
+  const improved = item.badges.some((b) => b.key === "improved");
+
+  if (utilization >= 90 || hasAdv) return { level: "critical" as const, rank: 0 };
+  if (hasInterest || hasFees || debtUp || utilization >= 70) return { level: "attention" as const, rank: 1 };
+  if (needsReview) return { level: "info" as const, rank: 2 };
+  if (improved) return { level: "positive" as const, rank: 3 };
+  return { level: "neutral" as const, rank: 4 };
+}
+
+function buildCreditAttentionContextLine(item: CreditHealthItem) {
+  const utilization = item.utilizationPct;
+  if (utilization !== null && utilization >= 90) return "Estás usando casi todo el cupo disponible.";
+  if (item.totals.cashAdvances > 0) return "Ojo con avances: suelen ser de alto costo.";
+  if (utilization !== null && utilization >= 70) return "Estás usando gran parte del cupo disponible.";
+  if (item.totals.interest > 0) return "Este mes pagaste intereses en la tarjeta.";
+  if (item.totals.fees > 0) return "Aparecieron comisiones en el estado de cuenta.";
+  if (item.badges.some((b) => b.key === "review")) {
+    return item.totals.dubiousCount > 0
+      ? "La importación tiene movimientos dudosos."
+      : "Conviene revisar la importación del estado.";
+  }
+  if (item.badges.some((b) => b.key === "improved")) {
+    if ((item.deltas.used ?? 0) < 0) return "Bien ahí: bajó el cupo usado este mes.";
+    if ((item.deltas.interest ?? 0) < 0) return "Bien ahí: bajaron los intereses este mes.";
+    if ((item.deltas.fees ?? 0) < 0) return "Bien ahí: bajaron las comisiones este mes.";
+    return "Mejoraste el uso de la tarjeta este mes.";
+  }
+  return "Tarjeta al día, sin señales fuertes este período.";
+}
+
+function buildCreditAttentionBadges(item: CreditHealthItem) {
+  const chips: Array<{ key: string; label: string; tone: CreditAttentionTone }> = [];
+
+  if (item.utilizationPct !== null) {
+    const tone: CreditAttentionTone =
+      item.utilizationPct >= 90 ? "alert" : item.utilizationPct >= 70 ? "attention" : "info";
+    chips.push({ key: "util", label: `Cupo ${item.utilizationPct}%`, tone });
+  }
+
+  if (item.totals.interest > 0) {
+    chips.push({
+      key: "interest",
+      label: `Intereses ${formatCurrency(item.totals.interest)}`,
+      tone: "attention"
+    });
+  }
+
+  if (item.totals.fees > 0) {
+    chips.push({
+      key: "fees",
+      label: `Comisiones ${formatCurrency(item.totals.fees)}`,
+      tone: "info"
+    });
+  }
+
+  if (item.totals.cashAdvances > 0) {
+    chips.push({
+      key: "adv",
+      label: `Avances ${formatCurrency(item.totals.cashAdvances)}`,
+      tone: "alert"
+    });
+  }
+
+  if (item.badges.some((b) => b.key === "review")) {
+    chips.push({
+      key: "review",
+      label: item.totals.dubiousCount > 0 ? `Revisar (${item.totals.dubiousCount} dudosas)` : "Revisar importación",
+      tone: "info"
+    });
+  }
+
+  if ((item.deltas.used ?? 0) > 0) {
+    chips.push({
+      key: "debtUp",
+      label: `Deuda +${formatCurrency(item.deltas.used ?? 0)}`,
+      tone: "attention"
+    });
+  }
+
+  if (item.badges.some((b) => b.key === "improved")) {
+    let improvedLabel = "Mejora reciente";
+    if ((item.deltas.used ?? 0) < 0) improvedLabel = `Cupo usado ${formatCurrency(item.deltas.used ?? 0)}`;
+    else if ((item.deltas.interest ?? 0) < 0) improvedLabel = `Intereses ${formatCurrency(item.deltas.interest ?? 0)}`;
+    else if ((item.deltas.fees ?? 0) < 0) improvedLabel = `Comisiones ${formatCurrency(item.deltas.fees ?? 0)}`;
+    chips.push({ key: "improved", label: improvedLabel, tone: "positive" });
+  }
+
+  return chips;
 }
 
 function AccountUpsertModal({
@@ -1408,6 +1529,19 @@ export function CuentasClient() {
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
 
+  const sortedCreditAttention = useMemo(() => {
+    return [...creditHealth].sort((a, b) => {
+      const sa = getCreditAttentionSeverity(a);
+      const sb = getCreditAttentionSeverity(b);
+      if (sa.rank !== sb.rank) return sa.rank - sb.rank;
+      return b.priority - a.priority;
+    });
+  }, [creditHealth]);
+
+  const visibleCreditAttention = useMemo(() => {
+    return showAllCreditAttention ? sortedCreditAttention : sortedCreditAttention.slice(0, 5);
+  }, [showAllCreditAttention, sortedCreditAttention]);
+
   const resetForm = () => {
     setForm({
       name: "",
@@ -1621,17 +1755,19 @@ export function CuentasClient() {
           </div>
 
           <div className="space-y-2">
-            {(showAllCreditAttention ? creditHealth : creditHealth.slice(0, 5)).map((item) => {
+            {visibleCreditAttention.map((item) => {
               const account = accountById.get(item.accountId);
               const visual = account ? resolveAccountVisual(account) : null;
               const Icon = visual?.icon ?? CreditCard;
               const accentColor = account ? normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type] : "#0f172a";
               const accentBackground = hexToRgba(accentColor, 0.14);
+              const contextLine = buildCreditAttentionContextLine(item);
+              const contextBadges = buildCreditAttentionBadges(item).slice(0, 4);
 
               return (
                 <div
                   key={item.accountId}
-                  className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2"
+                  className="interactive-lift flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3 py-2"
                 >
                   <button
                     type="button"
@@ -1652,24 +1788,15 @@ export function CuentasClient() {
                       <p className="truncate text-sm font-semibold text-slate-900">
                         {item.name}
                       </p>
+                      <p className="mt-0.5 line-clamp-1 text-[12px] font-medium text-slate-600">
+                        {contextLine}
+                      </p>
                       <p className="mt-0.5 text-[11px] text-slate-500">
                         {item.bank ?? visual?.label ?? "Tarjeta"} · {item.periodLabel}
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
-                        {item.utilizationPct !== null ? (
-                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                            Cupo {item.utilizationPct}%
-                          </span>
-                        ) : null}
-                        {item.badges.slice(0, 4).map((b) => {
-                          const tone =
-                            b.tone === "alert"
-                              ? "border-rose-200 bg-rose-50 text-rose-700"
-                              : b.tone === "attention"
-                                ? "border-amber-200 bg-amber-50 text-amber-800"
-                                : b.tone === "positive"
-                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                  : "border-slate-200 bg-slate-50 text-slate-700";
+                        {contextBadges.map((b) => {
+                          const tone = creditToneToClasses(b.tone);
                           return (
                             <span
                               key={b.key}
