@@ -494,6 +494,28 @@ export function ImportTransactionsPanel() {
                     ? `· Período ${pdfMeta.billingPeriodStart} → ${pdfMeta.billingPeriodEnd}`
                     : null}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {typeof pdfMeta.parserConfidence === "number" ? (
+                    <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                      Confianza {Math.round(pdfMeta.parserConfidence * 100)}%
+                    </span>
+                  ) : null}
+                  {typeof pdfMeta.dubiousMovements === "number" ? (
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800">
+                      Dudosas: {pdfMeta.dubiousMovements}
+                    </span>
+                  ) : null}
+                  {Array.isArray(pdfMeta.missingFields) && pdfMeta.missingFields.length > 0 ? (
+                    <span className="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-medium text-rose-800">
+                      Faltan: {pdfMeta.missingFields.join(", ")}
+                    </span>
+                  ) : null}
+                  {pdfMeta.aiFallbackRecommended === true ? (
+                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                      Revisión recomendada
+                    </span>
+                  ) : null}
+                </div>
               </div>
               {pdfSuggestion ? (
                 <div className="min-w-[240px]">
@@ -634,6 +656,16 @@ export function ImportTransactionsPanel() {
               const selectedAccount = row.accountId ? accountById.get(row.accountId) ?? null : null;
               const showClassification = row.type === "EGRESO" && isCreditCardAccount(selectedAccount);
               const classificationValue = row.classification ?? "PERSONAL";
+              const raw = row.rawValues as Record<string, unknown>;
+              const cmrClass =
+                typeof raw.__cmrClassifiedAs === "string" ? (raw.__cmrClassifiedAs as string) : null;
+              const cmrSection =
+                typeof raw.__cmrMatchedSection === "string" ? (raw.__cmrMatchedSection as string) : null;
+              const cmrConfidence =
+                typeof raw.__cmrConfidence === "number" && Number.isFinite(raw.__cmrConfidence)
+                  ? (raw.__cmrConfidence as number)
+                  : null;
+              const cmrDubious = raw.__cmrDubious === true;
 
               return (
                 <div key={row.id} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
@@ -642,6 +674,25 @@ export function ImportTransactionsPanel() {
                       <p className="text-sm font-semibold text-slate-900">Fila #{row.rowNumber}</p>
                       {row.sourceAccountName ? (
                         <p className="text-xs text-slate-500">Origen detectado: {row.sourceAccountName}</p>
+                      ) : null}
+                      {cmrClass ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span
+                            className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${
+                              cmrDubious
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : "border-slate-200 bg-slate-50 text-slate-700"
+                            }`}
+                          >
+                            {cmrClass}
+                            {cmrSection ? ` · ${cmrSection}` : null}
+                          </span>
+                          {typeof cmrConfidence === "number" ? (
+                            <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700">
+                              {Math.round(cmrConfidence * 100)}%
+                            </span>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                     <label className="flex items-center gap-2 text-sm">

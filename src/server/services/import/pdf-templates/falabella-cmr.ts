@@ -14,6 +14,11 @@ export type FalabellaCmrStatementMeta = {
   creditLimit?: number;
   creditUsed?: number;
   creditAvailable?: number;
+  parserConfidence?: number; // 0..1
+  parsedMovements?: number;
+  dubiousMovements?: number;
+  missingFields?: string[];
+  aiFallbackRecommended?: boolean;
 };
 
 export type FalabellaCmrPdfParseResult = {
@@ -222,6 +227,82 @@ function parseMovementLine(line: string) {
   return { day, month, yearToken, description, amount };
 }
 
+type ClassifiedAs =
+  | "purchase"
+  | "installment_purchase"
+  | "payment"
+  | "refund"
+  | "fee"
+  | "interest"
+  | "cash_advance"
+  | "tax"
+  | "insurance"
+  | "unknown";
+
+const KEYWORDS = {
+  fee: ["comision", "comisión", "mantencion", "mantención", "administracion", "administración", "costo", "cargo"],
+  interest: ["interes", "interés", "int.", "tasa", "mora", "moratorio"],
+  cash_advance: ["avance", "giro", "cajero", "efectivo", "retiro"],
+  tax: ["impuesto", "iva", "tasa", "gravamen"],
+  insurance: ["seguro", "proteccion", "protección", "desgravamen", "fraude", "accidente"],
+  installment: ["cuota", "cuotas"]
+} as const;
+
+function matchKeywords(description: string) {
+  const n = normalizeText(description);
+  const matched: string[] = [];
+  Object.entries(KEYWORDS).forEach(([group, keywords]) => {
+    keywords.forEach((kw) => {
+      const nkw = normalizeText(kw);
+      if (n.includes(nkw)) {
+        matched.push(group);
+      }
+    });
+  });
+  return Array.from(new Set(matched));
+}
+
+function classifyMovement(params: { section: SectionKind; description: string }) {
+  const { section, description } = params;
+  const n = normalizeText(description);
+  const matchedGroups = matchKeywords(description);
+
+  // Explicit groups win over section inference.
+  if (matchedGroups.includes("interest")) return { classifiedAs: "interest" as const, matchedGroups };
+  if (matchedGroups.includes("fee")) return { classifiedAs: "fee" as const, matchedGroups };
+  if (matchedGroups.includes("insurance")) return { classifiedAs: "insurance" as const, matchedGroups };
+  if (matchedGroups.includes("tax")) return { classifiedAs: "tax" as const, matchedGroups };
+  if (matchedGroups.includes("cash_advance")) return { classifiedAs: "cash_advance" as const, matchedGroups };
+
+  if (section === "payments") return { classifiedAs: "payment" as const, matchedGroups };
+  if (section === "refunds") return { classifiedAs: "refund" as const, matchedGroups };
+
+  const installmentPattern = /\b\d{1,3}\/\d{1,3}\b/.test(n) || matchedGroups.includes("installment");
+  if (section === "installments" || installmentPattern) {
+    return { classifiedAs: "installment_purchase" as const, matchedGroups };
+  }
+
+  if (section === "purchases" || section === "purchases_international") {
+    return { classifiedAs: "purchase" as const, matchedGroups };
+  }
+
+  return { classifiedAs: "unknown" as const, matchedGroups };
+}
+
+function computeMovementConfidence(params: {
+  section: SectionKind;
+  classifiedAs: ClassifiedAs;
+  matchedGroups: string[];
+}) {
+  const { section, classifiedAs, matchedGroups } = params;
+  let confidence = 0.55;
+  if (section !== "unknown") confidence += 0.15;
+  if (classifiedAs !== "unknown") confidence += 0.15;
+  if (matchedGroups.length > 0) confidence += 0.1;
+  if (classifiedAs === "installment_purchase" && section === "installments") confidence += 0.05;
+  return Math.max(0, Math.min(0.98, confidence));
+}
+
 export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseResult | null {
   const firstBlock = normalizeText(lines.slice(0, 120).join(" "));
   const isCmr = firstBlock.includes("cmr") && (firstBlock.includes("falabella") || firstBlock.includes("banco falabella"));
@@ -242,6 +323,9 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
 
   let section: SectionKind = "unknown";
   const rows: RawRow[] = [];
+  const dubious: Array<{ rawLine: string; reason: string }> = [];
+  const unparsedCandidates: string[] = [];
+  let pending: string | null = null;
 
   for (const line of lines) {
     const nextSection = detectSection(line);
@@ -250,7 +334,31 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
       continue;
     }
 
-    const movement = parseMovementLine(line);
+    const normalizedLine = normalizeWhitespace(line);
+    const mergedCandidate = pending ? normalizeWhitespace(`${pending} ${normalizedLine}`) : null;
+
+    let movement = parseMovementLine(normalizedLine);
+    let rawLine = normalizedLine;
+    if (!movement && mergedCandidate) {
+      movement = parseMovementLine(mergedCandidate);
+      if (movement) rawLine = mergedCandidate;
+    }
+    if (!movement) {
+      // Track candidate lines that look like movements but didn't parse (for warnings).
+      const hasAmount = /\d{1,3}(?:[.\s]\d{3})+/.test(normalizedLine) || /\$\s*\d+/.test(normalizedLine);
+      const looksLikeMaybeMovement = hasAmount && section !== "unknown" && normalizedLine.length >= 10;
+      if (looksLikeMaybeMovement) {
+        unparsedCandidates.push(normalizedLine);
+      }
+      // Buffer potential wrapped lines (date + text but amount on next line)
+      if (/^\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s+/.test(normalizedLine) && !hasAmount) {
+        pending = normalizedLine;
+      } else {
+        pending = null;
+      }
+      continue;
+    }
+    pending = null;
     if (!movement) continue;
 
     const year =
@@ -264,13 +372,37 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
       });
 
     const fecha = formatDmyWithYear(movement.day, movement.month, year);
+
+    const { classifiedAs, matchedGroups } = classifyMovement({
+      section,
+      description: movement.description
+    });
+    const confidence = computeMovementConfidence({ section, classifiedAs, matchedGroups });
+
+    const dubiousReasons: string[] = [];
+    if (section === "unknown") dubiousReasons.push("Fuera de sección reconocida");
+    if (classifiedAs === "unknown") dubiousReasons.push("Concepto ambiguo");
+    if (confidence < 0.65) dubiousReasons.push("Baja confianza");
+    const isDubious = dubiousReasons.length > 0;
+    if (isDubious) {
+      dubious.push({ rawLine, reason: dubiousReasons[0] ?? "Dudosa" });
+    }
+
     const base: RawRow = {
       fecha,
       descripcion: movement.description,
-      tarjeta: meta.cardLabel
+      tarjeta: meta.cardLabel,
+      __cmrClassifiedAs: classifiedAs,
+      __cmrMatchedSection: section,
+      __cmrMatchedKeywords: matchedGroups,
+      __cmrConfidence: confidence,
+      __cmrRawLine: rawLine,
+      __cmrDubious: isDubious,
+      __cmrDubiousReasons: dubiousReasons
     };
 
-    if (section === "payments" || section === "refunds") {
+    const isCreditLike = section === "payments" || section === "refunds" || classifiedAs === "payment" || classifiedAs === "refund";
+    if (isCreditLike) {
       rows.push({
         ...base,
         abono: movement.amount,
@@ -284,6 +416,46 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
       });
     }
   }
+
+  const missingFields: string[] = [];
+  if (!meta.billingPeriodStart || !meta.billingPeriodEnd) missingFields.push("período");
+  if (!meta.closingDate) missingFields.push("fecha de cierre");
+  if (!meta.paymentDate) missingFields.push("fecha de pago");
+  if (typeof meta.totalBilled !== "number") missingFields.push("total facturado");
+  if (typeof meta.minimumDue !== "number") missingFields.push("pago mínimo");
+  if (typeof meta.creditLimit !== "number") missingFields.push("cupo total");
+  if (typeof meta.creditUsed !== "number") missingFields.push("cupo usado");
+  if (typeof meta.creditAvailable !== "number") missingFields.push("cupo disponible");
+
+  // Simple consistency checks (don't invent data).
+  if (
+    typeof meta.creditLimit === "number" &&
+    typeof meta.creditUsed === "number" &&
+    typeof meta.creditAvailable === "number"
+  ) {
+    const sum = meta.creditUsed + meta.creditAvailable;
+    const diff = Math.abs(sum - meta.creditLimit);
+    if (diff > Math.max(2000, meta.creditLimit * 0.02)) {
+      warnings.push("El cupo total no cuadra con cupo usado + disponible. Revisa los campos detectados.");
+    }
+  }
+
+  if (missingFields.length > 0) {
+    warnings.push(`Faltan campos del resumen del estado de cuenta: ${missingFields.join(", ")}.`);
+  }
+
+  if (unparsedCandidates.length > 0) {
+    warnings.push(`Se detectaron ${unparsedCandidates.length} líneas con montos que no se pudieron interpretar automáticamente.`);
+  }
+
+  const parsedMovements = rows.length;
+  const dubiousMovements = rows.filter((row) => Boolean((row as Record<string, unknown>).__cmrDubious)).length;
+  const confidence = parsedMovements === 0 ? 0 : Math.max(0.1, Math.min(0.98, 1 - dubiousMovements / Math.max(1, parsedMovements)));
+  meta.parsedMovements = parsedMovements;
+  meta.dubiousMovements = dubiousMovements;
+  meta.missingFields = missingFields;
+  meta.parserConfidence = confidence;
+  meta.aiFallbackRecommended = confidence < 0.6 || dubiousMovements / Math.max(1, parsedMovements) > 0.25;
 
   if (rows.length === 0) {
     return {
@@ -310,4 +482,3 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
     ]
   };
 }
-
