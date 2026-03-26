@@ -121,6 +121,7 @@ function SuggestionBadge({ suggestion }: { suggestion?: ImportFieldSuggestion })
 export function ImportTransactionsPanel() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
+  const [importLane, setImportLane] = useState<"account" | "credit">("account");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [rows, setRows] = useState<ImportPreviewRow[]>([]);
@@ -165,6 +166,35 @@ export function ImportTransactionsPanel() {
 
   const pdfMeta = useMemo(() => (preview?.pdfMeta && typeof preview.pdfMeta === "object" ? (preview.pdfMeta as Record<string, unknown>) : null), [preview]);
   const pdfSuggestion = preview?.pdfAccountSuggestion ?? null;
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", update);
+      return () => mq.removeEventListener("change", update);
+    }
+    // Safari < 14 fallback
+    const legacyMq = mq as unknown as {
+      addListener?: (listener: () => void) => void;
+      removeListener?: (listener: () => void) => void;
+    };
+    legacyMq.addListener?.(update);
+    return () => legacyMq.removeListener?.(update);
+  }, []);
+
+  useEffect(() => {
+    if (importLane !== "credit") return;
+    if (selectedTemplateId) return;
+    if (!preview?.availableTemplates?.length) return;
+    const found =
+      preview.availableTemplates.find((t) => t.institution.toLowerCase().includes("falabella")) ??
+      preview.availableTemplates.find((t) => t.name.toLowerCase().includes("cmr"));
+    if (found) setSelectedTemplateId(found.id);
+  }, [importLane, preview?.availableTemplates, selectedTemplateId]);
 
   const debtorNameOptions = useMemo(() => {
     const names = rows
@@ -413,6 +443,60 @@ export function ImportTransactionsPanel() {
           />
         ) : null}
 
+        <div className="grid gap-3 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setImportLane("account")}
+            className={`tap-feedback rounded-2xl border p-4 text-left shadow-[0_10px_22px_rgba(15,23,42,0.05)] ${
+              importLane === "account"
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-200 bg-white/80 text-slate-900"
+            }`}
+          >
+            <p
+              className={`text-xs font-semibold uppercase tracking-[0.24em] ${
+                importLane === "account" ? "text-white/80" : "text-slate-500"
+              }`}
+            >
+              Cuenta corriente / Débito
+            </p>
+            <p className="mt-1 text-base font-semibold">Movimientos de cuenta</p>
+            <p className={`mt-1 text-sm ${importLane === "account" ? "text-white/80" : "text-slate-600"}`}>
+              Sube PDF/CSV/XLSX de tu cuenta para revisar y guardar movimientos.
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportLane("credit")}
+            className={`tap-feedback rounded-2xl border p-4 text-left shadow-[0_10px_22px_rgba(15,23,42,0.05)] ${
+              importLane === "credit"
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-slate-200 bg-white/80 text-slate-900"
+            }`}
+          >
+            <p
+              className={`text-xs font-semibold uppercase tracking-[0.24em] ${
+                importLane === "credit" ? "text-white/80" : "text-slate-500"
+              }`}
+            >
+              Tarjeta de crédito
+            </p>
+            <p className="mt-1 text-base font-semibold">Estado de cuenta (PDF)</p>
+            <p className={`mt-1 text-sm ${importLane === "credit" ? "text-white/80" : "text-slate-600"}`}>
+              Optimizado para CMR/Falabella: separa cargos/abonos y arma el estado inteligente.
+            </p>
+          </button>
+        </div>
+
+        {isMobile ? (
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 text-sm text-slate-600">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Nota</p>
+            <p className="mt-1">
+              La revisión de PDFs se ve mejor en computador. En móvil funciona, pero está optimizada para web.
+            </p>
+          </div>
+        ) : null}
+
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
           <Input
             type="file"
@@ -429,7 +513,7 @@ export function ImportTransactionsPanel() {
             ) : (
               <>
                 <FileUp className="mr-2 h-4 w-4" />
-                Subir y revisar
+                {importLane === "credit" ? "Subir estado (PDF)" : "Subir y revisar"}
               </>
             )}
           </Button>

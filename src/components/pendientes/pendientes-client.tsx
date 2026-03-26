@@ -625,10 +625,10 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
               <button
                 type="button"
                 aria-label="Cerrar"
-                className="absolute inset-0 bg-black/40 backdrop-blur-[10px]"
+                className="absolute inset-0 bg-black/45"
                 onClick={closePayablesModal}
               />
-              <SurfaceCard className="relative w-full max-w-lg p-5">
+              <SurfaceCard className="relative w-full max-w-lg bg-white/95 p-5 shadow-[0_30px_70px_rgba(15,23,42,0.25)] ring-1 ring-slate-100">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
@@ -718,10 +718,10 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
           <button
             type="button"
             aria-label="Cerrar"
-            className="absolute inset-0 bg-black/40 backdrop-blur-[10px]"
+            className="absolute inset-0 bg-black/45"
             onClick={() => setCreateDebtOpen(false)}
           />
-          <SurfaceCard className="relative w-full max-w-lg p-5">
+          <SurfaceCard className="relative w-full max-w-lg bg-white/95 p-5 shadow-[0_30px_70px_rgba(15,23,42,0.25)] ring-1 ring-slate-100">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
@@ -884,10 +884,10 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
           <button
             type="button"
             aria-label="Cerrar"
-            className="absolute inset-0 bg-black/40 backdrop-blur-[10px]"
+            className="absolute inset-0 bg-black/45"
             onClick={() => setPaymentOpen(false)}
           />
-          <SurfaceCard className="relative w-full max-w-lg p-5">
+          <SurfaceCard className="relative w-full max-w-lg bg-white/95 p-5 shadow-[0_30px_70px_rgba(15,23,42,0.25)] ring-1 ring-slate-100">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
@@ -1009,10 +1009,10 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
           <button
             type="button"
             aria-label="Cerrar"
-            className="absolute inset-0 bg-black/40 backdrop-blur-[10px]"
+            className="absolute inset-0 bg-black/45"
             onClick={() => setDetailOpen(false)}
           />
-          <SurfaceCard className="relative w-full max-w-lg p-5">
+          <SurfaceCard className="relative w-full max-w-lg bg-white/95 p-5 shadow-[0_30px_70px_rgba(15,23,42,0.25)] ring-1 ring-slate-100">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
@@ -1104,10 +1104,10 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
           <button
             type="button"
             aria-label="Cerrar"
-            className="absolute inset-0 bg-black/40 backdrop-blur-[10px]"
+            className="absolute inset-0 bg-black/45"
             onClick={() => setDeleteConfirmOpen(false)}
           />
-          <SurfaceCard className="relative w-full max-w-lg p-5">
+          <SurfaceCard className="relative w-full max-w-lg bg-white/95 p-5 shadow-[0_30px_70px_rgba(15,23,42,0.25)] ring-1 ring-slate-100">
             <p className="text-lg font-semibold tracking-[-0.03em] text-slate-900">
               ¿Eliminar este pendiente?
             </p>

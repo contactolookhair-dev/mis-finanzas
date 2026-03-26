@@ -151,6 +151,7 @@ export function InicioClient() {
   const [widgetPanelOpen, setWidgetPanelOpen] = useState(false);
   const [widgetOrder, setWidgetOrder] = useState<InicioWidgetId[]>(defaultWidgetOrder);
   const [hiddenWidgets, setHiddenWidgets] = useState<InicioWidgetId[]>(defaultWidgetOrder);
+  const [widgetsHydrated, setWidgetsHydrated] = useState(false);
   const [widgetSizes, setWidgetSizes] = useState<Record<InicioWidgetId, WidgetSize>>({
     debtors: "standard",
     upcomingInstallments: "standard",
@@ -355,6 +356,7 @@ export function InicioClient() {
   }, []);
 
   const moveWidget = (id: InicioWidgetId, direction: "up" | "down") => {
+    setWidgetsHydrated(true);
     setWidgetOrder((current) => {
       const idx = current.indexOf(id);
       if (idx === -1) return current;
@@ -367,12 +369,14 @@ export function InicioClient() {
   };
 
   const toggleWidget = (id: InicioWidgetId) => {
+    setWidgetsHydrated(true);
     setHiddenWidgets((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
     );
   };
 
   const updateWidgetSize = (id: InicioWidgetId, size: WidgetSize) => {
+    setWidgetsHydrated(true);
     setWidgetSizes((current) => ({ ...current, [id]: size }));
   };
 
@@ -524,10 +528,13 @@ export function InicioClient() {
       }
     } catch {
       // noop
+    } finally {
+      setWidgetsHydrated(true);
     }
   }, []);
 
   useEffect(() => {
+    if (!widgetsHydrated) return;
     try {
       window.localStorage.setItem(
         INICIO_WIDGET_STORAGE_KEY,
@@ -536,7 +543,7 @@ export function InicioClient() {
     } catch {
       // noop
     }
-  }, [hiddenWidgets, widgetOrder, widgetSizes]);
+  }, [hiddenWidgets, widgetOrder, widgetSizes, widgetsHydrated]);
 
   useEffect(() => {
     try {

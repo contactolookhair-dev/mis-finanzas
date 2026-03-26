@@ -98,6 +98,8 @@ export async function GET(request: NextRequest) {
         amount: toAmountNumber(item.amount),
         type: item.type,
         accountId: item.accountId,
+        categoryId: item.categoryId,
+        notes: item.notes ?? null,
         account: item.account?.name ?? "Sin cuenta",
         category: item.category?.name ?? "Sin categoria",
         businessUnit: item.businessUnit?.name ?? "Sin asignar",

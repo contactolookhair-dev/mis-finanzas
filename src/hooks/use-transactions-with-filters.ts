@@ -9,12 +9,15 @@ export type TransactionRow = {
   description: string;
   amount: number;
   type: "INGRESO" | "EGRESO" | "TRANSFERENCIA";
+  accountId?: string | null;
   account: string;
+  categoryId?: string | null;
   category: string;
   businessUnit: string;
   origin: "PERSONAL" | "EMPRESA";
   reimbursable: boolean;
   reviewStatus: "PENDIENTE" | "REVISADO" | "OBSERVADO";
+  notes?: string | null;
 };
 
 type FilterRange = "today" | "week" | "month";

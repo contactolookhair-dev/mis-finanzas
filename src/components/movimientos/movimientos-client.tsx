@@ -9,6 +9,7 @@ import { SectionHeader } from "@/components/ui/section-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { SkeletonCard, ErrorStateCard, EmptyStateCard } from "@/components/ui/states";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { EditTransactionModal } from "@/components/movimientos/edit-transaction-modal";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
@@ -37,6 +38,7 @@ export function MovimientosClient() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearInput, setClearInput] = useState("");
   const [clearing, setClearing] = useState(false);
@@ -225,6 +227,10 @@ export function MovimientosClient() {
                 key={transaction.id}
                 transaction={transaction}
                 getAccountAppearance={getAccountAppearance}
+                onEdit={() => {
+                  setSelectedTransaction(transaction);
+                  setEditOpen(true);
+                }}
                 onDelete={() => {
                   if (transaction.description === BASE_TRANSACTION_MARKER) return;
                   setSelectedTransaction(transaction);
@@ -267,6 +273,11 @@ export function MovimientosClient() {
                       throw new Error(body.message ?? "No se pudo eliminar el movimiento.");
                     }
                     refresh();
+                    try {
+                      window.dispatchEvent(new Event("mis-finanzas:accounts-changed"));
+                    } catch {
+                      // noop
+                    }
                     setDeleteOpen(false);
                     setSelectedTransaction(null);
                   } catch (error) {
@@ -355,7 +366,32 @@ export function MovimientosClient() {
         </div>
       ) : null}
 
-      <NewTransactionModal open={openModal} onOpenChange={setOpenModal} onSuccess={refresh} />
+      <NewTransactionModal
+        open={openModal}
+        onOpenChange={setOpenModal}
+        onSuccess={() => {
+          refresh();
+          try {
+            window.dispatchEvent(new Event("mis-finanzas:accounts-changed"));
+          } catch {
+            // noop
+          }
+        }}
+      />
+      <EditTransactionModal
+        open={editOpen}
+        transaction={editOpen ? selectedTransaction : null}
+        accounts={accounts}
+        categories={categories}
+        onOpenChange={(next) => {
+          setEditOpen(next);
+          if (!next) setSelectedTransaction(null);
+        }}
+        onSuccess={() => {
+          refresh();
+          setSuccessMessage("Movimiento actualizado.");
+        }}
+      />
     </div>
   );
 }
@@ -380,10 +416,12 @@ function MovementMetric({
 function MovementRow({
   transaction,
   getAccountAppearance,
+  onEdit,
   onDelete
 }: {
   transaction: TransactionRow;
   getAccountAppearance: (accountName: string) => ReturnType<typeof resolveAccountAppearance> | null;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const appearance = getAccountAppearance(transaction.account);
@@ -446,13 +484,22 @@ function MovementRow({
         </div>
 
         {transaction.description !== BASE_TRANSACTION_MARKER ? (
-          <button
-            type="button"
-            className="tap-feedback shrink-0 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
-            onClick={onDelete}
-          >
-            Eliminar
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="tap-feedback rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
+              onClick={onEdit}
+            >
+              Editar
+            </button>
+            <button
+              type="button"
+              className="tap-feedback rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-100"
+              onClick={onDelete}
+            >
+              Eliminar
+            </button>
+          </div>
         ) : null}
       </div>
     </SurfaceCard>
