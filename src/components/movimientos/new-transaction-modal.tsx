@@ -67,12 +67,14 @@ const textareaClass =
 
 export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const [kind, setKind] = useState<TransactionKind>("GASTO");
+  const [classification, setClassification] = useState<"PERSONAL" | "NEGOCIO" | "PRESTADO">("PERSONAL");
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(getToday());
   const [description, setDescription] = useState("");
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [notes, setNotes] = useState("");
+  const [businessUnitId, setBusinessUnitId] = useState("");
   const [isOwed, setIsOwed] = useState(false);
   const [owedByType, setOwedByType] = useState<"PERSONA" | "EMPRESA">("PERSONA");
   const [owedBusinessUnitId, setOwedBusinessUnitId] = useState("");
@@ -81,6 +83,10 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const [owedDebtorName, setOwedDebtorName] = useState("");
   const [owedAmount, setOwedAmount] = useState("");
   const [owedNote, setOwedNote] = useState("");
+  const [installmentsEnabled, setInstallmentsEnabled] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState("");
+  const [installmentValue, setInstallmentValue] = useState("");
+  const [nextInstallmentDate, setNextInstallmentDate] = useState("");
 
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
@@ -106,11 +112,13 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
 
   function resetForm() {
     setKind("GASTO");
+    setClassification("PERSONAL");
     setAmount("");
     setDate(getToday());
     setDescription("");
     setCategoryId("");
     setNotes("");
+    setBusinessUnitId("");
     setIsOwed(false);
     setOwedByType("PERSONA");
     setOwedBusinessUnitId("");
@@ -119,6 +127,10 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     setOwedDebtorName("");
     setOwedAmount("");
     setOwedNote("");
+    setInstallmentsEnabled(false);
+    setInstallmentCount("");
+    setInstallmentValue("");
+    setNextInstallmentDate("");
     setError(null);
   }
 
@@ -214,6 +226,12 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
         totalAmount: resolvedOwedAmount,
         startDate: date,
         estimatedPayDate: null,
+        isInstallmentDebt: installmentsEnabled,
+        installmentCount: installmentsEnabled ? Math.max(0, Number(installmentCount || 0)) : 0,
+        installmentValue: installmentsEnabled ? Math.max(0, Number(installmentValue || 0)) : 0,
+        paidInstallments: 0,
+        installmentFrequency: "MENSUAL",
+        nextInstallmentDate: installmentsEnabled ? (nextInstallmentDate || null) : null,
         notes: owedNote || null
       })
     });
@@ -237,6 +255,39 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
       setError("El monto debe ser mayor a 0.");
       return;
     }
+
+    const isCreditCardPurchase = kind === "GASTO" && selectedAccount?.type === "CREDITO";
+    if (isCreditCardPurchase && classification === "NEGOCIO" && !businessUnitId) {
+      setError("Selecciona la unidad de negocio para esta compra.");
+      return;
+    }
+    if (isCreditCardPurchase && classification === "PRESTADO") {
+      if (!isOwed || owedByType !== "PERSONA") {
+        setError("Para una compra prestada debes seleccionar una persona que te debe.");
+        return;
+      }
+      if (installmentsEnabled && owedDebtorMode === "EXISTING") {
+        setError("Para registrar cuotas, crea una deuda nueva (no usar persona existente por ahora).");
+        return;
+      }
+      if (installmentsEnabled) {
+        const count = Number(installmentCount || 0);
+        const value = Number(installmentValue || 0);
+        if (!Number.isFinite(count) || count < 1) {
+          setError("Ingresa el total de cuotas (mínimo 1).");
+          return;
+        }
+        if (!Number.isFinite(value) || value < 1) {
+          setError("Ingresa un valor de cuota válido.");
+          return;
+        }
+        if (!nextInstallmentDate) {
+          setError("Selecciona la fecha de la próxima cuota.");
+          return;
+        }
+      }
+    }
+
     if (isOwed && owedByType === "EMPRESA" && !owedBusinessUnitId) {
       setError("Selecciona la empresa que te debe.");
       return;
@@ -245,9 +296,25 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     setSaving(true);
     try {
       const isCompanyDebt = isOwed && owedByType === "EMPRESA";
+      const isBusinessSpend = classification === "NEGOCIO";
+      const isLentSpend = classification === "PRESTADO";
       const transactionType = kind === "INGRESO" ? "INGRESO" : "EGRESO";
       const baseNote = kind === "TRANSFERENCIA" ? "Transferencia manual" : "";
-      const mergedNotes = [baseNote, notes.trim(), isOwed ? `Monto adeudado: ${resolvedOwedAmount}` : "", owedNote.trim()]
+      const classificationNote =
+        kind === "GASTO"
+          ? classification === "NEGOCIO"
+            ? "Clasificación: negocio"
+            : classification === "PRESTADO"
+              ? "Clasificación: prestado"
+              : "Clasificación: personal"
+          : "";
+      const mergedNotes = [
+        baseNote,
+        classificationNote,
+        notes.trim(),
+        isOwed ? `Monto adeudado: ${resolvedOwedAmount}` : "",
+        owedNote.trim()
+      ]
         .filter(Boolean)
         .join(" · ");
 
@@ -261,10 +328,10 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
           type: transactionType,
           accountId,
           categoryId: categoryId || null,
-          financialOrigin: isCompanyDebt ? "EMPRESA" : "PERSONAL",
-          businessUnitId: isCompanyDebt ? owedBusinessUnitId : null,
-          isBusinessPaidPersonally: isCompanyDebt && transactionType === "EGRESO",
-          isReimbursable: isCompanyDebt && transactionType === "EGRESO",
+          financialOrigin: isCompanyDebt || isBusinessSpend ? "EMPRESA" : "PERSONAL",
+          businessUnitId: isCompanyDebt ? owedBusinessUnitId : isBusinessSpend ? (businessUnitId || null) : null,
+          isBusinessPaidPersonally: (isCompanyDebt || isBusinessSpend) && transactionType === "EGRESO",
+          isReimbursable: (isCompanyDebt || isLentSpend) && transactionType === "EGRESO",
           notes: mergedNotes || undefined
         })
       });
@@ -292,6 +359,8 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   }
 
   if (!open) return null;
+
+  const isCreditCardPurchase = kind === "GASTO" && selectedAccount?.type === "CREDITO";
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
@@ -364,6 +433,54 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
               ))}
             </div>
           </SurfaceCard>
+
+          {isCreditCardPurchase ? (
+            <SurfaceCard variant="soft" padding="sm" className="space-y-3 interactive-lift">
+              <div className="space-y-1">
+                <p className={fieldLabelClass}>Clasificación</p>
+                <p className="text-sm text-slate-500">Define si esta compra es personal, de negocio o prestada.</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
+                {(["PERSONAL", "NEGOCIO", "PRESTADO"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => {
+                      setClassification(value);
+                      if (value === "PRESTADO") {
+                        setIsOwed(true);
+                        setOwedByType("PERSONA");
+                        if (!owedAmount) setOwedAmount(amount);
+                      } else {
+                        setIsOwed(false);
+                      }
+                    }}
+                    className={`tap-feedback h-10 rounded-xl text-xs font-semibold transition ${
+                      classification === value
+                        ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {value === "PERSONAL" ? "Personal" : value === "NEGOCIO" ? "Negocio" : "Prestado"}
+                  </button>
+                ))}
+              </div>
+
+              {classification === "NEGOCIO" ? (
+                <label className="space-y-2">
+                  <span className={fieldLabelClass}>Unidad de negocio</span>
+                  <Select value={businessUnitId} onChange={(event) => setBusinessUnitId(event.target.value)}>
+                    <option value="">Selecciona negocio</option>
+                    {dashboardSnapshot?.references.businessUnits.map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.name}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+              ) : null}
+            </SurfaceCard>
+          ) : null}
 
           <SurfaceCard variant="soft" padding="sm" className="space-y-4 interactive-lift">
             <div className="space-y-1">
@@ -525,6 +642,73 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
                     )}
                   </>
                 )}
+
+                {isOwed && owedByType === "PERSONA" ? (
+                  <div className="sm:col-span-2 space-y-2">
+                    <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/85 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">¿En cuotas?</p>
+                        <p className="text-xs text-slate-500">Opcional: registra el cobro como deuda en cuotas.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={installmentsEnabled}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setInstallmentsEnabled(checked);
+                          if (checked && !installmentCount) setInstallmentCount("3");
+                          if (checked && !installmentValue && Number(amount)) {
+                            const count = Number(installmentCount || 3);
+                            setInstallmentValue(String(Math.ceil(Number(amount) / Math.max(1, count))));
+                          }
+                          if (checked && !nextInstallmentDate) {
+                            const base = new Date(`${date}T12:00:00`);
+                            base.setMonth(base.getMonth() + 1);
+                            const y = base.getFullYear();
+                            const m = `${base.getMonth() + 1}`.padStart(2, "0");
+                            const d = `${base.getDate()}`.padStart(2, "0");
+                            setNextInstallmentDate(`${y}-${m}-${d}`);
+                          }
+                        }}
+                      />
+                    </label>
+
+                    {installmentsEnabled ? (
+                      <div className="grid gap-2.5 sm:grid-cols-3">
+                        <label className="space-y-2">
+                          <span className={fieldLabelClass}>Total cuotas</span>
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            placeholder="Ej: 6"
+                            value={installmentCount}
+                            onChange={(event) => setInstallmentCount(event.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className={fieldLabelClass}>Valor cuota</span>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            placeholder="Ej: 40000"
+                            value={installmentValue}
+                            onChange={(event) => setInstallmentValue(event.target.value)}
+                          />
+                        </label>
+                        <label className="space-y-2">
+                          <span className={fieldLabelClass}>Próxima cuota</span>
+                          <Input
+                            type="date"
+                            value={nextInstallmentDate}
+                            onChange={(event) => setNextInstallmentDate(event.target.value)}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <label className="space-y-2 sm:col-span-2">
                   <span className={fieldLabelClass}>Nota de deuda</span>
