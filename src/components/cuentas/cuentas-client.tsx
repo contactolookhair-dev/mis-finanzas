@@ -25,6 +25,10 @@ import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { computeCreditCardMetrics } from "@/lib/accounts/credit-card";
 import { getCreditCardBillingPeriod } from "@/lib/accounts/credit-card-period";
+import {
+  generateCreditCardStatementInsights,
+  type CreditCardStatementInsight
+} from "@/lib/accounts/credit-card-statement-insights";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
@@ -638,6 +642,15 @@ function AccountDetailModal({
     return statementHistory[idx + 1] ?? null;
   }, [statementHistory, selectedStatement]);
 
+  const statementInsights = useMemo<CreditCardStatementInsight[]>(() => {
+    if (!selectedStatement) return [];
+    return generateCreditCardStatementInsights({
+      current: selectedStatement,
+      previous: previousStatement ?? null,
+      max: 6
+    });
+  }, [selectedStatement, previousStatement]);
+
   function formatDelta(current: number | null, prev: number | null) {
     if (current === null || prev === null) return null;
     const delta = current - prev;
@@ -1050,6 +1063,54 @@ function AccountDetailModal({
                       </p>
                     </div>
                   </div>
+
+                  {statementInsights.length > 0 ? (
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Insights automáticos
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Lectura rápida basada en este estado y su comparación.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {statementInsights.map((insight) => {
+                          const tone =
+                            insight.tone === "alert"
+                              ? "border-rose-200 bg-rose-50 text-rose-800"
+                              : insight.tone === "attention"
+                                ? "border-amber-200 bg-amber-50 text-amber-900"
+                                : insight.tone === "positive"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                                  : "border-slate-200 bg-slate-50 text-slate-800";
+                          const badge =
+                            insight.tone === "alert"
+                              ? "Alerta"
+                              : insight.tone === "attention"
+                                ? "Atención"
+                                : insight.tone === "positive"
+                                  ? "Positivo"
+                                  : "Info";
+                          return (
+                            <div key={`${insight.tone}-${insight.title}`} className={`rounded-2xl border px-3 py-2 ${tone}`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm font-semibold">{insight.title}</p>
+                                <span className="shrink-0 rounded-full bg-white/60 px-2 py-0.5 text-[10px] font-semibold">
+                                  {badge}
+                                </span>
+                              </div>
+                              {insight.detail ? (
+                                <p className="mt-1 text-xs leading-relaxed opacity-90">{insight.detail}</p>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {selectedStatement && selectedStatement.warnings.length > 0 ? (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
