@@ -797,6 +797,39 @@ export function InicioClient() {
         <ErrorStateCard title="No se pudo cargar la vista" description={error} onRetry={() => void loadData()} />
       ) : null}
 
+      <SurfaceCard className="relative overflow-hidden border-border/80 bg-white text-slate-900 shadow-[0_20px_46px_rgba(15,23,42,0.08)]">
+        <div
+          className={`absolute inset-x-0 top-0 h-1 ${
+            availableTotal >= 0 ? "bg-emerald-500/80" : "bg-rose-500/80"
+          }`}
+        />
+        <div className="relative">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Saldo total</p>
+          <p
+            className={`mt-2 text-4xl font-semibold tracking-tight sm:text-[44px] ${
+              availableTotal >= 0 ? "text-emerald-600" : "text-rose-600"
+            }`}
+          >
+            {loading ? "..." : formatCurrency(availableTotal)}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">Suma real de todas tus cuentas registradas.</p>
+        </div>
+      </SurfaceCard>
+
+      <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {accounts.length === 0 ? (
+          <div className="col-span-2 sm:col-span-1 lg:col-span-1">
+            <EmptyStateCard
+              title="Aún no tienes cuentas"
+              description="Crea tu primera billetera o tarjeta para registrar movimientos."
+              actionLabel="Crear cuenta"
+              onAction={() => (window.location.href = "/cuentas")}
+            />
+          </div>
+        ) : null}
+        {accounts.map((account) => renderAccountCard(account))}
+      </section>
+
       <SurfaceCard
         variant="highlight"
         padding="sm"
@@ -884,146 +917,6 @@ export function InicioClient() {
           </div>
         </div>
       </SurfaceCard>
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        {coachMensajes.length ? (
-          <SurfaceCard
-            variant="highlight"
-            padding="sm"
-            className="animate-fade-up border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.92)_0%,rgba(255,255,255,0.92)_100%)]"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-800/80">
-                  Tu nota del mes
-                </p>
-                <div className="mt-2 space-y-2">
-                  {coachMensajes.map((m) => (
-                    <p key={m} className="text-sm font-semibold leading-relaxed text-slate-900">
-                      {m}
-                    </p>
-                  ))}
-                </div>
-              </div>
-              <span className="shrink-0 rounded-full border border-amber-200 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-amber-800">
-                Coach
-              </span>
-            </div>
-          </SurfaceCard>
-        ) : null}
-
-        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Prioridades del mes</p>
-              <p className="mt-1 text-base font-semibold text-slate-900">Qué mirar primero</p>
-              <p className="mt-1 hidden text-sm text-slate-600 sm:block">Checklist corto para ordenar el mes.</p>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {priorities.length === 0 ? (
-              <p className="text-sm font-semibold text-slate-700">Todo tranquilo por ahora. Mantén el registro al día.</p>
-            ) : (
-              priorities.map((p) => (
-                <div
-                  key={p.text}
-                  className={`flex items-start gap-3 rounded-2xl border bg-white/80 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${
-                    p.tone === "alert"
-                      ? "border-rose-100"
-                      : p.tone === "attention"
-                        ? "border-amber-100"
-                        : p.tone === "positive"
-                          ? "border-emerald-100"
-                          : "border-slate-100"
-                  }`}
-                >
-                  <span
-                    className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold ${
-                      p.tone === "alert"
-                        ? "border-rose-200 bg-rose-50 text-rose-700"
-                        : p.tone === "attention"
-                          ? "border-amber-200 bg-amber-50 text-amber-800"
-                          : p.tone === "positive"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : "border-slate-200 bg-slate-50 text-slate-700"
-                    }`}
-                  >
-                    {p.tone === "alert" ? "!" : p.tone === "attention" ? "•" : p.tone === "positive" ? "✓" : "i"}
-                  </span>
-                  <p className="text-sm font-semibold leading-snug text-slate-900">{p.text}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </SurfaceCard>
-      </div>
-
-      {globalAlerts.length ? (
-        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Alertas importantes
-              </p>
-              <p className="mt-1 text-base font-semibold text-slate-900">Lo que deberías revisar hoy</p>
-              <p className="mt-1 hidden text-sm text-slate-600 sm:block">
-                3 a 5 señales clave para mantener el control.
-              </p>
-            </div>
-            <span className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
-              {globalAlerts.length} alerta{globalAlerts.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {globalAlerts.map((a) => {
-              const tone =
-                a.tone === "critical"
-                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : a.tone === "attention"
-                    ? "border-amber-200 bg-amber-50 text-amber-800"
-                    : a.tone === "positive"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                      : "border-slate-200 bg-slate-50 text-slate-700";
-              const glyph = a.tone === "positive" ? <Info className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />;
-
-              return (
-                <div
-                  key={a.id}
-                  className="interactive-lift flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3.5 py-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}>
-                        {glyph}
-                        {a.tone === "critical"
-                          ? "Crítico"
-                          : a.tone === "attention"
-                            ? "Atención"
-                            : a.tone === "positive"
-                              ? "Bien"
-                              : "Info"}
-                      </span>
-                      <p className="text-sm font-semibold text-slate-900">{a.title}</p>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{a.description}</p>
-                  </div>
-
-                  {a.action ? (
-                    <button
-                      type="button"
-                      className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
-                      onClick={() => (window.location.href = a.action!.href)}
-                    >
-                      {a.action.label}
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </SurfaceCard>
-      ) : null}
 
       {creditHealthLoading ? (
         <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
@@ -1113,39 +1006,78 @@ export function InicioClient() {
         </SurfaceCard>
       ) : null}
 
-      <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {accounts.length === 0 ? (
-          <div className="col-span-2 sm:col-span-1 lg:col-span-1">
-            <EmptyStateCard
-              title="Aún no tienes cuentas"
-              description="Crea tu primera billetera o tarjeta para registrar movimientos."
-              actionLabel="Crear cuenta"
-              onAction={() => (window.location.href = "/cuentas")}
-            />
-          </div>
-        ) : null}
-        {accounts.map((account) => renderAccountCard(account))}
-      </section>
-      <SurfaceCard className="relative overflow-hidden border-border/80 bg-white text-slate-900 shadow-[0_20px_46px_rgba(15,23,42,0.08)]">
-        <div
-          className={`absolute inset-x-0 top-0 h-1 ${
-            availableTotal >= 0 ? "bg-emerald-500/80" : "bg-rose-500/80"
-          }`}
-        />
-        <div className="relative">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Saldo total</p>
-          <p
-            className={`mt-2 text-4xl font-semibold tracking-tight sm:text-[44px] ${
-              availableTotal >= 0 ? "text-emerald-600" : "text-rose-600"
-            }`}
+      <div className="grid gap-3 lg:grid-cols-2">
+        {coachMensajes.length ? (
+          <SurfaceCard
+            variant="highlight"
+            padding="sm"
+            className="animate-fade-up border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.92)_0%,rgba(255,255,255,0.92)_100%)]"
           >
-            {loading ? "..." : formatCurrency(availableTotal)}
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            Suma real de todas tus cuentas registradas.
-          </p>
-        </div>
-      </SurfaceCard>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-800/80">
+                  Tu nota del mes
+                </p>
+                <div className="mt-2 space-y-2">
+                  {coachMensajes.map((m) => (
+                    <p key={m} className="text-sm font-semibold leading-relaxed text-slate-900">
+                      {m}
+                    </p>
+                  ))}
+                </div>
+              </div>
+              <span className="shrink-0 rounded-full border border-amber-200 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-amber-800">
+                Coach
+              </span>
+            </div>
+          </SurfaceCard>
+        ) : null}
+
+        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Prioridades del mes</p>
+              <p className="mt-1 text-base font-semibold text-slate-900">Qué mirar primero</p>
+              <p className="mt-1 hidden text-sm text-slate-600 sm:block">Checklist corto para ordenar el mes.</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {priorities.length === 0 ? (
+              <p className="text-sm font-semibold text-slate-700">Todo tranquilo por ahora. Mantén el registro al día.</p>
+            ) : (
+              priorities.map((p) => (
+                <div
+                  key={p.text}
+                  className={`flex items-start gap-3 rounded-2xl border bg-white/80 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${
+                    p.tone === "alert"
+                      ? "border-rose-100"
+                      : p.tone === "attention"
+                        ? "border-amber-100"
+                        : p.tone === "positive"
+                          ? "border-emerald-100"
+                          : "border-slate-100"
+                  }`}
+                >
+                  <span
+                    className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold ${
+                      p.tone === "alert"
+                        ? "border-rose-200 bg-rose-50 text-rose-700"
+                        : p.tone === "attention"
+                          ? "border-amber-200 bg-amber-50 text-amber-800"
+                          : p.tone === "positive"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-slate-200 bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    {p.tone === "alert" ? "!" : p.tone === "attention" ? "•" : p.tone === "positive" ? "✓" : "i"}
+                  </span>
+                  <p className="text-sm font-semibold leading-snug text-slate-900">{p.text}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </SurfaceCard>
+      </div>
 
       <SurfaceCard variant="soft" padding="sm" className="animate-fade-up flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -1436,6 +1368,73 @@ export function InicioClient() {
           return null;
         })}
       </div>
+
+      {globalAlerts.length ? (
+        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Alertas importantes
+              </p>
+              <p className="mt-1 text-base font-semibold text-slate-900">Lo que deberías revisar hoy</p>
+              <p className="mt-1 hidden text-sm text-slate-600 sm:block">
+                3 a 5 señales clave para mantener el control.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
+              {globalAlerts.length} alerta{globalAlerts.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {globalAlerts.map((a) => {
+              const tone =
+                a.tone === "critical"
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : a.tone === "attention"
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : a.tone === "positive"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-slate-200 bg-slate-50 text-slate-700";
+              const glyph = a.tone === "positive" ? <Info className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />;
+
+              return (
+                <div
+                  key={a.id}
+                  className="interactive-lift flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3.5 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}>
+                        {glyph}
+                        {a.tone === "critical"
+                          ? "Crítico"
+                          : a.tone === "attention"
+                            ? "Atención"
+                            : a.tone === "positive"
+                              ? "Bien"
+                              : "Info"}
+                      </span>
+                      <p className="text-sm font-semibold text-slate-900">{a.title}</p>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{a.description}</p>
+                  </div>
+
+                  {a.action ? (
+                    <button
+                      type="button"
+                      className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                      onClick={() => (window.location.href = a.action!.href)}
+                    >
+                      {a.action.label}
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </SurfaceCard>
+      ) : null}
 
       <NewTransactionModal
         open={openModal}
