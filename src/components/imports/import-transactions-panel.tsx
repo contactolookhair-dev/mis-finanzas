@@ -93,6 +93,17 @@ function getDuplicateLabel(status: ImportPreviewRow["duplicateStatus"]) {
   return null;
 }
 
+function getFriendlyPreviewError(message: string) {
+  if (
+    message.includes("did not match the expected pattern") ||
+    message.includes("expected pattern")
+  ) {
+    return "No pudimos leer este PDF con la configuración actual. Intenta nuevamente o revisa la cuenta seleccionada.";
+  }
+
+  return message;
+}
+
 function SuggestionBadge({ suggestion }: { suggestion?: ImportFieldSuggestion }) {
   if (!suggestion) return null;
 
@@ -304,6 +315,21 @@ export function ImportTransactionsPanel(props: {
       if (selectedTemplateId) {
         formData.append("templateId", selectedTemplateId);
       }
+      formData.append("type", importLane);
+
+      const contextualAccountId =
+        importLane === "credit" ? selectedPdfAccountId || initialAccountId || "" : "";
+      if (contextualAccountId) {
+        formData.append("accountId", contextualAccountId);
+      }
+
+      console.log("import preview payload", {
+        fileName: selectedFile.name,
+        mimeType: selectedFile.type,
+        importLane,
+        contextualAccountId,
+        selectedTemplateId
+      });
 
       const response = await fetch("/api/imports/preview", {
         method: "POST",
@@ -312,15 +338,19 @@ export function ImportTransactionsPanel(props: {
       const payload = (await response.json()) as PreviewResponse & { message?: string };
 
       if (!response.ok) {
-        throw new Error(payload.message ?? "No se pudo analizar el archivo.");
+        throw new Error(getFriendlyPreviewError(payload.message ?? "No se pudo analizar el archivo."));
       }
 
       setPreview(payload);
       setSelectedTemplateId(payload.appliedTemplate?.id ?? "");
       setRows(payload.rows);
-      setSelectedPdfAccountId(payload.pdfAccountSuggestion?.accountId ?? "");
+      setSelectedPdfAccountId(payload.pdfAccountSuggestion?.accountId ?? contextualAccountId ?? "");
     } catch (previewError) {
-      setError(previewError instanceof Error ? previewError.message : "Error al generar vista previa.");
+      setError(
+        previewError instanceof Error
+          ? getFriendlyPreviewError(previewError.message)
+          : "No pudimos leer este PDF con la configuración actual. Intenta nuevamente o revisa la cuenta seleccionada."
+      );
     } finally {
       setLoadingPreview(false);
     }

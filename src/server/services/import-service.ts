@@ -83,7 +83,18 @@ export async function previewImportFile(input: {
   mimeType: string;
   bytes: Uint8Array;
   selectedTemplateId?: string;
+  preferredAccountId?: string;
+  preferredImportType?: "account" | "credit";
 }) {
+  console.log("previewImportFile start", {
+    workspaceId: input.workspaceId,
+    fileName: input.fileName,
+    mimeType: input.mimeType,
+    selectedTemplateId: input.selectedTemplateId ?? null,
+    preferredAccountId: input.preferredAccountId ?? null,
+    preferredImportType: input.preferredImportType ?? null
+  });
+
   const parsed = await parseImportFile({
     fileName: input.fileName,
     mimeType: input.mimeType,
@@ -102,6 +113,18 @@ export async function previewImportFile(input: {
   });
 
   const references = await getImportReferenceData(input.workspaceId);
+  const preferredAccount =
+    input.preferredAccountId
+      ? references.accounts.find((account) => account.id === input.preferredAccountId) ?? null
+      : null;
+
+  if (input.preferredAccountId && !preferredAccount) {
+    console.warn("previewImportFile preferred account not found", {
+      workspaceId: input.workspaceId,
+      preferredAccountId: input.preferredAccountId
+    });
+  }
+
   const accountLookup = new Map(
     references.accounts.map((account) => [normalizeLookupKey(account.name), account.id])
   );
@@ -134,7 +157,13 @@ export async function previewImportFile(input: {
         );
       });
 
-      if (candidates.length === 1) {
+      if (
+        input.preferredImportType === "credit" &&
+        preferredAccount &&
+        String(preferredAccount.type) === "TARJETA_CREDITO"
+      ) {
+        accountLookup.set(normalizedLabel, preferredAccount.id);
+      } else if (candidates.length === 1) {
         accountLookup.set(normalizedLabel, candidates[0]!.id);
       }
     }
@@ -214,7 +243,13 @@ export async function previewImportFile(input: {
       );
     });
 
-    if (candidates.length === 1) {
+    if (
+      input.preferredImportType === "credit" &&
+      preferredAccount &&
+      String(preferredAccount.type) === "TARJETA_CREDITO"
+    ) {
+      pdfAccountSuggestion = { mode: "matched", accountId: preferredAccount.id };
+    } else if (candidates.length === 1) {
       pdfAccountSuggestion = { mode: "matched", accountId: candidates[0]!.id };
     } else if (candidates.length > 1) {
       pdfAccountSuggestion = {
