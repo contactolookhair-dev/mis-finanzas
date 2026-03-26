@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   CreditCard,
@@ -539,6 +540,8 @@ function AccountDetailModal({
   const [selectedStatementId, setSelectedStatementId] = useState<string>("");
   const [statementHistoryLoading, setStatementHistoryLoading] = useState(false);
   const [statementHistoryError, setStatementHistoryError] = useState<string | null>(null);
+  const [showAllStatementPeriods, setShowAllStatementPeriods] = useState(false);
+  const [showAllStatementWarnings, setShowAllStatementWarnings] = useState(false);
 
   const [statementItems, setStatementItems] = useState<
     {
@@ -579,12 +582,16 @@ function AccountDetailModal({
     [statementPayments]
   );
 
+  const router = useRouter();
+
   useEffect(() => {
     let active = true;
     async function loadStatementHistory() {
       if (!open || !account || account.type !== "CREDITO") {
         setStatementHistory([]);
         setSelectedStatementId("");
+        setShowAllStatementPeriods(false);
+        setShowAllStatementWarnings(false);
         return;
       }
       setStatementHistoryLoading(true);
@@ -614,6 +621,10 @@ function AccountDetailModal({
       active = false;
     };
   }, [open, account, selectedStatementId]);
+
+  useEffect(() => {
+    setShowAllStatementWarnings(false);
+  }, [selectedStatementId]);
 
   const selectedStatement = useMemo(() => {
     if (!selectedStatementId) return statementHistory[0] ?? null;
@@ -698,6 +709,8 @@ function AccountDetailModal({
         : "text-rose-700";
   const accentColor = normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type];
   const accentBackground = hexToRgba(accentColor, 0.12);
+  const selectedImportBatchId = selectedStatement?.importBatchId ?? statementHistory[0]?.importBatchId ?? null;
+  const visibleStatementPeriods = showAllStatementPeriods ? statementHistory : statementHistory.slice(0, 12);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
@@ -828,6 +841,17 @@ function AccountDetailModal({
                         Ver último
                       </button>
                     ) : null}
+                    {selectedImportBatchId ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(`/importaciones?batchId=${encodeURIComponent(selectedImportBatchId)}`)
+                        }
+                        className="tap-feedback rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                      >
+                        Ver en Importaciones
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -847,8 +871,8 @@ function AccountDetailModal({
                 </div>
               ) : (
                 <>
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {statementHistory.slice(0, 12).map((item) => {
+                  <div className={showAllStatementPeriods ? "flex flex-wrap gap-2" : "flex gap-2 overflow-x-auto pb-1"}>
+                    {visibleStatementPeriods.map((item) => {
                       const active = item.importBatchId === (selectedStatement?.importBatchId ?? statementHistory[0]!.importBatchId);
                       return (
                         <button
@@ -865,6 +889,15 @@ function AccountDetailModal({
                         </button>
                       );
                     })}
+                    {statementHistory.length > 12 ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllStatementPeriods((value) => !value)}
+                        className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                      >
+                        {showAllStatementPeriods ? "Mostrar menos" : "Mostrar más"}
+                      </button>
+                    ) : null}
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/70 bg-white/85 p-3">
@@ -1020,9 +1053,22 @@ function AccountDetailModal({
 
                   {selectedStatement && selectedStatement.warnings.length > 0 ? (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                      <p className="font-semibold">Warnings</p>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-semibold">
+                          Warnings <span className="font-normal">({selectedStatement.warnings.length})</span>
+                        </p>
+                        {selectedStatement.warnings.length > 3 ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllStatementWarnings((value) => !value)}
+                            className="tap-feedback rounded-full border border-amber-200 bg-white/60 px-2.5 py-1 text-[11px] font-semibold text-amber-800"
+                          >
+                            {showAllStatementWarnings ? "Mostrar menos" : "Mostrar más"}
+                          </button>
+                        ) : null}
+                      </div>
                       <ul className="mt-1 list-disc pl-4">
-                        {selectedStatement.warnings.slice(0, 3).map((w, idx) => (
+                        {(showAllStatementWarnings ? selectedStatement.warnings : selectedStatement.warnings.slice(0, 3)).map((w, idx) => (
                           <li key={`${idx}-${w}`} className="mt-1">
                             {w}
                           </li>
