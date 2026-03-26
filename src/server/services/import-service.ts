@@ -95,10 +95,29 @@ export async function previewImportFile(input: {
     preferredImportType: input.preferredImportType ?? null
   });
 
-  const parsed = await parseImportFile({
-    fileName: input.fileName,
-    mimeType: input.mimeType,
-    bytes: input.bytes
+  let parsed: Awaited<ReturnType<typeof parseImportFile>>;
+  try {
+    parsed = await parseImportFile({
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      bytes: input.bytes
+    });
+  } catch (error) {
+    console.error("previewImportFile parse failed", {
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      bytesLength: input.bytes.length,
+      error: error instanceof Error ? error.message : error
+    });
+    throw error;
+  }
+
+  console.log("previewImportFile parsed", {
+    parser: parsed.parser,
+    supported: parsed.supported,
+    warnings: parsed.warnings.length,
+    rows: parsed.rows.length,
+    hasMeta: Boolean(parsed.meta)
   });
   const availableTemplates = await listWorkspaceAwareImportTemplates({
     workspaceId: input.workspaceId,

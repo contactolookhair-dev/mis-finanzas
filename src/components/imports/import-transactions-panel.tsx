@@ -20,6 +20,9 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 type ReferenceOption = { id: string; name: string; type?: string | null; institution?: string | null };
 
 type PreviewResponse = {
+  success?: boolean;
+  error?: string;
+  message?: string;
   parser: ImportParserKind;
   supported: boolean;
   warnings: string[];
@@ -335,10 +338,12 @@ export function ImportTransactionsPanel(props: {
         method: "POST",
         body: formData
       });
-      const payload = (await response.json()) as PreviewResponse & { message?: string };
+      const payload = (await response.json()) as PreviewResponse;
 
-      if (!response.ok) {
-        throw new Error(getFriendlyPreviewError(payload.message ?? "No se pudo analizar el archivo."));
+      if (!response.ok || payload.success === false) {
+        throw new Error(
+          getFriendlyPreviewError(payload.message ?? "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente.")
+        );
       }
 
       setPreview(payload);

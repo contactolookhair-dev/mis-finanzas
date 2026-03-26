@@ -223,17 +223,23 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
   let parser: PDFParse | null = null;
 
   try {
+    console.log("parsePdfImportFile start", { bytesLength: bytes.length });
     parser = new PDFParse({
       data: Buffer.from(bytes)
     });
     const result = await parser.getText();
     const rawText = result.text ?? "";
+    console.log("parsePdfImportFile extracted text", {
+      textLength: rawText.length
+    });
+
     const lines = rawText
       .split(/\r?\n/)
       .map(normalizeLine)
       .filter(Boolean);
 
     if (lines.length === 0) {
+      console.warn("parsePdfImportFile no text lines detected");
       return {
         rows: [],
         headers: [],
@@ -246,6 +252,10 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
 
     const falabellaCmr = tryParseFalabellaCmrPdf(lines);
     if (falabellaCmr) {
+      console.log("parsePdfImportFile specialized parser matched", {
+        rows: falabellaCmr.rows.length,
+        warnings: falabellaCmr.warnings.length
+      });
       return {
         rows: falabellaCmr.rows,
         // These "headers" are used for template detection (not for mapping).
@@ -295,6 +305,7 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       warnings.push(
         "No se pudieron detectar movimientos con suficiente precisión en este PDF. Si puedes, usa CSV/XLSX o revisa otro formato de exportación."
       );
+      console.warn("parsePdfImportFile generic parser found zero rows");
       return {
         rows: [],
         headers: [],
@@ -322,6 +333,10 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       supported: true
     };
   } catch (error) {
+    console.error("parsePdfImportFile failed", {
+      bytesLength: bytes.length,
+      error: error instanceof Error ? error.message : error
+    });
     return {
       rows: [],
       headers: [],
