@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Wallet2 } from "lucide-react";
+import { AlertTriangle, Info, Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
@@ -23,6 +23,7 @@ import {
   type CreditHealthLike
 } from "@/lib/accounts/credit-attention";
 import { pickResumenMensajes } from "@/lib/resumen/resumen-messages";
+import { generateGlobalAlerts } from "@/lib/alerts/global-alerts";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 import type { FinancialHealthResponse } from "@/shared/types/financial-health";
 import type { FinancialInsightsResponse } from "@/shared/types/financial-insights";
@@ -459,6 +460,16 @@ export function InicioClient() {
     payablesPendingTotal,
     topCreditAttention
   ]);
+
+  const globalAlerts = useMemo(() => {
+    return generateGlobalAlerts({
+      dashboard: snapshot,
+      financialHealth,
+      creditHealth: sortedCreditAttention,
+      debts: debtsSnapshot,
+      payables: payablesSnapshot
+    }).slice(0, 5);
+  }, [debtsSnapshot, financialHealth, payablesSnapshot, snapshot, sortedCreditAttention]);
 
   const selectedDayAmount = useMemo(() => {
     const dailyMovements = movements.filter((item) => item.date.startsWith(selectedDate));
@@ -946,6 +957,73 @@ export function InicioClient() {
           </div>
         </SurfaceCard>
       </div>
+
+      {globalAlerts.length ? (
+        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Alertas importantes
+              </p>
+              <p className="mt-1 text-base font-semibold text-slate-900">Lo que deberías revisar hoy</p>
+              <p className="mt-1 hidden text-sm text-slate-600 sm:block">
+                3 a 5 señales clave para mantener el control.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
+              {globalAlerts.length} alerta{globalAlerts.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {globalAlerts.map((a) => {
+              const tone =
+                a.tone === "critical"
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : a.tone === "attention"
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : a.tone === "positive"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border-slate-200 bg-slate-50 text-slate-700";
+              const glyph = a.tone === "positive" ? <Info className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />;
+
+              return (
+                <div
+                  key={a.id}
+                  className="interactive-lift flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3.5 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}>
+                        {glyph}
+                        {a.tone === "critical"
+                          ? "Crítico"
+                          : a.tone === "attention"
+                            ? "Atención"
+                            : a.tone === "positive"
+                              ? "Bien"
+                              : "Info"}
+                      </span>
+                      <p className="text-sm font-semibold text-slate-900">{a.title}</p>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{a.description}</p>
+                  </div>
+
+                  {a.action ? (
+                    <button
+                      type="button"
+                      className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                      onClick={() => (window.location.href = a.action!.href)}
+                    >
+                      {a.action.label}
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </SurfaceCard>
+      ) : null}
 
       {creditHealthLoading ? (
         <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
