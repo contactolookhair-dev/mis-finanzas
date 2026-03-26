@@ -19,27 +19,30 @@ function normalizeImportType(value?: string) {
 }
 
 function getFriendlyPreviewError(message?: string) {
+  const fallback =
+    "No pudimos leer este PDF con la configuración actual. Intenta nuevamente o revisa la cuenta seleccionada.";
+
   if (!message) {
-    return "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente.";
+    return fallback;
   }
 
   if (
     message.includes("did not match the expected pattern") ||
     message.includes("expected pattern")
   ) {
-    return "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente.";
+    return fallback;
   }
 
-  return "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente.";
+  return fallback;
 }
 
 export async function POST(request: NextRequest) {
-  const access = await requireRoutePermission(request, "transactions:import");
-  if (!access.ok) {
-    return access.response;
-  }
-
   try {
+    const access = await requireRoutePermission(request, "transactions:import");
+    if (!access.ok) {
+      return access.response;
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     const selectedTemplateId = formData.get("templateId");
@@ -63,7 +66,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           error: "preview_failed",
-          message: "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente."
+          message: getFriendlyPreviewError()
         },
         { status: 200 }
       );
