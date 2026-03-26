@@ -40,7 +40,15 @@ export async function POST(request: NextRequest) {
   try {
     const access = await requireRoutePermission(request, "transactions:import");
     if (!access.ok) {
-      return access.response;
+      console.warn("imports preview access denied or missing context");
+      return NextResponse.json(
+        {
+          success: false,
+          error: "preview_failed",
+          message: getFriendlyPreviewError()
+        },
+        { status: 200 }
+      );
     }
 
     const formData = await request.formData();

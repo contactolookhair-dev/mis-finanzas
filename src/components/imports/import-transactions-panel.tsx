@@ -336,13 +336,32 @@ export function ImportTransactionsPanel(props: {
 
       const response = await fetch("/api/imports/preview", {
         method: "POST",
+        headers: {
+          Accept: "application/json"
+        },
         body: formData
       });
-      const payload = (await response.json()) as PreviewResponse;
 
-      if (!response.ok || payload.success === false) {
+      const rawBody = await response.text();
+      let payload: PreviewResponse | null = null;
+      try {
+        payload = rawBody ? (JSON.parse(rawBody) as PreviewResponse) : null;
+      } catch (parseError) {
+        console.error("import preview non-json response", {
+          status: response.status,
+          statusText: response.statusText,
+          contentType: response.headers.get("content-type"),
+          bodyStart: rawBody.slice(0, 120),
+          parseError: parseError instanceof Error ? parseError.message : parseError
+        });
         throw new Error(
-          getFriendlyPreviewError(payload.message ?? "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente.")
+          "No pudimos leer este PDF con la configuración actual. Intenta nuevamente o revisa la cuenta seleccionada."
+        );
+      }
+
+      if (!payload || !response.ok || payload.success === false) {
+        throw new Error(
+          getFriendlyPreviewError(payload?.message ?? "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente.")
         );
       }
 
