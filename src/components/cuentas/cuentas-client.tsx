@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
@@ -68,6 +68,17 @@ type AccountFormState = {
 
 type AccountsPayload = {
   items: AccountItem[];
+};
+
+type CreditHealthItem = {
+  accountId: string;
+  name: string;
+  bank: string | null;
+  periodLabel: string;
+  utilizationPct: number | null;
+  importBatchId: string;
+  badges: Array<{ key: string; label: string; tone: "alert" | "attention" | "positive" | "info" }>;
+  priority: number;
 };
 
 const typeLabel: Record<AccountItem["type"], string> = {
@@ -1361,6 +1372,8 @@ export function CuentasClient() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [creditHealth, setCreditHealth] = useState<CreditHealthItem[]>([]);
+  const [creditHealthLoading, setCreditHealthLoading] = useState(false);
   const [form, setForm] = useState<AccountFormState>({
     name: "",
     bank: "",
@@ -1378,6 +1391,7 @@ export function CuentasClient() {
   const [isUpsertOpen, setIsUpsertOpen] = useState(false);
   const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
+  const [showAllCreditAttention, setShowAllCreditAttention] = useState(false);
 
   const sortedAccounts = useMemo(() => {
     return [...accounts].sort((a, b) => {
@@ -1391,6 +1405,8 @@ export function CuentasClient() {
     () => (detailAccountId ? accounts.find((account) => account.id === detailAccountId) ?? null : null),
     [accounts, detailAccountId]
   );
+
+  const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
 
   const resetForm = () => {
     setForm({
@@ -1455,7 +1471,7 @@ export function CuentasClient() {
     setTransactionModalOpen(true);
   };
 
-  async function loadAccounts() {
+  const loadAccounts = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -1468,11 +1484,27 @@ export function CuentasClient() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  const loadCreditHealth = useCallback(async () => {
+    try {
+      setCreditHealthLoading(true);
+      const response = await fetch("/api/accounts/credit/health", { cache: "no-store" });
+      if (!response.ok) throw new Error("No se pudo cargar la salud de tarjetas.");
+      const payload = (await response.json()) as { items: CreditHealthItem[] };
+      setCreditHealth(payload.items ?? []);
+    } catch {
+      // Non-blocking; keep the Accounts screen functional.
+      setCreditHealth([]);
+    } finally {
+      setCreditHealthLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadAccounts();
-  }, []);
+    void loadCreditHealth();
+  }, [loadAccounts, loadCreditHealth]);
 
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1552,6 +1584,117 @@ export function CuentasClient() {
           </div>
         }
       />
+
+      {creditHealthLoading ? (
+        <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tarjetas</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">Revisando salud de tarjetas...</p>
+          </div>
+          <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-400" />
+          </div>
+        </SurfaceCard>
+      ) : creditHealth.length > 0 ? (
+        <SurfaceCard variant="soft" padding="sm" className="space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Tarjetas que requieren atencion
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">
+                Revisa rapidamente las tarjetas con senales importantes.
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Basado en tu ultimo estado importado por tarjeta.
+              </p>
+            </div>
+            {creditHealth.length > 5 ? (
+              <button
+                type="button"
+                onClick={() => setShowAllCreditAttention((v) => !v)}
+                className="tap-feedback rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+              >
+                {showAllCreditAttention ? "Mostrar menos" : "Mostrar mas"}
+              </button>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            {(showAllCreditAttention ? creditHealth : creditHealth.slice(0, 5)).map((item) => {
+              const account = accountById.get(item.accountId);
+              const visual = account ? resolveAccountVisual(account) : null;
+              const Icon = visual?.icon ?? CreditCard;
+              const accentColor = account ? normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type] : "#0f172a";
+              const accentBackground = hexToRgba(accentColor, 0.14);
+
+              return (
+                <div
+                  key={item.accountId}
+                  className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2"
+                >
+                  <button
+                    type="button"
+                    className="tap-feedback flex min-w-0 items-start gap-3 text-left"
+                    onClick={() => setDetailAccountId(item.accountId)}
+                  >
+                    <div
+                      className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border"
+                      style={{ borderColor: accentColor, backgroundColor: accentBackground }}
+                    >
+                      {account?.icon ? (
+                        <span className="text-xl leading-none">{account.icon}</span>
+                      ) : (
+                        <Icon className="h-5 w-5 text-slate-900" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">
+                        {item.name}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {item.bank ?? visual?.label ?? "Tarjeta"} · {item.periodLabel}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {item.utilizationPct !== null ? (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                            Cupo {item.utilizationPct}%
+                          </span>
+                        ) : null}
+                        {item.badges.slice(0, 4).map((b) => {
+                          const tone =
+                            b.tone === "alert"
+                              ? "border-rose-200 bg-rose-50 text-rose-700"
+                              : b.tone === "attention"
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : b.tone === "positive"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "border-slate-200 bg-slate-50 text-slate-700";
+                          return (
+                            <span
+                              key={b.key}
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${tone}`}
+                            >
+                              {b.label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDetailAccountId(item.accountId)}
+                    className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                  >
+                    Ver
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </SurfaceCard>
+      ) : null}
 
       {success ? (
         <SurfaceCard
