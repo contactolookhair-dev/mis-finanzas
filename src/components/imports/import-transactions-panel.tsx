@@ -22,6 +22,20 @@ type PreviewResponse = {
   parser: ImportParserKind;
   supported: boolean;
   warnings: string[];
+  pdfMeta?: unknown;
+  pdfAccountSuggestion?: null | {
+    mode: "matched" | "missing" | "ambiguous";
+    accountId?: string;
+    suggestedCreate?: {
+      name: string;
+      bank: string;
+      type: "CREDITO";
+      creditLimit?: number | null;
+      closingDay?: number | null;
+      paymentDay?: number | null;
+    };
+    candidates?: Array<{ id: string; name: string; institution?: string | null }>;
+  };
   appliedTemplate: {
     id: string;
     name: string;
@@ -115,6 +129,8 @@ export function ImportTransactionsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [commitSummary, setCommitSummary] = useState<CommitSummary | null>(null);
+  const [creatingSuggestedAccount, setCreatingSuggestedAccount] = useState(false);
+  const [selectedPdfAccountId, setSelectedPdfAccountId] = useState("");
 
   useEffect(() => {
     async function loadSession() {
@@ -145,6 +161,9 @@ export function ImportTransactionsPanel() {
     if (!preview) return new Map<string, ReferenceOption>();
     return new Map(preview.references.accounts.map((account) => [account.id, account]));
   }, [preview]);
+
+  const pdfMeta = useMemo(() => (preview?.pdfMeta && typeof preview.pdfMeta === "object" ? (preview.pdfMeta as Record<string, unknown>) : null), [preview]);
+  const pdfSuggestion = preview?.pdfAccountSuggestion ?? null;
 
   const debtorNameOptions = useMemo(() => {
     const names = rows
@@ -247,11 +266,49 @@ export function ImportTransactionsPanel() {
       setPreview(payload);
       setSelectedTemplateId(payload.appliedTemplate?.id ?? "");
       setRows(payload.rows);
+      setSelectedPdfAccountId(payload.pdfAccountSuggestion?.accountId ?? "");
     } catch (previewError) {
       setError(previewError instanceof Error ? previewError.message : "Error al generar vista previa.");
     } finally {
       setLoadingPreview(false);
     }
+  }
+
+  async function handleCreateSuggestedAccount() {
+    if (!preview?.pdfAccountSuggestion?.suggestedCreate) return;
+    try {
+      setCreatingSuggestedAccount(true);
+      setError(null);
+      setSuccess(null);
+
+      const response = await fetch("/api/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: preview.pdfAccountSuggestion.suggestedCreate.name,
+          bank: preview.pdfAccountSuggestion.suggestedCreate.bank,
+          type: preview.pdfAccountSuggestion.suggestedCreate.type,
+          creditLimit: preview.pdfAccountSuggestion.suggestedCreate.creditLimit ?? undefined,
+          closingDay: preview.pdfAccountSuggestion.suggestedCreate.closingDay ?? undefined,
+          paymentDay: preview.pdfAccountSuggestion.suggestedCreate.paymentDay ?? undefined
+        })
+      });
+      const payload = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(payload.message ?? "No se pudo crear la cuenta sugerida.");
+      }
+
+      setSuccess("Cuenta creada. Reinterpretando el PDF...");
+      await handlePreview();
+    } catch (accountError) {
+      setError(accountError instanceof Error ? accountError.message : "No se pudo crear la cuenta sugerida.");
+    } finally {
+      setCreatingSuggestedAccount(false);
+    }
+  }
+
+  function applyPdfAccountToAllRows(accountId: string) {
+    setRows((current) => current.map((row) => ({ ...row, accountId })));
   }
 
   async function handleCommit() {
@@ -418,6 +475,83 @@ export function ImportTransactionsPanel() {
                   ? `${preview.appliedTemplate.sourceType === "workspace" ? "Workspace" : "Sistema"} · ${preview.appliedTemplate.institution} · ${preview.appliedTemplate.name}`
                   : "Modo genérico"}
               </p>
+            </div>
+          </div>
+        ) : null}
+
+        {preview && pdfMeta ? (
+          <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">PDF detectado</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {typeof pdfMeta.institution === "string" ? pdfMeta.institution : "Estado de cuenta"}
+                  {typeof pdfMeta.brand === "string" ? ` · ${pdfMeta.brand}` : null}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {typeof pdfMeta.cardLabel === "string" ? pdfMeta.cardLabel : "Tarjeta"}{" "}
+                  {typeof pdfMeta.billingPeriodStart === "string" && typeof pdfMeta.billingPeriodEnd === "string"
+                    ? `· Período ${pdfMeta.billingPeriodStart} → ${pdfMeta.billingPeriodEnd}`
+                    : null}
+                </p>
+              </div>
+              {pdfSuggestion ? (
+                <div className="min-w-[240px]">
+                  {pdfSuggestion.mode === "matched" && pdfSuggestion.accountId ? (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                      Cuenta sugerida:{" "}
+                      <span className="font-semibold">
+                        {accountById.get(pdfSuggestion.accountId)?.name ?? "Tarjeta detectada"}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {pdfSuggestion.mode === "ambiguous" && pdfSuggestion.candidates?.length ? (
+                    <div className="space-y-2">
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        Hay varias tarjetas Falabella/CMR. Elige una para asociar la importación.
+                      </div>
+                      <Select
+                        value={selectedPdfAccountId}
+                        onChange={(event) => {
+                          const next = event.target.value;
+                          setSelectedPdfAccountId(next);
+                          if (next) applyPdfAccountToAllRows(next);
+                        }}
+                      >
+                        <option value="">Seleccionar tarjeta</option>
+                        {pdfSuggestion.candidates.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  ) : null}
+
+                  {pdfSuggestion.mode === "missing" && pdfSuggestion.suggestedCreate ? (
+                    <div className="space-y-2">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                        No encontramos una tarjeta Falabella/CMR en tu lista. Puedes crearla ahora para que quede asociada automáticamente.
+                      </div>
+                      <Button
+                        variant="secondary"
+                        onClick={handleCreateSuggestedAccount}
+                        disabled={!canImport || creatingSuggestedAccount}
+                      >
+                        {creatingSuggestedAccount ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Creando...
+                          </>
+                        ) : (
+                          "Crear tarjeta sugerida"
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}

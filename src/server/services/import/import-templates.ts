@@ -293,6 +293,34 @@ export const systemImportTemplates: ImportTemplate[] = [
     hasBalance: true
   },
   {
+    id: "falabella-cmr-pdf",
+    workspaceId: null,
+    name: "Banco Falabella / CMR (PDF Estado de cuenta)",
+    institution: "Banco Falabella",
+    parser: "pdf",
+    sourceType: "system",
+    isSystem: true,
+    isActive: true,
+    detectionPriority: 120,
+    filenameHints: aliases("falabella", "cmr", "estado de cuenta"),
+    headerHints: aliases("cmr", "banco falabella", "estado de cuenta", "pagos y abonos", "compras nacionales"),
+    columns: {
+      date: aliases("fecha"),
+      description: aliases("descripcion", "descripción", "glosa", "detalle"),
+      amount: [],
+      debit: aliases("cargo"),
+      credit: aliases("abono"),
+      balance: aliases("saldo"),
+      sourceAccountName: aliases("tarjeta", "cuenta"),
+      type: []
+    },
+    amountMode: "SEPARATE_DEBIT_CREDIT",
+    dateFormats: ["dd/MM/yyyy"],
+    hasBalance: false,
+    notes:
+      "Parser PDF especializado para estados de cuenta CMR/Falabella. Separa cargos (compras/cuotas) y abonos (pagos/devoluciones) y sugiere la tarjeta detectada."
+  },
+  {
     id: "scotiabank-chile-cartola",
     workspaceId: null,
     name: "Scotiabank Chile",

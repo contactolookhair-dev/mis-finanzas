@@ -8,6 +8,7 @@ export type ParsedImportFile = {
   headers: string[];
   warnings: string[];
   supported: boolean;
+  meta?: unknown;
 };
 
 function getFirstPopulatedSheet(workbook: XLSX.WorkBook) {
@@ -56,7 +57,8 @@ export async function parseImportFile(input: {
       rows: parsedPdf.rows,
       headers: parsedPdf.headers,
       warnings: parsedPdf.warnings,
-      supported: parsedPdf.supported
+      supported: parsedPdf.supported,
+      meta: parsedPdf.meta
     };
   }
 

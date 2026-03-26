@@ -37,7 +37,12 @@ export async function getImportReferenceData(workspaceId: string) {
   return {
     categories: categories.map((item) => ({ id: item.id, name: item.name, type: item.type })),
     businessUnits: businessUnits.map((item) => ({ id: item.id, name: item.name, type: item.type })),
-    accounts: accounts.map((item) => ({ id: item.id, name: item.name, institution: item.institution }))
+    accounts: accounts.map((item) => ({
+      id: item.id,
+      name: item.name,
+      institution: item.institution,
+      type: item.type
+    }))
   };
 }
 
@@ -101,6 +106,40 @@ export async function previewImportFile(input: {
     references.accounts.map((account) => [normalizeLookupKey(account.name), account.id])
   );
 
+  const pdfStatement =
+    parsed.parser === "pdf" &&
+    parsed.meta &&
+    typeof parsed.meta === "object" &&
+    (parsed.meta as { kind?: unknown }).kind === "falabella-cmr"
+      ? (parsed.meta as { kind: "falabella-cmr"; statement: unknown }).statement
+      : null;
+
+  // If the PDF is a Falabella/CMR statement, try to auto-map to an existing credit card account.
+  if (pdfStatement && typeof pdfStatement === "object") {
+    const statement = pdfStatement as Record<string, unknown>;
+    const cardLabel = typeof statement.cardLabel === "string" ? statement.cardLabel : null;
+    if (cardLabel) {
+      const normalizedLabel = normalizeLookupKey(cardLabel);
+      // Map the detected card label to the most likely Falabella credit card account.
+      const candidates = references.accounts.filter((account) => {
+        const institution = typeof account.institution === "string" ? account.institution : "";
+        const normalizedInstitution = normalizeLookupKey(institution);
+        const normalizedName = normalizeLookupKey(account.name);
+        const isCredit = String(account.type) === "TARJETA_CREDITO";
+        return (
+          isCredit &&
+          (normalizedInstitution.includes("falabella") ||
+            normalizedName.includes("falabella") ||
+            normalizedName.includes("cmr"))
+        );
+      });
+
+      if (candidates.length === 1) {
+        accountLookup.set(normalizedLabel, candidates[0]!.id);
+      }
+    }
+  }
+
   const normalizedRows = normalizeImportedRows({
     rows: parsed.rows,
     accountLookup,
@@ -126,10 +165,83 @@ export async function previewImportFile(input: {
     invalid: rows.filter((row) => row.issues.length > 0).length
   };
 
+  const pdfMeta =
+    parsed.parser === "pdf" &&
+    parsed.meta &&
+    typeof parsed.meta === "object" &&
+    (parsed.meta as { kind?: unknown }).kind === "falabella-cmr"
+      ? (parsed.meta as { kind: "falabella-cmr"; statement: unknown }).statement
+      : null;
+
+  let pdfAccountSuggestion: null | {
+    mode: "matched" | "missing" | "ambiguous";
+    accountId?: string;
+    suggestedCreate?: {
+      name: string;
+      bank: string;
+      type: "CREDITO";
+      creditLimit?: number | null;
+      closingDay?: number | null;
+      paymentDay?: number | null;
+    };
+    candidates?: Array<{ id: string; name: string; institution?: string | null }>;
+  } = null;
+
+  if (pdfMeta && typeof pdfMeta === "object") {
+    const statement = pdfMeta as Record<string, unknown>;
+    const cardLabel = typeof statement.cardLabel === "string" ? statement.cardLabel : "Tarjeta CMR Falabella";
+    const creditLimit =
+      typeof statement.creditLimit === "number" && Number.isFinite(statement.creditLimit)
+        ? statement.creditLimit
+        : null;
+    const closingDay = typeof statement.closingDate === "string"
+      ? Number(statement.closingDate.slice(-2))
+      : null;
+    const paymentDay = typeof statement.paymentDate === "string"
+      ? Number(statement.paymentDate.slice(-2))
+      : null;
+
+    const candidates = references.accounts.filter((account) => {
+      const institution = typeof account.institution === "string" ? account.institution : "";
+      const normalizedInstitution = normalizeLookupKey(institution);
+      const normalizedName = normalizeLookupKey(account.name);
+      const isCredit = String(account.type) === "TARJETA_CREDITO";
+      return (
+        isCredit &&
+        (normalizedInstitution.includes("falabella") ||
+          normalizedName.includes("falabella") ||
+          normalizedName.includes("cmr"))
+      );
+    });
+
+    if (candidates.length === 1) {
+      pdfAccountSuggestion = { mode: "matched", accountId: candidates[0]!.id };
+    } else if (candidates.length > 1) {
+      pdfAccountSuggestion = {
+        mode: "ambiguous",
+        candidates: candidates.map((c) => ({ id: c.id, name: c.name, institution: c.institution ?? null }))
+      };
+    } else {
+      pdfAccountSuggestion = {
+        mode: "missing",
+        suggestedCreate: {
+          name: cardLabel,
+          bank: "Banco Falabella",
+          type: "CREDITO",
+          creditLimit,
+          closingDay: Number.isFinite(closingDay) ? closingDay : null,
+          paymentDay: Number.isFinite(paymentDay) ? paymentDay : null
+        }
+      };
+    }
+  }
+
   return {
     parser: parsed.parser,
     supported: parsed.supported,
     warnings: parsed.warnings,
+    pdfMeta,
+    pdfAccountSuggestion,
     appliedTemplate: templateDetection.detectedTemplate
       ? {
           id: templateDetection.detectedTemplate.id,

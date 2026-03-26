@@ -1,4 +1,5 @@
 import { PDFParse } from "pdf-parse";
+import { tryParseFalabellaCmrPdf, type FalabellaCmrStatementMeta } from "@/server/services/import/pdf-templates/falabella-cmr";
 
 type RawRow = Record<string, unknown>;
 
@@ -7,6 +8,10 @@ type ParsedPdfImport = {
   headers: string[];
   warnings: string[];
   supported: boolean;
+  meta?: {
+    kind: "falabella-cmr";
+    statement: FalabellaCmrStatementMeta;
+  };
 };
 
 type HeaderProfile = {
@@ -236,6 +241,28 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
           "No se detectó texto seleccionable dentro del PDF. Prueba con CSV/XLSX o un PDF exportado con texto."
         ],
         supported: false
+      };
+    }
+
+    const falabellaCmr = tryParseFalabellaCmrPdf(lines);
+    if (falabellaCmr) {
+      return {
+        rows: falabellaCmr.rows,
+        // These "headers" are used for template detection (not for mapping).
+        headers: [
+          "fecha",
+          "descripcion",
+          "cargo",
+          "abono",
+          "tarjeta",
+          ...falabellaCmr.headersForDetection
+        ],
+        warnings: falabellaCmr.warnings,
+        supported: falabellaCmr.rows.length > 0,
+        meta: {
+          kind: "falabella-cmr",
+          statement: falabellaCmr.meta
+        }
       };
     }
 
