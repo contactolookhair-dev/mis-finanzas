@@ -1,7 +1,3 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { requireRoutePermission } from "@/server/permissions/route-permissions";
-import { previewImportFile } from "@/server/services/import-service";
-
 function normalizeOptionalString(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : undefined;
 }
@@ -36,19 +32,33 @@ function getFriendlyPreviewError(message?: string) {
   return fallback;
 }
 
-export async function POST(request: NextRequest) {
+function jsonPreviewError(message?: string) {
+  return Response.json(
+    {
+      success: false,
+      error: "preview_failed",
+      message: getFriendlyPreviewError(message)
+    },
+    { status: 200 }
+  );
+}
+
+export async function POST(request: Request) {
   try {
-    const access = await requireRoutePermission(request, "transactions:import");
-    if (!access.ok) {
-      console.warn("imports preview access denied or missing context");
-      return NextResponse.json(
-        {
-          success: false,
-          error: "preview_failed",
-          message: getFriendlyPreviewError()
-        },
-        { status: 200 }
-      );
+    const [{ getWorkspaceContextFromRequest }, { hasPermission }, { previewImportFile }] = await Promise.all([
+      import("@/server/tenant/workspace-context"),
+      import("@/server/permissions/permissions"),
+      import("@/server/services/import-service")
+    ]);
+
+    const context = await getWorkspaceContextFromRequest(request as never);
+    if (!context.workspaceId || !context.userKey || !context.role) {
+      console.warn("imports preview auth context missing");
+      return jsonPreviewError();
+    }
+    if (!hasPermission(context.role, "transactions:import")) {
+      console.warn("imports preview permission denied", { role: context.role });
+      return jsonPreviewError();
     }
 
     const formData = await request.formData();
@@ -59,7 +69,7 @@ export async function POST(request: NextRequest) {
     const preferredAccountId = normalizeOptionalString(formData.get("accountId"));
 
     console.log("imports preview received", {
-      workspaceId: access.context.workspaceId,
+      workspaceId: context.workspaceId,
       fileName: file instanceof File ? file.name : null,
       mimeType: file instanceof File ? file.type : null,
       importTypeRaw,
@@ -70,14 +80,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!(file instanceof File)) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "preview_failed",
-          message: getFriendlyPreviewError()
-        },
-        { status: 200 }
-      );
+      return jsonPreviewError();
     }
 
     if (importTypeRaw && !importType) {
@@ -97,7 +100,7 @@ export async function POST(request: NextRequest) {
     });
 
     const preview = await previewImportFile({
-      workspaceId: access.context.workspaceId,
+      workspaceId: context.workspaceId,
       fileName: file.name,
       mimeType: file.type,
       bytes,
@@ -106,7 +109,7 @@ export async function POST(request: NextRequest) {
       preferredImportType: importType
     });
 
-    return NextResponse.json({
+    return Response.json({
       success: true,
       ...preview
     });
@@ -115,14 +118,6 @@ export async function POST(request: NextRequest) {
       error,
       message: error instanceof Error ? error.message : "unknown"
     });
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: "preview_failed",
-        message: error instanceof Error ? getFriendlyPreviewError(error.message) : getFriendlyPreviewError()
-      },
-      { status: 200 }
-    );
+    return jsonPreviewError(error instanceof Error ? error.message : undefined);
   }
 }
