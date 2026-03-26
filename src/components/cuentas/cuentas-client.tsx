@@ -506,45 +506,39 @@ function AccountDetailModal({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const [latestImportedStatement, setLatestImportedStatement] = useState<{
-    batchId: string;
-    createdAt: string;
-    completedAt: string | null;
+  type StatementItem = {
+    importBatchId: string;
+    importedAt: string;
+    detectedBank: string;
+    statementKind: string;
     summary: {
-      kind: string;
-      accountId: string;
-      fileName: string;
-      periodStart: string | null;
-      periodEnd: string | null;
+      periodLabel: string;
       closingDate: string | null;
-      paymentDate: string | null;
+      dueDate: string | null;
       totalBilled: number | null;
-      minimumDue: number | null;
+      minimumPayment: number | null;
       creditLimit: number | null;
-      creditUsed: number | null;
-      creditAvailable: number | null;
-      parserConfidence: number | null;
-      missingFields: string[];
-      warnings: string[];
-      totals: {
-        movementCount: number;
-        dubiousCount: number;
-        purchases: number;
-        installmentPurchases: number;
-        payments: number;
-        refunds: number;
-        fees: number;
-        interests: number;
-        cashAdvances: number;
-        taxes: number;
-        insurance: number;
-        unknownCharges: number;
-        unknownCredits: number;
-      };
+      usedLimit: number | null;
+      availableLimit: number | null;
     };
-  } | null>(null);
-  const [latestImportedStatementLoading, setLatestImportedStatementLoading] = useState(false);
-  const [latestImportedStatementError, setLatestImportedStatementError] = useState<string | null>(null);
+    totals: {
+      purchases: number;
+      payments: number;
+      interest: number;
+      fees: number;
+      cashAdvances: number;
+      insurance: number;
+      movementCount: number;
+      dubiousCount: number;
+    };
+    warnings: string[];
+    confidence: number | null;
+  };
+
+  const [statementHistory, setStatementHistory] = useState<StatementItem[]>([]);
+  const [selectedStatementId, setSelectedStatementId] = useState<string>("");
+  const [statementHistoryLoading, setStatementHistoryLoading] = useState(false);
+  const [statementHistoryError, setStatementHistoryError] = useState<string | null>(null);
 
   const [statementItems, setStatementItems] = useState<
     {
@@ -587,32 +581,59 @@ function AccountDetailModal({
 
   useEffect(() => {
     let active = true;
-    async function loadLatestImportedStatement() {
+    async function loadStatementHistory() {
       if (!open || !account || account.type !== "CREDITO") {
-        setLatestImportedStatement(null);
+        setStatementHistory([]);
+        setSelectedStatementId("");
         return;
       }
-      setLatestImportedStatementLoading(true);
-      setLatestImportedStatementError(null);
+      setStatementHistoryLoading(true);
+      setStatementHistoryError(null);
       try {
-        const response = await fetch(`/api/accounts/${account.id}/statements/latest`, { cache: "no-store" });
-        if (!response.ok) throw new Error("No se pudo cargar el último estado importado.");
-        const payload = (await response.json()) as { latest: typeof latestImportedStatement };
+        const response = await fetch(`/api/accounts/${account.id}/statements`, { cache: "no-store" });
+        if (!response.ok) throw new Error("No se pudo cargar el historial de estados.");
+        const payload = (await response.json()) as { items: StatementItem[] };
         if (!active) return;
-        setLatestImportedStatement(payload.latest ?? null);
+        const items = payload.items ?? [];
+        setStatementHistory(items);
+        if (!selectedStatementId && items.length > 0) {
+          setSelectedStatementId(items[0]!.importBatchId);
+        }
       } catch (error) {
         if (!active) return;
-        setLatestImportedStatementError(error instanceof Error ? error.message : "No se pudo cargar el último estado importado.");
+        setStatementHistoryError(
+          error instanceof Error ? error.message : "No se pudo cargar el historial de estados."
+        );
       } finally {
-        if (active) setLatestImportedStatementLoading(false);
+        if (active) setStatementHistoryLoading(false);
       }
     }
 
-    void loadLatestImportedStatement();
+    void loadStatementHistory();
     return () => {
       active = false;
     };
-  }, [open, account]);
+  }, [open, account, selectedStatementId]);
+
+  const selectedStatement = useMemo(() => {
+    if (!selectedStatementId) return statementHistory[0] ?? null;
+    return statementHistory.find((item) => item.importBatchId === selectedStatementId) ?? null;
+  }, [statementHistory, selectedStatementId]);
+
+  const previousStatement = useMemo(() => {
+    if (!selectedStatement) return null;
+    const idx = statementHistory.findIndex((item) => item.importBatchId === selectedStatement.importBatchId);
+    if (idx < 0) return null;
+    return statementHistory[idx + 1] ?? null;
+  }, [statementHistory, selectedStatement]);
+
+  function formatDelta(current: number | null, prev: number | null) {
+    if (current === null || prev === null) return null;
+    const delta = current - prev;
+    if (!Number.isFinite(delta) || Math.abs(delta) < 0.01) return { delta: 0, pct: 0 };
+    const pct = prev === 0 ? null : delta / prev;
+    return { delta, pct };
+  }
 
   useEffect(() => {
     let active = true;
@@ -790,17 +811,32 @@ function AccountDetailModal({
             <SurfaceCard variant="soft" padding="sm" className="mt-4 space-y-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Estado de cuenta inteligente</p>
-                <h4 className="mt-1 text-sm font-semibold text-slate-900">Último estado importado</h4>
-                <p className="mt-1 text-xs text-slate-500">
-                  Importa un PDF de tu estado de cuenta para ver aquí el resumen del período.
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h4 className="mt-1 text-sm font-semibold text-slate-900">Historial de estados</h4>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Selecciona un período importado para ver su resumen y compararlo con el anterior.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {statementHistory.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStatementId(statementHistory[0]!.importBatchId)}
+                        className="tap-feedback rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                      >
+                        Ver último
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               </div>
 
-              {latestImportedStatementLoading ? (
-                <p className="text-xs text-slate-500">Cargando último estado importado...</p>
-              ) : latestImportedStatementError ? (
-                <p className="text-xs text-rose-600">{latestImportedStatementError}</p>
-              ) : !latestImportedStatement ? (
+              {statementHistoryLoading ? (
+                <p className="text-xs text-slate-500">Cargando historial...</p>
+              ) : statementHistoryError ? (
+                <p className="text-xs text-rose-600">{statementHistoryError}</p>
+              ) : statementHistory.length === 0 ? (
                 <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                   <p className="text-xs text-slate-600">
                     Aún no has importado un estado de cuenta para esta tarjeta.
@@ -811,28 +847,46 @@ function AccountDetailModal({
                 </div>
               ) : (
                 <>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {statementHistory.slice(0, 12).map((item) => {
+                      const active = item.importBatchId === (selectedStatement?.importBatchId ?? statementHistory[0]!.importBatchId);
+                      return (
+                        <button
+                          key={item.importBatchId}
+                          type="button"
+                          onClick={() => setSelectedStatementId(item.importBatchId)}
+                          className={`tap-feedback shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+                            active
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-200 bg-white/85 text-slate-700"
+                          }`}
+                        >
+                          {item.summary.periodLabel}
+                        </button>
+                      );
+                    })}
+                  </div>
+
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                     <div className="min-w-0">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Período facturado</p>
                       <p className="mt-1 truncate text-sm font-semibold text-slate-900">
-                        {latestImportedStatement.summary.periodStart && latestImportedStatement.summary.periodEnd
-                          ? `${latestImportedStatement.summary.periodStart} → ${latestImportedStatement.summary.periodEnd}`
-                          : "—"}
+                        {selectedStatement?.summary.periodLabel ?? "—"}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        {latestImportedStatement.summary.parserConfidence !== null
-                          ? `Confianza ${Math.round(latestImportedStatement.summary.parserConfidence * 100)}%`
+                        {selectedStatement?.confidence !== null && selectedStatement?.confidence !== undefined
+                          ? `Confianza ${Math.round(selectedStatement.confidence * 100)}%`
                           : "Confianza —"}
                         {" · "}
-                        {latestImportedStatement.summary.totals.dubiousCount > 0
-                          ? `${latestImportedStatement.summary.totals.dubiousCount} dudosas`
+                        {selectedStatement && selectedStatement.totals.dubiousCount > 0
+                          ? `${selectedStatement.totals.dubiousCount} dudosas`
                           : "Sin dudosas"}
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Movimientos</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
-                        {latestImportedStatement.summary.totals.movementCount}
+                        {selectedStatement?.totals.movementCount ?? 0}
                       </p>
                     </div>
                   </div>
@@ -841,26 +895,58 @@ function AccountDetailModal({
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Total facturado</p>
                       <p className="mt-1 text-lg font-semibold text-slate-900">
-                        {latestImportedStatement.summary.totalBilled === null ? "—" : formatCurrency(latestImportedStatement.summary.totalBilled)}
+                        {selectedStatement?.summary.totalBilled === null || selectedStatement?.summary.totalBilled === undefined
+                          ? "—"
+                          : formatCurrency(selectedStatement.summary.totalBilled)}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
                         Pago mínimo:{" "}
-                        {latestImportedStatement.summary.minimumDue === null ? "—" : formatCurrency(latestImportedStatement.summary.minimumDue)}
+                        {selectedStatement?.summary.minimumPayment === null || selectedStatement?.summary.minimumPayment === undefined
+                          ? "—"
+                          : formatCurrency(selectedStatement.summary.minimumPayment)}
                       </p>
+                      {previousStatement ? (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {(() => {
+                            const d = formatDelta(selectedStatement?.summary.totalBilled ?? null, previousStatement.summary.totalBilled);
+                            if (!d) return "vs anterior —";
+                            const sign = d.delta > 0 ? "+" : d.delta < 0 ? "−" : "";
+                            const pct = d.pct === null ? "" : ` (${sign}${Math.round(Math.abs(d.pct) * 100)}%)`;
+                            return `vs anterior ${sign}${formatCurrency(Math.abs(d.delta))}${pct}`;
+                          })()}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Cupo</p>
                       <p className="mt-1 text-sm font-semibold text-slate-900">
                         Disponible:{" "}
-                        {latestImportedStatement.summary.creditAvailable === null ? "—" : formatCurrency(latestImportedStatement.summary.creditAvailable)}
+                        {selectedStatement?.summary.availableLimit === null || selectedStatement?.summary.availableLimit === undefined
+                          ? "—"
+                          : formatCurrency(selectedStatement.summary.availableLimit)}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
                         Usado:{" "}
-                        {latestImportedStatement.summary.creditUsed === null ? "—" : formatCurrency(latestImportedStatement.summary.creditUsed)}
+                        {selectedStatement?.summary.usedLimit === null || selectedStatement?.summary.usedLimit === undefined
+                          ? "—"
+                          : formatCurrency(selectedStatement.summary.usedLimit)}
                         {" · "}
                         Total:{" "}
-                        {latestImportedStatement.summary.creditLimit === null ? "—" : formatCurrency(latestImportedStatement.summary.creditLimit)}
+                        {selectedStatement?.summary.creditLimit === null || selectedStatement?.summary.creditLimit === undefined
+                          ? "—"
+                          : formatCurrency(selectedStatement.summary.creditLimit)}
                       </p>
+                      {previousStatement ? (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {(() => {
+                            const d = formatDelta(selectedStatement?.summary.usedLimit ?? null, previousStatement.summary.usedLimit);
+                            if (!d) return "vs anterior —";
+                            const sign = d.delta > 0 ? "+" : d.delta < 0 ? "−" : "";
+                            const pct = d.pct === null ? "" : ` (${sign}${Math.round(Math.abs(d.pct) * 100)}%)`;
+                            return `Cupo usado vs anterior ${sign}${formatCurrency(Math.abs(d.delta))}${pct}`;
+                          })()}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -868,13 +954,13 @@ function AccountDetailModal({
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Cierre</p>
                       <p className="mt-1 text-sm font-semibold text-slate-900">
-                        {latestImportedStatement.summary.closingDate ?? "—"}
+                        {selectedStatement?.summary.closingDate ?? "—"}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pago</p>
                       <p className="mt-1 text-sm font-semibold text-slate-900">
-                        {latestImportedStatement.summary.paymentDate ?? "—"}
+                        {selectedStatement?.summary.dueDate ?? "—"}
                       </p>
                     </div>
                   </div>
@@ -883,19 +969,19 @@ function AccountDetailModal({
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Totales compras</p>
                       <p className="mt-1 text-base font-semibold text-rose-700">
-                        {formatCurrency(latestImportedStatement.summary.totals.purchases + latestImportedStatement.summary.totals.installmentPurchases)}
+                        {formatCurrency(selectedStatement?.totals.purchases ?? 0)}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        Cuotas: {formatCurrency(latestImportedStatement.summary.totals.installmentPurchases)}
+                        Movimientos: {selectedStatement?.totals.movementCount ?? 0}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Totales abonos</p>
                       <p className="mt-1 text-base font-semibold text-emerald-700">
-                        {formatCurrency(latestImportedStatement.summary.totals.payments + latestImportedStatement.summary.totals.refunds)}
+                        {formatCurrency(selectedStatement?.totals.payments ?? 0)}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        Devoluciones: {formatCurrency(latestImportedStatement.summary.totals.refunds)}
+                        Dudosas: {selectedStatement?.totals.dubiousCount ?? 0}
                       </p>
                     </div>
                   </div>
@@ -904,28 +990,39 @@ function AccountDetailModal({
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Intereses / comisiones</p>
                       <p className="mt-1 text-sm font-semibold text-slate-900">
-                        Intereses: {formatCurrency(latestImportedStatement.summary.totals.interests)}
+                        Intereses: {formatCurrency(selectedStatement?.totals.interest ?? 0)}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        Comisiones: {formatCurrency(latestImportedStatement.summary.totals.fees)}
+                        Comisiones: {formatCurrency(selectedStatement?.totals.fees ?? 0)}
                       </p>
+                      {previousStatement ? (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          {(() => {
+                            const dI = formatDelta(selectedStatement?.totals.interest ?? null, previousStatement.totals.interest);
+                            const dF = formatDelta(selectedStatement?.totals.fees ?? null, previousStatement.totals.fees);
+                            const sI = dI ? (dI.delta > 0 ? "+" : dI.delta < 0 ? "−" : "") : "";
+                            const sF = dF ? (dF.delta > 0 ? "+" : dF.delta < 0 ? "−" : "") : "";
+                            return `vs anterior int ${dI ? `${sI}${formatCurrency(Math.abs(dI.delta))}` : "—"} · com ${dF ? `${sF}${formatCurrency(Math.abs(dF.delta))}` : "—"}`;
+                          })()}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Avances / seguros</p>
                       <p className="mt-1 text-sm font-semibold text-slate-900">
-                        Avances: {formatCurrency(latestImportedStatement.summary.totals.cashAdvances)}
+                        Avances: {formatCurrency(selectedStatement?.totals.cashAdvances ?? 0)}
                       </p>
                       <p className="mt-1 text-[11px] text-slate-500">
-                        Seguros: {formatCurrency(latestImportedStatement.summary.totals.insurance)}
+                        Seguros: {formatCurrency(selectedStatement?.totals.insurance ?? 0)}
                       </p>
                     </div>
                   </div>
 
-                  {latestImportedStatement.summary.warnings.length > 0 ? (
+                  {selectedStatement && selectedStatement.warnings.length > 0 ? (
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                       <p className="font-semibold">Warnings</p>
                       <ul className="mt-1 list-disc pl-4">
-                        {latestImportedStatement.summary.warnings.slice(0, 3).map((w, idx) => (
+                        {selectedStatement.warnings.slice(0, 3).map((w, idx) => (
                           <li key={`${idx}-${w}`} className="mt-1">
                             {w}
                           </li>

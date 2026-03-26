@@ -44,10 +44,81 @@ function isStatementCandidate(value: unknown): value is Record<string, unknown> 
   return Boolean(value && typeof value === "object");
 }
 
-export async function getLatestCreditCardStatement(input: {
+function mapStatementFromBatch(input: {
+  batch: {
+    id: string;
+    createdAt: Date;
+    completedAt: Date | null;
+    fileName: string;
+    metadata: unknown;
+  };
+  accountId: string;
+}) {
+  const { batch, accountId } = input;
+  if (!isStatementCandidate(batch.metadata)) return null;
+  const meta = batch.metadata as Record<string, unknown>;
+  const statement = meta.creditCardStatement;
+  if (!isStatementCandidate(statement)) return null;
+  const s = statement as Record<string, unknown>;
+  if (typeof s.accountId !== "string" || s.accountId !== accountId) return null;
+
+  const summary: CreditCardStatementSummary = {
+    kind: typeof s.kind === "string" ? s.kind : "unknown",
+    accountId: s.accountId,
+    fileName: typeof s.fileName === "string" ? s.fileName : batch.fileName,
+    periodStart: typeof s.periodStart === "string" ? s.periodStart : null,
+    periodEnd: typeof s.periodEnd === "string" ? s.periodEnd : null,
+    closingDate: typeof s.closingDate === "string" ? s.closingDate : null,
+    paymentDate: typeof s.paymentDate === "string" ? s.paymentDate : null,
+    totalBilled: typeof s.totalBilled === "number" && Number.isFinite(s.totalBilled) ? s.totalBilled : null,
+    minimumDue: typeof s.minimumDue === "number" && Number.isFinite(s.minimumDue) ? s.minimumDue : null,
+    creditLimit: typeof s.creditLimit === "number" && Number.isFinite(s.creditLimit) ? s.creditLimit : null,
+    creditUsed: typeof s.creditUsed === "number" && Number.isFinite(s.creditUsed) ? s.creditUsed : null,
+    creditAvailable:
+      typeof s.creditAvailable === "number" && Number.isFinite(s.creditAvailable) ? s.creditAvailable : null,
+    parserConfidence:
+      typeof s.parserConfidence === "number" && Number.isFinite(s.parserConfidence) ? s.parserConfidence : null,
+    missingFields: Array.isArray(s.missingFields)
+      ? (s.missingFields as unknown[]).filter((v): v is string => typeof v === "string")
+      : [],
+    warnings: Array.isArray(s.warnings)
+      ? (s.warnings as unknown[]).filter((v): v is string => typeof v === "string")
+      : [],
+    totals: (() => {
+      const totals = isStatementCandidate(s.totals) ? (s.totals as Record<string, unknown>) : {};
+      const get = (key: string) =>
+        typeof totals[key] === "number" && Number.isFinite(totals[key]) ? (totals[key] as number) : 0;
+      return {
+        movementCount: get("movementCount"),
+        dubiousCount: get("dubiousCount"),
+        purchases: get("purchases"),
+        installmentPurchases: get("installmentPurchases"),
+        payments: get("payments"),
+        refunds: get("refunds"),
+        fees: get("fees"),
+        interests: get("interests"),
+        cashAdvances: get("cashAdvances"),
+        taxes: get("taxes"),
+        insurance: get("insurance"),
+        unknownCharges: get("unknownCharges"),
+        unknownCredits: get("unknownCredits")
+      };
+    })()
+  };
+
+  return {
+    batchId: batch.id,
+    createdAt: batch.createdAt.toISOString(),
+    completedAt: batch.completedAt ? batch.completedAt.toISOString() : null,
+    summary
+  };
+}
+
+export async function listCreditCardStatements(input: {
   workspaceId: string;
   accountId: string;
-}): Promise<CreditCardStatementLatest | null> {
+  take?: number;
+}): Promise<CreditCardStatementLatest[]> {
   const batches = await prisma.importBatch.findMany({
     where: {
       workspaceId: input.workspaceId,
@@ -55,7 +126,7 @@ export async function getLatestCreditCardStatement(input: {
       parser: "PDF"
     },
     orderBy: [{ createdAt: "desc" }],
-    take: 25,
+    take: input.take ?? 50,
     select: {
       id: true,
       createdAt: true,
@@ -65,66 +136,23 @@ export async function getLatestCreditCardStatement(input: {
     }
   });
 
+  const items: CreditCardStatementLatest[] = [];
   for (const batch of batches) {
-    if (!isStatementCandidate(batch.metadata)) continue;
-    const meta = batch.metadata as Record<string, unknown>;
-    const statement = meta.creditCardStatement;
-    if (!isStatementCandidate(statement)) continue;
-    const s = statement as Record<string, unknown>;
-    if (typeof s.accountId !== "string" || s.accountId !== input.accountId) continue;
-
-    const summary: CreditCardStatementSummary = {
-      kind: typeof s.kind === "string" ? s.kind : "unknown",
-      accountId: s.accountId,
-      fileName: typeof s.fileName === "string" ? s.fileName : batch.fileName,
-      periodStart: typeof s.periodStart === "string" ? s.periodStart : null,
-      periodEnd: typeof s.periodEnd === "string" ? s.periodEnd : null,
-      closingDate: typeof s.closingDate === "string" ? s.closingDate : null,
-      paymentDate: typeof s.paymentDate === "string" ? s.paymentDate : null,
-      totalBilled: typeof s.totalBilled === "number" && Number.isFinite(s.totalBilled) ? s.totalBilled : null,
-      minimumDue: typeof s.minimumDue === "number" && Number.isFinite(s.minimumDue) ? s.minimumDue : null,
-      creditLimit: typeof s.creditLimit === "number" && Number.isFinite(s.creditLimit) ? s.creditLimit : null,
-      creditUsed: typeof s.creditUsed === "number" && Number.isFinite(s.creditUsed) ? s.creditUsed : null,
-      creditAvailable:
-        typeof s.creditAvailable === "number" && Number.isFinite(s.creditAvailable) ? s.creditAvailable : null,
-      parserConfidence:
-        typeof s.parserConfidence === "number" && Number.isFinite(s.parserConfidence) ? s.parserConfidence : null,
-      missingFields: Array.isArray(s.missingFields)
-        ? (s.missingFields as unknown[]).filter((v): v is string => typeof v === "string")
-        : [],
-      warnings: Array.isArray(s.warnings)
-        ? (s.warnings as unknown[]).filter((v): v is string => typeof v === "string")
-        : [],
-      totals: (() => {
-        const totals = isStatementCandidate(s.totals) ? (s.totals as Record<string, unknown>) : {};
-        const get = (key: string) =>
-          typeof totals[key] === "number" && Number.isFinite(totals[key]) ? (totals[key] as number) : 0;
-        return {
-          movementCount: get("movementCount"),
-          dubiousCount: get("dubiousCount"),
-          purchases: get("purchases"),
-          installmentPurchases: get("installmentPurchases"),
-          payments: get("payments"),
-          refunds: get("refunds"),
-          fees: get("fees"),
-          interests: get("interests"),
-          cashAdvances: get("cashAdvances"),
-          taxes: get("taxes"),
-          insurance: get("insurance"),
-          unknownCharges: get("unknownCharges"),
-          unknownCredits: get("unknownCredits")
-        };
-      })()
-    };
-
-    return {
-      batchId: batch.id,
-      createdAt: batch.createdAt.toISOString(),
-      completedAt: batch.completedAt ? batch.completedAt.toISOString() : null,
-      summary
-    };
+    const mapped = mapStatementFromBatch({ batch, accountId: input.accountId });
+    if (mapped) items.push(mapped);
   }
 
-  return null;
+  return items;
 }
 
+export async function getLatestCreditCardStatement(input: {
+  workspaceId: string;
+  accountId: string;
+}): Promise<CreditCardStatementLatest | null> {
+  const items = await listCreditCardStatements({
+    workspaceId: input.workspaceId,
+    accountId: input.accountId,
+    take: 25
+  });
+  return items[0] ?? null;
+}
