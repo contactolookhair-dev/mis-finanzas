@@ -14,6 +14,8 @@ export function ImportacionesClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const batchId = searchParams.get("batchId");
+  const importType = searchParams.get("type");
+  const accountId = searchParams.get("accountId");
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batch, setBatch] = useState<null | {
@@ -99,6 +101,23 @@ export function ImportacionesClient() {
         actions={<StatPill tone="premium">Vista previa real</StatPill>}
       />
 
+      {importType === "credit" ? (
+        <SurfaceCard variant="soft" padding="sm" className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            Abierto desde tarjeta
+          </p>
+          <p className="text-sm font-semibold text-slate-900">Importación orientada a estado de cuenta</p>
+          <p className="text-xs text-slate-500">
+            Dejamos preseleccionada la subida de tarjeta de crédito para que sigas el flujo más rápido.
+          </p>
+          {accountId ? (
+            <p className="text-[11px] text-slate-500">
+              Cuenta sugerida: <span className="font-mono">{accountId.slice(0, 10)}…</span>
+            </p>
+          ) : null}
+        </SurfaceCard>
+      ) : null}
+
       {batchId ? (
         <SurfaceCard variant="soft" padding="sm" className="space-y-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
@@ -145,7 +164,10 @@ export function ImportacionesClient() {
         </SurfaceCard>
       ) : null}
 
-      <ImportTransactionsPanel />
+      <ImportTransactionsPanel
+        initialLane={importType === "credit" ? "credit" : "account"}
+        initialAccountId={accountId}
+      />
     </PageContainer>
   );
 }

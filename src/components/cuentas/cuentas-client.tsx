@@ -709,6 +709,11 @@ function AccountDetailModal({
     return { delta, pct };
   }
 
+  const creditImportHref =
+    account && account.type === "CREDITO"
+      ? `/importaciones?type=credit&accountId=${encodeURIComponent(account.id)}`
+      : "/importaciones";
+
   useEffect(() => {
     let active = true;
     async function loadStatement() {
@@ -922,15 +927,48 @@ function AccountDetailModal({
               {statementHistoryLoading ? (
                 <p className="text-xs text-slate-500">Cargando historial...</p>
               ) : statementHistoryError ? (
-                <p className="text-xs text-rose-600">{statementHistoryError}</p>
+                <div className="rounded-2xl border border-rose-200/80 bg-rose-50/85 p-3">
+                  <p className="text-xs font-semibold text-rose-700">No se pudo cargar el estado de cuenta.</p>
+                  <p className="mt-1 text-[11px] text-rose-600">{statementHistoryError}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      className="h-9 rounded-2xl"
+                      onClick={() => {
+                        window.location.href = creditImportHref;
+                      }}
+                    >
+                      Ir a Importaciones
+                    </Button>
+                  </div>
+                </div>
               ) : statementHistory.length === 0 ? (
                 <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
-                  <p className="text-xs text-slate-600">
+                  <p className="text-xs font-semibold text-slate-700">
                     Aún no has importado un estado de cuenta para esta tarjeta.
                   </p>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Ve a <span className="font-semibold text-slate-700">Importaciones</span> y sube el PDF de CMR/Falabella para autocompletar el período, cupos y totales.
+                    Sube tu PDF para completar automáticamente período, cupos y totales.
                   </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      className="h-9 rounded-2xl"
+                      onClick={() => {
+                        window.location.href = creditImportHref;
+                      }}
+                    >
+                      Importar estado de cuenta
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-9 rounded-2xl"
+                      onClick={() => router.push("/importaciones")}
+                    >
+                      Ir a Importaciones
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1278,7 +1316,22 @@ function AccountDetailModal({
             {statementLoading ? (
               <p className="text-xs text-slate-500">Cargando estado de cuenta...</p>
             ) : statementError ? (
-              <p className="text-xs text-rose-600">{statementError}</p>
+              <div className="rounded-2xl border border-rose-200/80 bg-rose-50/85 p-3">
+                <p className="text-xs font-semibold text-rose-700">No se pudo cargar el estado de cuenta.</p>
+                <p className="mt-1 text-[11px] text-rose-600">{statementError}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="h-9 rounded-2xl"
+                    onClick={() => {
+                      window.location.href = creditImportHref;
+                    }}
+                  >
+                    Revisar importación
+                  </Button>
+                </div>
+              </div>
             ) : statementItems.length === 0 ? (
               <p className="text-xs text-slate-500">Aún no hay movimientos registrados en este período.</p>
             ) : (

@@ -118,10 +118,14 @@ function SuggestionBadge({ suggestion }: { suggestion?: ImportFieldSuggestion })
   );
 }
 
-export function ImportTransactionsPanel() {
+export function ImportTransactionsPanel(props: {
+  initialLane?: "account" | "credit";
+  initialAccountId?: string | null;
+}) {
+  const { initialLane = "account", initialAccountId = null } = props;
   const [authLoading, setAuthLoading] = useState(true);
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
-  const [importLane, setImportLane] = useState<"account" | "credit">("account");
+  const [importLane, setImportLane] = useState<"account" | "credit">(initialLane);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [rows, setRows] = useState<ImportPreviewRow[]>([]);
@@ -195,6 +199,23 @@ export function ImportTransactionsPanel() {
       preview.availableTemplates.find((t) => t.name.toLowerCase().includes("cmr"));
     if (found) setSelectedTemplateId(found.id);
   }, [importLane, preview?.availableTemplates, selectedTemplateId]);
+
+  useEffect(() => {
+    setImportLane(initialLane);
+  }, [initialLane]);
+
+  useEffect(() => {
+    if (!initialAccountId) return;
+    setSelectedPdfAccountId(initialAccountId);
+  }, [initialAccountId]);
+
+  useEffect(() => {
+    if (!initialAccountId || importLane !== "credit" || !preview) return;
+    const exists = preview.references.accounts.some((account) => account.id === initialAccountId);
+    if (!exists) return;
+    setSelectedPdfAccountId(initialAccountId);
+    applyPdfAccountToAllRows(initialAccountId);
+  }, [importLane, initialAccountId, preview]);
 
   const debtorNameOptions = useMemo(() => {
     const names = rows

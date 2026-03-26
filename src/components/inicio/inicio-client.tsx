@@ -36,49 +36,17 @@ import { OverduePendingsWidget } from "@/components/inicio/widgets/overdue-pendi
 import { RecentMovementsWidget } from "@/components/inicio/widgets/recent-movements-widget";
 import { MonthFlowWidget } from "@/components/inicio/widgets/month-flow-widget";
 import { FinancialHealthWidget } from "@/components/inicio/widgets/financial-health-widget";
+import {
+  buildInicioWidgetRegistry,
+  defaultInicioVisibleWidgets,
+  defaultInicioWidgetOrder,
+  inicioWidgetDefinitionMap,
+  type InicioWidgetId,
+  type WidgetSize
+} from "@/components/inicio/widgets/dashboard-widget-registry";
 
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
-
-type InicioWidgetId =
-  | "debtors"
-  | "upcomingInstallments"
-  | "upcomingPayables"
-  | "overduePendings"
-  | "recentMovements"
-  | "financialHealth"
-  | "monthFlow"
-  | "calculator"
-  | "aiFinancial";
-
-type WidgetSize = "compact" | "standard" | "featured";
-
-const defaultWidgetOrder: InicioWidgetId[] = [
-  "debtors",
-  "upcomingPayables",
-  "overduePendings",
-  "upcomingInstallments",
-  "recentMovements",
-  "monthFlow",
-  "financialHealth",
-  "calculator",
-  "aiFinancial"
-];
-
-const widgetMeta: Record<
-  InicioWidgetId,
-  { label: string; description: string; category: "Esenciales" | "Control" | "Inteligencia" | "Planeación" }
-> = {
-  debtors: { label: "Mis deudores", description: "Personas que te deben y cuotas del mes.", category: "Esenciales" },
-  upcomingInstallments: { label: "Cobros próximos", description: "Cuotas por cobrar y vencimientos.", category: "Control" },
-  upcomingPayables: { label: "Cuotas próximas", description: "Pagos por hacer y próximos vencimientos.", category: "Control" },
-  overduePendings: { label: "Vencidos", description: "Pendientes vencidos: por cobrar y por pagar.", category: "Control" },
-  recentMovements: { label: "Movimientos recientes", description: "Últimos gastos e ingresos registrados.", category: "Esenciales" },
-  monthFlow: { label: "Flujo del mes", description: "Ingresos, gastos y neto del período.", category: "Esenciales" },
-  financialHealth: { label: "Salud financiera", description: "Semáforo, alertas y foco del mes.", category: "Inteligencia" },
-  calculator: { label: "Calculadora", description: "Haz cuentas rápidas sin salir de Inicio.", category: "Control" },
-  aiFinancial: { label: "IA financiera", description: "Análisis bajo demanda con tus datos reales.", category: "Planeación" }
-};
 
 type AccountItem = {
   id: string;
@@ -168,10 +136,16 @@ export function InicioClient() {
   const [creditHealth, setCreditHealth] = useState<CreditHealthItem[]>([]);
   const [creditHealthLoading, setCreditHealthLoading] = useState(false);
   const [widgetPanelOpen, setWidgetPanelOpen] = useState(false);
-  const [widgetOrder, setWidgetOrder] = useState<InicioWidgetId[]>(defaultWidgetOrder);
-  const [hiddenWidgets, setHiddenWidgets] = useState<InicioWidgetId[]>(defaultWidgetOrder);
+  const [widgetOrder, setWidgetOrder] = useState<InicioWidgetId[]>(defaultInicioWidgetOrder);
+  const [hiddenWidgets, setHiddenWidgets] = useState<InicioWidgetId[]>(
+    defaultInicioWidgetOrder.filter((id) => !defaultInicioVisibleWidgets.includes(id))
+  );
   const [widgetsHydrated, setWidgetsHydrated] = useState(false);
   const [widgetSizes, setWidgetSizes] = useState<Record<InicioWidgetId, WidgetSize>>({
+    healthToday: "featured",
+    creditAttention: "standard",
+    coach: "standard",
+    priorities: "standard",
     debtors: "standard",
     upcomingInstallments: "standard",
     upcomingPayables: "standard",
@@ -180,7 +154,8 @@ export function InicioClient() {
     monthFlow: "compact",
     financialHealth: "standard",
     calculator: "compact",
-    aiFinancial: "standard"
+    aiFinancial: "standard",
+    globalAlerts: "standard"
   });
 
   const monthGrid = useMemo(() => buildMonthGrid(new Date()), []);
@@ -471,6 +446,560 @@ export function InicioClient() {
     }).slice(0, 5);
   }, [debtsSnapshot, financialHealth, payablesSnapshot, snapshot, sortedCreditAttention]);
 
+  const evaluateExpression = (value: string) => {
+    if (!value.trim()) return null;
+    const sanitized = value.replace(/[^0-9.+\-*/() ]/g, "");
+    try {
+      // eslint-disable-next-line no-new-func
+      const result = new Function(`return ${sanitized}`)();
+      return typeof result === "number" && Number.isFinite(result) ? result : null;
+    } catch {
+      return null;
+    }
+  };
+
+  function appendCalculatorSymbol(symbol: string) {
+    setCalculatorInput((prev) => `${prev}${symbol}`);
+  }
+
+  const handleCalculatorEquals = useCallback(() => {
+    const result = evaluateExpression(calculatorInput);
+    setCalculatorResult(result);
+  }, [calculatorInput]);
+
+  function handleCalculatorClear() {
+    setCalculatorInput("");
+    setCalculatorResult(null);
+  }
+
+  function handleCalculatorDelete() {
+    setCalculatorInput((prev) => prev.slice(0, -1));
+  }
+
+  const handleAnalyzeFinancials = useCallback(async () => {
+    try {
+      setFinancialInsightsLoading(true);
+      setFinancialInsightsError(null);
+
+      const response = await fetch("/api/ai/financial-insights", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          filters: snapshot?.filters ?? undefined
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? "No se pudo generar el análisis.");
+      }
+
+      const payload = (await response.json()) as FinancialInsightsResponse;
+      setFinancialInsights(payload);
+    } catch (submitError) {
+      setFinancialInsightsError(
+        submitError instanceof Error ? submitError.message : "No se pudo generar el análisis."
+      );
+    } finally {
+      setFinancialInsightsLoading(false);
+    }
+  }, [snapshot?.filters]);
+
+  const widgetRegistry = useMemo(
+    () =>
+      buildInicioWidgetRegistry({
+        healthToday: (size) => (
+          <SurfaceCard
+            variant="highlight"
+            padding="sm"
+            className={`animate-fade-up space-y-4 ${size === "featured" ? "lg:p-5" : ""}`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  Salud financiera hoy
+                </p>
+                <p className="mt-1 text-base font-semibold text-slate-900">Lo importante, al tiro</p>
+                {size !== "compact" ? (
+                  <p className="mt-1 hidden text-sm text-slate-600 sm:block">
+                    Disponible, deuda y pendientes en una mirada.
+                  </p>
+                ) : null}
+              </div>
+              {financialHealth ? (
+                <span
+                  className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold ${
+                    financialHealth.status === "critico"
+                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      : financialHealth.status === "atencion"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  }`}
+                >
+                  {financialHealth.status === "critico"
+                    ? "Crítico"
+                    : financialHealth.status === "atencion"
+                      ? "Atención"
+                      : "Saludable"}
+                </span>
+              ) : null}
+            </div>
+
+            <div className={`grid gap-2.5 ${size === "compact" ? "grid-cols-2" : "grid-cols-2 lg:grid-cols-4"}`}>
+              <div className={`rounded-2xl border border-slate-100 bg-slate-50/70 p-3 ${size === "compact" ? "col-span-2" : "col-span-2 lg:col-span-1"}`}>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Disponible real</p>
+                <p className={`mt-2 text-2xl font-semibold tracking-tight ${availableTotal >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                  {loading ? "..." : formatCurrency(availableTotal)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Deuda tarjetas</p>
+                <p className={`mt-2 text-xl font-semibold tracking-tight ${creditDebtTotal > 0 ? "text-rose-700" : "text-slate-900"}`}>
+                  {loading ? "..." : formatCurrency(creditDebtTotal)}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Pendientes por pagar</p>
+                <p className={`mt-2 text-xl font-semibold tracking-tight ${payablesOverdueCount > 0 ? "text-rose-700" : "text-slate-900"}`}>
+                  {payablesLoading ? "..." : formatCurrency(payablesPendingTotal)}
+                </p>
+              </div>
+              {size !== "compact" ? (
+                <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Me deben</p>
+                  <p className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
+                    {debtsLoading ? "..." : formatCurrency(debtsPendingTotal)}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-white/80 px-3.5 py-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Alerta principal</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {financialHealth?.alerts?.[0]?.title ?? financialHealth?.headline ?? "Todo OK por ahora."}
+                </p>
+                {size !== "compact" && financialHealth?.alerts?.[0]?.description ? (
+                  <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                    {financialHealth.alerts[0].description}
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-9 rounded-full px-3"
+                  onClick={() => (window.location.href = "/pendientes")}
+                >
+                  Ver pendientes
+                </Button>
+              </div>
+            </div>
+          </SurfaceCard>
+        ),
+        creditAttention: () =>
+          creditHealthLoading ? (
+            <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tarjetas</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">Revisando tarjetas…</p>
+              </div>
+              <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-400" />
+              </div>
+            </SurfaceCard>
+          ) : sortedCreditAttention.length ? (
+            <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Tarjetas que requieren atención
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">Revisa lo más importante</p>
+                  <p className="mt-1 hidden text-sm text-slate-600 sm:block">Máximo 3 tarjetas, con contexto claro.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="h-9 shrink-0 rounded-full px-3"
+                  onClick={() => (window.location.href = "/cuentas")}
+                >
+                  Ver todas
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {sortedCreditAttention.slice(0, 3).map((item) => {
+                  const contextLine = buildCreditAttentionContextLine(item);
+                  const badges = buildCreditAttentionBadges(item).slice(0, 3);
+                  const sev = getCreditAttentionSeverity(item);
+                  const sevChip =
+                    sev.level === "critical"
+                      ? { label: "Crítico", cls: "border-rose-200 bg-rose-50 text-rose-700" }
+                      : sev.level === "attention"
+                        ? { label: "Atención", cls: "border-amber-200 bg-amber-50 text-amber-800" }
+                        : sev.level === "positive"
+                          ? { label: "Mejora", cls: "border-emerald-200 bg-emerald-50 text-emerald-800" }
+                          : { label: "Info", cls: "border-slate-200 bg-slate-50 text-slate-700" };
+
+                  return (
+                    <div
+                      key={item.accountId}
+                      className="interactive-lift flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3 py-2"
+                    >
+                      <button
+                        type="button"
+                        className="tap-feedback min-w-0 text-left"
+                        onClick={() => (window.location.href = `/cuentas?card=${encodeURIComponent(item.accountId)}`)}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
+                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${sevChip.cls}`}>
+                            {sevChip.label}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 line-clamp-1 text-[12px] font-medium text-slate-600">{contextLine}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {badges.map((badge) => (
+                            <span
+                              key={badge.key}
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditToneToClasses(
+                                badge.tone
+                              )}`}
+                            >
+                              {badge.label}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                        onClick={() => (window.location.href = `/cuentas?card=${encodeURIComponent(item.accountId)}`)}
+                      >
+                        Ver
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </SurfaceCard>
+          ) : null,
+        coach: (size) =>
+          coachMensajes.length ? (
+            <SurfaceCard
+              variant="highlight"
+              padding="sm"
+              className="animate-fade-up border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.92)_0%,rgba(255,255,255,0.92)_100%)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-800/80">
+                    Tu nota del mes
+                  </p>
+                  <div className="mt-2 space-y-2">
+                    {(size === "compact" ? coachMensajes.slice(0, 1) : coachMensajes).map((message) => (
+                      <p key={message} className="text-sm font-semibold leading-relaxed text-slate-900">
+                        {message}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full border border-amber-200 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-amber-800">
+                  Coach
+                </span>
+              </div>
+            </SurfaceCard>
+          ) : null,
+        priorities: (size) => (
+          <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Prioridades del mes</p>
+                <p className="mt-1 text-base font-semibold text-slate-900">Qué mirar primero</p>
+                {size !== "compact" ? (
+                  <p className="mt-1 hidden text-sm text-slate-600 sm:block">Checklist corto para ordenar el mes.</p>
+                ) : null}
+              </div>
+            </div>
+            <div className="space-y-2">
+              {priorities.length === 0 ? (
+                <p className="text-sm font-semibold text-slate-700">Todo tranquilo por ahora. Mantén el registro al día.</p>
+              ) : (
+                (size === "compact" ? priorities.slice(0, 2) : priorities).map((item) => (
+                  <div
+                    key={item.text}
+                    className={`flex items-start gap-3 rounded-2xl border bg-white/80 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${
+                      item.tone === "alert"
+                        ? "border-rose-100"
+                        : item.tone === "attention"
+                          ? "border-amber-100"
+                          : item.tone === "positive"
+                            ? "border-emerald-100"
+                            : "border-slate-100"
+                    }`}
+                  >
+                    <span
+                      className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold ${
+                        item.tone === "alert"
+                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                          : item.tone === "attention"
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : item.tone === "positive"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : "border-slate-200 bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      {item.tone === "alert" ? "!" : item.tone === "attention" ? "•" : item.tone === "positive" ? "✓" : "i"}
+                    </span>
+                    <p className="text-sm font-semibold leading-snug text-slate-900">{item.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </SurfaceCard>
+        ),
+        debtors: (size) => (
+          <DebtorsWidget
+            data={debtsSnapshot}
+            loading={debtsLoading}
+            error={debtsError}
+            size={size}
+            onViewAll={() => (window.location.href = "/pendientes")}
+          />
+        ),
+        upcomingInstallments: (size) => (
+          <UpcomingInstallmentsWidget
+            data={debtsSnapshot}
+            loading={debtsLoading}
+            error={debtsError}
+            size={size}
+            onViewAll={() => (window.location.href = "/pendientes")}
+          />
+        ),
+        upcomingPayables: (size) => (
+          <UpcomingPayablesWidget
+            data={payablesSnapshot}
+            loading={payablesLoading}
+            error={payablesError}
+            size={size}
+            onViewAll={() => (window.location.href = "/pendientes?tab=debo-pagar")}
+          />
+        ),
+        overduePendings: (size) => (
+          <OverduePendingsWidget
+            debts={debtsSnapshot}
+            debtsLoading={debtsLoading}
+            debtsError={debtsError}
+            payables={payablesSnapshot}
+            payablesLoading={payablesLoading}
+            payablesError={payablesError}
+            size={size}
+            onViewAll={() => (window.location.href = "/pendientes")}
+          />
+        ),
+        recentMovements: (size) => (
+          <RecentMovementsWidget
+            items={movements}
+            loading={loading}
+            size={size}
+            accounts={accounts}
+            onCreate={() => setOpenModal(true)}
+          />
+        ),
+        monthFlow: (size) => (
+          <MonthFlowWidget
+            incomes={incomes}
+            expenses={expenses}
+            loading={loading}
+            size={size}
+          />
+        ),
+        financialHealth: (size) => (
+          <FinancialHealthWidget
+            data={financialHealth}
+            loading={financialHealthLoading}
+            error={financialHealthError}
+            size={size}
+            onRetry={() => void loadData()}
+          />
+        ),
+        calculator: (size) => (
+          <SurfaceCard variant="soft" padding="sm" className="space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Calculadora</p>
+                <p className="mt-1 text-base font-semibold text-slate-900">Haz cuentas rápido</p>
+                <p className="mt-1 text-sm text-slate-600">No pierdes el estado al cerrar.</p>
+              </div>
+              <Button type="button" variant="secondary" className="rounded-full" onClick={() => setCalculatorOpen(true)}>
+                Abrir
+              </Button>
+            </div>
+            {size !== "compact" ? (
+              <CalculatorWidget
+                calculatorInput={calculatorInput}
+                calculatorResult={calculatorResult}
+                onAppend={appendCalculatorSymbol}
+                onClear={handleCalculatorClear}
+                onDelete={handleCalculatorDelete}
+                onEquals={handleCalculatorEquals}
+                compact
+              />
+            ) : null}
+          </SurfaceCard>
+        ),
+        aiFinancial: () => (
+          <div className="space-y-3">
+            <SurfaceCard variant="highlight" padding="sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">IA financiera</p>
+                  <p className="text-base font-semibold text-slate-900">
+                    Pulsa para revisar tu situación financiera
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={handleAnalyzeFinancials}
+                  disabled={financialInsightsLoading}
+                  className="h-11 rounded-2xl bg-primary px-4 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
+                >
+                  {financialInsightsLoading ? "Analizando..." : "Analizar"}
+                </Button>
+              </div>
+            </SurfaceCard>
+            <FinancialInsightsPanel
+              loading={financialInsightsLoading}
+              error={financialInsightsError}
+              response={financialInsights}
+            />
+          </div>
+        ),
+        globalAlerts: (size) =>
+          globalAlerts.length ? (
+            <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Alertas importantes
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-slate-900">Lo que deberías revisar hoy</p>
+                  {size !== "compact" ? (
+                    <p className="mt-1 hidden text-sm text-slate-600 sm:block">
+                      3 a 5 señales clave para mantener el control.
+                    </p>
+                  ) : null}
+                </div>
+                <span className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
+                  {globalAlerts.length} alerta{globalAlerts.length === 1 ? "" : "s"}
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {(size === "compact" ? globalAlerts.slice(0, 3) : globalAlerts).map((alert) => {
+                  const tone =
+                    alert.tone === "critical"
+                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      : alert.tone === "attention"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : alert.tone === "positive"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          : "border-slate-200 bg-slate-50 text-slate-700";
+                  const glyph =
+                    alert.tone === "positive" ? <Info className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />;
+
+                  return (
+                    <div
+                      key={alert.id}
+                      className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3 py-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border ${tone}`}>
+                            {glyph}
+                          </span>
+                          <p className="text-sm font-semibold text-slate-900">{alert.title}</p>
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">{alert.description}</p>
+                      </div>
+                      {alert.action ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-9 shrink-0 rounded-full px-3"
+                          onClick={() => (window.location.href = alert.action!.href)}
+                        >
+                          {alert.action.label}
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </SurfaceCard>
+          ) : null
+      }),
+    [
+      accounts,
+      availableTotal,
+      calculatorInput,
+      calculatorResult,
+      coachMensajes,
+      creditDebtTotal,
+      creditHealthLoading,
+      debtsLoading,
+      debtsPendingTotal,
+      debtsSnapshot,
+      debtsError,
+      expenses,
+      financialHealth,
+      financialHealthError,
+      financialHealthLoading,
+      financialInsights,
+      financialInsightsError,
+      financialInsightsLoading,
+      globalAlerts,
+      handleAnalyzeFinancials,
+      handleCalculatorEquals,
+      incomes,
+      loading,
+      loadData,
+      movements,
+      payablesError,
+      payablesLoading,
+      payablesOverdueCount,
+      payablesPendingTotal,
+      payablesSnapshot,
+      priorities,
+      sortedCreditAttention
+    ]
+  );
+
+  const visibleWidgets = useMemo(
+    () => widgetOrder.filter((id) => !hiddenWidgets.includes(id)),
+    [hiddenWidgets, widgetOrder]
+  );
+
+  const executiveWidgets = useMemo(
+    () => visibleWidgets.filter((id) => widgetRegistry[id].placement === "executive"),
+    [visibleWidgets, widgetRegistry]
+  );
+
+  const modularWidgets = useMemo(
+    () => visibleWidgets.filter((id) => widgetRegistry[id].placement === "modular"),
+    [visibleWidgets, widgetRegistry]
+  );
+
+  const footerWidgets = useMemo(
+    () => visibleWidgets.filter((id) => widgetRegistry[id].placement === "footer"),
+    [visibleWidgets, widgetRegistry]
+  );
+
   const selectedDayAmount = useMemo(() => {
     const dailyMovements = movements.filter((item) => item.date.startsWith(selectedDate));
     return dailyMovements.reduce((sum, item) => sum + item.amount, 0);
@@ -488,21 +1017,19 @@ export function InicioClient() {
   const onboardingInsightReady = Boolean(snapshot && accounts.length > 0 && movements.length > 0);
   const totalAvailableTone = availableTotal < 0 ? "negative" : "positive";
 
-  const visibleWidgets = useMemo(
-    () => widgetOrder.filter((id) => !hiddenWidgets.includes(id)),
-    [hiddenWidgets, widgetOrder]
-  );
-
   const categorizedWidgets = useMemo(() => {
     const groups: Record<string, InicioWidgetId[]> = {
-      Esenciales: [],
-      Control: [],
-      Inteligencia: [],
-      Planeación: []
+      Resumen: [],
+      Tarjetas: [],
+      Pendientes: [],
+      Movimientos: [],
+      Alertas: [],
+      Herramientas: [],
+      Planeacion: []
     };
 
-    defaultWidgetOrder.forEach((id) => {
-      groups[widgetMeta[id].category].push(id);
+    defaultInicioWidgetOrder.forEach((id) => {
+      groups[inicioWidgetDefinitionMap[id].category].push(id);
     });
 
     return groups;
@@ -614,10 +1141,6 @@ export function InicioClient() {
     return () => setMetric(null);
   }, [availableTotal, loading, setMetric, totalAvailableTone, snapshot]);
 
-  const appendCalculatorSymbol = (symbol: string) => {
-    setCalculatorInput((prev) => `${prev}${symbol}`);
-  };
-
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(CALCULATOR_STORAGE_KEY);
@@ -646,24 +1169,31 @@ export function InicioClient() {
       };
 
       const storedOrder = parsed.order?.length
-        ? parsed.order.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id))
+        ? parsed.order.filter((id): id is InicioWidgetId => defaultInicioWidgetOrder.includes(id))
         : null;
       const mergedOrder = storedOrder
-        ? [...storedOrder, ...defaultWidgetOrder.filter((id) => !storedOrder.includes(id))]
-        : defaultWidgetOrder;
+        ? [...storedOrder, ...defaultInicioWidgetOrder.filter((id) => !storedOrder.includes(id))]
+        : defaultInicioWidgetOrder;
       if (storedOrder) {
         setWidgetOrder(mergedOrder);
       }
 
       const storedHidden = parsed.hidden
-        ? parsed.hidden.filter((id): id is InicioWidgetId => defaultWidgetOrder.includes(id))
+        ? parsed.hidden.filter((id): id is InicioWidgetId => defaultInicioWidgetOrder.includes(id))
         : null;
       if (storedHidden !== null) {
-        const newIds = storedOrder ? mergedOrder.filter((id) => !storedOrder.includes(id)) : [];
+        const newIds = mergedOrder.filter(
+          (id) =>
+            !(storedOrder ?? []).includes(id) && !defaultInicioVisibleWidgets.includes(id)
+        );
         setHiddenWidgets(Array.from(new Set([...storedHidden, ...newIds])));
       } else if (storedOrder) {
-        // No hidden state stored: keep existing widgets visible and hide only newly added widgets.
-        const newIds = mergedOrder.filter((id) => !storedOrder.includes(id));
+        // No hidden state stored: keep existing widgets visible and hide only newly added widgets
+        // that are not enabled by default in the formal registry.
+        const newIds = mergedOrder.filter(
+          (id) =>
+            !storedOrder.includes(id) && !defaultInicioVisibleWidgets.includes(id)
+        );
         setHiddenWidgets(newIds);
       }
       const sizes = parsed.sizes;
@@ -673,7 +1203,7 @@ export function InicioClient() {
           ...Object.fromEntries(
             Object.entries(sizes).filter(
               ([key, value]) =>
-                defaultWidgetOrder.includes(key as InicioWidgetId) &&
+                defaultInicioWidgetOrder.includes(key as InicioWidgetId) &&
                 (["compact", "standard", "featured"] as WidgetSize[]).includes(value as WidgetSize)
             )
           )
@@ -711,63 +1241,6 @@ export function InicioClient() {
       // noop
     }
   }, [calculatorInput, calculatorResult]);
-
-  const evaluateExpression = (value: string) => {
-    if (!value.trim()) return null;
-    const sanitized = value.replace(/[^0-9.+\-*/() ]/g, "");
-    try {
-      // eslint-disable-next-line no-new-func
-      const result = new Function(`return ${sanitized}`)();
-      return typeof result === "number" && Number.isFinite(result) ? result : null;
-    } catch {
-      return null;
-    }
-  };
-
-  const handleCalculatorEquals = () => {
-    const result = evaluateExpression(calculatorInput);
-    setCalculatorResult(result);
-  };
-
-  const handleCalculatorClear = () => {
-    setCalculatorInput("");
-    setCalculatorResult(null);
-  };
-
-  const handleCalculatorDelete = () => {
-    setCalculatorInput((prev) => prev.slice(0, -1));
-  };
-
-  async function handleAnalyzeFinancials() {
-    try {
-      setFinancialInsightsLoading(true);
-      setFinancialInsightsError(null);
-
-      const response = await fetch("/api/ai/financial-insights", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          filters: snapshot?.filters ?? undefined
-        })
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { message?: string };
-        throw new Error(payload.message ?? "No se pudo generar el análisis.");
-      }
-
-      const payload = (await response.json()) as FinancialInsightsResponse;
-      setFinancialInsights(payload);
-    } catch (submitError) {
-      setFinancialInsightsError(
-        submitError instanceof Error ? submitError.message : "No se pudo generar el análisis."
-      );
-    } finally {
-      setFinancialInsightsLoading(false);
-    }
-  }
 
   return (
     <div className="space-y-4 pb-20 sm:space-y-5">
@@ -830,254 +1303,11 @@ export function InicioClient() {
         {accounts.map((account) => renderAccountCard(account))}
       </section>
 
-      <SurfaceCard
-        variant="highlight"
-        padding="sm"
-        className="animate-fade-up space-y-4"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Salud financiera hoy
-            </p>
-            <p className="mt-1 text-base font-semibold text-slate-900">
-              Lo importante, al tiro
-            </p>
-            <p className="mt-1 hidden text-sm text-slate-600 sm:block">
-              Disponible, deuda y pendientes en una mirada.
-            </p>
-          </div>
-          {financialHealth ? (
-            <span
-              className={`shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold ${
-                financialHealth.status === "critico"
-                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : financialHealth.status === "atencion"
-                    ? "border-amber-200 bg-amber-50 text-amber-800"
-                    : "border-emerald-200 bg-emerald-50 text-emerald-800"
-              }`}
-            >
-              {financialHealth.status === "critico"
-                ? "Crítico"
-                : financialHealth.status === "atencion"
-                  ? "Atención"
-                  : "Saludable"}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
-          <div className="col-span-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 lg:col-span-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Disponible real</p>
-            <p className={`mt-2 text-2xl font-semibold tracking-tight ${availableTotal >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-              {loading ? "..." : formatCurrency(availableTotal)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Deuda tarjetas</p>
-            <p className={`mt-2 text-xl font-semibold tracking-tight ${creditDebtTotal > 0 ? "text-rose-700" : "text-slate-900"}`}>
-              {loading ? "..." : formatCurrency(creditDebtTotal)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Pendientes por pagar</p>
-            <p className={`mt-2 text-xl font-semibold tracking-tight ${payablesOverdueCount > 0 ? "text-rose-700" : "text-slate-900"}`}>
-              {payablesLoading ? "..." : formatCurrency(payablesPendingTotal)}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">Me deben</p>
-            <p className="mt-2 text-xl font-semibold tracking-tight text-slate-900">
-              {debtsLoading ? "..." : formatCurrency(debtsPendingTotal)}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-white/80 px-3.5 py-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Alerta principal</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">
-              {financialHealth?.alerts?.[0]?.title ?? financialHealth?.headline ?? "Todo OK por ahora."}
-            </p>
-            {financialHealth?.alerts?.[0]?.description ? (
-              <p className="mt-1 line-clamp-2 text-xs text-slate-600">
-                {financialHealth.alerts[0].description}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-9 rounded-full px-3"
-              onClick={() => (window.location.href = "/pendientes")}
-            >
-              Ver pendientes
-            </Button>
-          </div>
-        </div>
-      </SurfaceCard>
-
-      {creditHealthLoading ? (
-        <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Tarjetas</p>
-            <p className="mt-1 text-sm font-semibold text-slate-900">Revisando tarjetas…</p>
-          </div>
-          <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-200">
-            <div className="h-full w-1/2 animate-pulse rounded-full bg-slate-400" />
-          </div>
-        </SurfaceCard>
-      ) : sortedCreditAttention.length ? (
-        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Tarjetas que requieren atención
-              </p>
-              <p className="mt-1 text-base font-semibold text-slate-900">Revisa lo más importante</p>
-              <p className="mt-1 hidden text-sm text-slate-600 sm:block">Máximo 3 tarjetas, con contexto claro.</p>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-9 shrink-0 rounded-full px-3"
-              onClick={() => (window.location.href = "/cuentas")}
-            >
-              Ver todas
-            </Button>
-          </div>
-
-          <div className="space-y-2">
-            {sortedCreditAttention.slice(0, 3).map((item) => {
-              const contextLine = buildCreditAttentionContextLine(item);
-              const badges = buildCreditAttentionBadges(item).slice(0, 3);
-              const sev = getCreditAttentionSeverity(item);
-              const sevChip =
-                sev.level === "critical"
-                  ? { label: "Crítico", cls: "border-rose-200 bg-rose-50 text-rose-700" }
-                  : sev.level === "attention"
-                    ? { label: "Atención", cls: "border-amber-200 bg-amber-50 text-amber-800" }
-                    : sev.level === "positive"
-                      ? { label: "Mejora", cls: "border-emerald-200 bg-emerald-50 text-emerald-800" }
-                      : { label: "Info", cls: "border-slate-200 bg-slate-50 text-slate-700" };
-
-              return (
-                <div
-                  key={item.accountId}
-                  className="interactive-lift flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3 py-2"
-                >
-                  <button
-                    type="button"
-                    className="tap-feedback min-w-0 text-left"
-                    onClick={() => (window.location.href = `/cuentas?card=${encodeURIComponent(item.accountId)}`)}
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-900">{item.name}</p>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${sevChip.cls}`}>
-                        {sevChip.label}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 line-clamp-1 text-[12px] font-medium text-slate-600">{contextLine}</p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {badges.map((b) => (
-                        <span
-                          key={b.key}
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditToneToClasses(
-                            b.tone
-                          )}`}
-                        >
-                          {b.label}
-                        </span>
-                      ))}
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
-                    onClick={() => (window.location.href = `/cuentas?card=${encodeURIComponent(item.accountId)}`)}
-                  >
-                    Ver
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </SurfaceCard>
-      ) : null}
-
-      <div className="grid gap-3 lg:grid-cols-2">
-        {coachMensajes.length ? (
-          <SurfaceCard
-            variant="highlight"
-            padding="sm"
-            className="animate-fade-up border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,251,235,0.92)_0%,rgba(255,255,255,0.92)_100%)]"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-800/80">
-                  Tu nota del mes
-                </p>
-                <div className="mt-2 space-y-2">
-                  {coachMensajes.map((m) => (
-                    <p key={m} className="text-sm font-semibold leading-relaxed text-slate-900">
-                      {m}
-                    </p>
-                  ))}
-                </div>
-              </div>
-              <span className="shrink-0 rounded-full border border-amber-200 bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-amber-800">
-                Coach
-              </span>
-            </div>
-          </SurfaceCard>
-        ) : null}
-
-        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Prioridades del mes</p>
-              <p className="mt-1 text-base font-semibold text-slate-900">Qué mirar primero</p>
-              <p className="mt-1 hidden text-sm text-slate-600 sm:block">Checklist corto para ordenar el mes.</p>
-            </div>
-          </div>
-          <div className="space-y-2">
-            {priorities.length === 0 ? (
-              <p className="text-sm font-semibold text-slate-700">Todo tranquilo por ahora. Mantén el registro al día.</p>
-            ) : (
-              priorities.map((p) => (
-                <div
-                  key={p.text}
-                  className={`flex items-start gap-3 rounded-2xl border bg-white/80 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${
-                    p.tone === "alert"
-                      ? "border-rose-100"
-                      : p.tone === "attention"
-                        ? "border-amber-100"
-                        : p.tone === "positive"
-                          ? "border-emerald-100"
-                          : "border-slate-100"
-                  }`}
-                >
-                  <span
-                    className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold ${
-                      p.tone === "alert"
-                        ? "border-rose-200 bg-rose-50 text-rose-700"
-                        : p.tone === "attention"
-                          ? "border-amber-200 bg-amber-50 text-amber-800"
-                          : p.tone === "positive"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : "border-slate-200 bg-slate-50 text-slate-700"
-                    }`}
-                  >
-                    {p.tone === "alert" ? "!" : p.tone === "attention" ? "•" : p.tone === "positive" ? "✓" : "i"}
-                  </span>
-                  <p className="text-sm font-semibold leading-snug text-slate-900">{p.text}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </SurfaceCard>
-      </div>
+      {executiveWidgets.map((id) => {
+        const size = widgetSizes[id] ?? "standard";
+        const element = widgetRegistry[id].component(size);
+        return element ? <div key={id}>{element}</div> : null;
+      })}
 
       <SurfaceCard variant="soft" padding="sm" className="animate-fade-up flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -1125,6 +1355,7 @@ export function InicioClient() {
                   {ids.map((id) => {
                     const isHidden = hiddenWidgets.includes(id);
                     const size = widgetSizes[id] ?? "standard";
+                    const widget = widgetRegistry[id];
                     return (
                       <div
                         key={id}
@@ -1134,8 +1365,11 @@ export function InicioClient() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900">{widgetMeta[id].label}</p>
-                            <p className="mt-1 text-xs text-slate-500">{widgetMeta[id].description}</p>
+                            <p className="text-sm font-semibold text-slate-900">{widget.title}</p>
+                            <p className="mt-1 text-xs text-slate-500">{widget.description}</p>
+                            <p className="mt-2 text-[11px] font-medium text-slate-400">
+                              {widget.category} · {widget.mobileBehavior}
+                            </p>
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             <Button
@@ -1175,7 +1409,7 @@ export function InicioClient() {
                           <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                             Tamaño
                           </span>
-                          {(["compact", "standard", "featured"] as WidgetSize[]).map((option) => (
+                          {widget.supportedSizes.map((option) => (
                             <button
                               key={option}
                               type="button"
@@ -1201,7 +1435,7 @@ export function InicioClient() {
       ) : null}
 
       <div className="space-y-4">
-        {visibleWidgets.length === 0 ? (
+        {modularWidgets.length === 0 ? (
           <EmptyStateCard
             title="Tu panel está listo para personalizar"
             description="Agrega widgets para ver aquí tu información más importante."
@@ -1211,230 +1445,18 @@ export function InicioClient() {
           />
         ) : null}
 
-        {visibleWidgets.map((id) => {
+        {modularWidgets.map((id) => {
           const size = widgetSizes[id] ?? "standard";
-
-          if (id === "debtors") {
-            return (
-              <DebtorsWidget
-                key={id}
-                data={debtsSnapshot}
-                loading={debtsLoading}
-                error={debtsError}
-                size={size}
-                onViewAll={() => (window.location.href = "/pendientes")}
-              />
-            );
-          }
-
-          if (id === "upcomingInstallments") {
-            return (
-              <UpcomingInstallmentsWidget
-                key={id}
-                data={debtsSnapshot}
-                loading={debtsLoading}
-                error={debtsError}
-                size={size}
-                onViewAll={() => (window.location.href = "/pendientes")}
-              />
-            );
-          }
-
-          if (id === "upcomingPayables") {
-            return (
-              <UpcomingPayablesWidget
-                key={id}
-                data={payablesSnapshot}
-                loading={payablesLoading}
-                error={payablesError}
-                size={size}
-                onViewAll={() => (window.location.href = "/pendientes?tab=debo-pagar")}
-              />
-            );
-          }
-
-          if (id === "overduePendings") {
-            return (
-              <OverduePendingsWidget
-                key={id}
-                debts={debtsSnapshot}
-                debtsLoading={debtsLoading}
-                debtsError={debtsError}
-                payables={payablesSnapshot}
-                payablesLoading={payablesLoading}
-                payablesError={payablesError}
-                size={size}
-                onViewAll={() => (window.location.href = "/pendientes")}
-              />
-            );
-          }
-
-          if (id === "recentMovements") {
-            return (
-              <RecentMovementsWidget
-                key={id}
-                items={movements}
-                loading={loading}
-                size={size}
-                accounts={accounts}
-                onCreate={() => setOpenModal(true)}
-              />
-            );
-          }
-
-          if (id === "monthFlow") {
-            return (
-              <MonthFlowWidget
-                key={id}
-                incomes={incomes}
-                expenses={expenses}
-                loading={loading}
-                size={size}
-              />
-            );
-          }
-
-          if (id === "financialHealth") {
-            return (
-              <FinancialHealthWidget
-                key={id}
-                data={financialHealth}
-                loading={financialHealthLoading}
-                error={financialHealthError}
-                size={size}
-                onRetry={() => void loadData()}
-              />
-            );
-          }
-
-          if (id === "calculator") {
-            return (
-              <SurfaceCard key={id} variant="soft" padding="sm" className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Calculadora</p>
-                    <p className="mt-1 text-base font-semibold text-slate-900">Haz cuentas rápido</p>
-                    <p className="mt-1 text-sm text-slate-600">No pierdes el estado al cerrar.</p>
-                  </div>
-                  <Button type="button" variant="secondary" className="rounded-full" onClick={() => setCalculatorOpen(true)}>
-                    Abrir
-                  </Button>
-                </div>
-                {size !== "compact" ? (
-                  <CalculatorWidget
-                    calculatorInput={calculatorInput}
-                    calculatorResult={calculatorResult}
-                    onAppend={appendCalculatorSymbol}
-                    onClear={handleCalculatorClear}
-                    onDelete={handleCalculatorDelete}
-                    onEquals={handleCalculatorEquals}
-                    compact
-                  />
-                ) : null}
-              </SurfaceCard>
-            );
-          }
-
-          if (id === "aiFinancial") {
-            return (
-              <div key={id} className="space-y-3">
-                <SurfaceCard variant="highlight" padding="sm">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">IA financiera</p>
-                      <p className="text-base font-semibold text-slate-900">
-                        Pulsa para revisar tu situación financiera
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      onClick={handleAnalyzeFinancials}
-                      disabled={financialInsightsLoading}
-                      className="h-11 rounded-2xl bg-primary px-4 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(37,99,235,0.22)]"
-                    >
-                      {financialInsightsLoading ? "Analizando..." : "Analizar"}
-                    </Button>
-                  </div>
-                </SurfaceCard>
-                <FinancialInsightsPanel
-                  loading={financialInsightsLoading}
-                  error={financialInsightsError}
-                  response={financialInsights}
-                />
-              </div>
-            );
-          }
-
-          return null;
+          const element = widgetRegistry[id].component(size);
+          return element ? <div key={id}>{element}</div> : null;
         })}
       </div>
 
-      {globalAlerts.length ? (
-        <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Alertas importantes
-              </p>
-              <p className="mt-1 text-base font-semibold text-slate-900">Lo que deberías revisar hoy</p>
-              <p className="mt-1 hidden text-sm text-slate-600 sm:block">
-                3 a 5 señales clave para mantener el control.
-              </p>
-            </div>
-            <span className="shrink-0 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
-              {globalAlerts.length} alerta{globalAlerts.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            {globalAlerts.map((a) => {
-              const tone =
-                a.tone === "critical"
-                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : a.tone === "attention"
-                    ? "border-amber-200 bg-amber-50 text-amber-800"
-                    : a.tone === "positive"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                      : "border-slate-200 bg-slate-50 text-slate-700";
-              const glyph = a.tone === "positive" ? <Info className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />;
-
-              return (
-                <div
-                  key={a.id}
-                  className="interactive-lift flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/92 px-3.5 py-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${tone}`}>
-                        {glyph}
-                        {a.tone === "critical"
-                          ? "Crítico"
-                          : a.tone === "attention"
-                            ? "Atención"
-                            : a.tone === "positive"
-                              ? "Bien"
-                              : "Info"}
-                      </span>
-                      <p className="text-sm font-semibold text-slate-900">{a.title}</p>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{a.description}</p>
-                  </div>
-
-                  {a.action ? (
-                    <button
-                      type="button"
-                      className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
-                      onClick={() => (window.location.href = a.action!.href)}
-                    >
-                      {a.action.label}
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </SurfaceCard>
-      ) : null}
+      {footerWidgets.map((id) => {
+        const size = widgetSizes[id] ?? "standard";
+        const element = widgetRegistry[id].component(size);
+        return element ? <div key={id}>{element}</div> : null;
+      })}
 
       <NewTransactionModal
         open={openModal}
