@@ -29,6 +29,10 @@ import {
   generateCreditCardStatementInsights,
   type CreditCardStatementInsight
 } from "@/lib/accounts/credit-card-statement-insights";
+import {
+  generateCreditCardStatementActions,
+  type CreditCardStatementAction
+} from "@/lib/accounts/credit-card-statement-actions";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
@@ -546,6 +550,7 @@ function AccountDetailModal({
   const [statementHistoryError, setStatementHistoryError] = useState<string | null>(null);
   const [showAllStatementPeriods, setShowAllStatementPeriods] = useState(false);
   const [showAllStatementWarnings, setShowAllStatementWarnings] = useState(false);
+  const [showAllStatementActions, setShowAllStatementActions] = useState(false);
 
   const [statementItems, setStatementItems] = useState<
     {
@@ -628,6 +633,7 @@ function AccountDetailModal({
 
   useEffect(() => {
     setShowAllStatementWarnings(false);
+    setShowAllStatementActions(false);
   }, [selectedStatementId]);
 
   const selectedStatement = useMemo(() => {
@@ -650,6 +656,21 @@ function AccountDetailModal({
       max: 6
     });
   }, [selectedStatement, previousStatement]);
+
+  const selectedImportBatchId = useMemo(() => {
+    return selectedStatement?.importBatchId ?? statementHistory[0]?.importBatchId ?? null;
+  }, [selectedStatement, statementHistory]);
+
+  const statementActions = useMemo<CreditCardStatementAction[]>(() => {
+    if (!selectedStatement) return [];
+    return generateCreditCardStatementActions({
+      current: selectedStatement,
+      previous: previousStatement ?? null,
+      insights: statementInsights,
+      importBatchId: selectedImportBatchId,
+      max: 8
+    });
+  }, [selectedStatement, previousStatement, statementInsights, selectedImportBatchId]);
 
   function formatDelta(current: number | null, prev: number | null) {
     if (current === null || prev === null) return null;
@@ -722,8 +743,8 @@ function AccountDetailModal({
         : "text-rose-700";
   const accentColor = normalizeHexColor(account.color) ?? DEFAULT_ACCOUNT_ACCENT[account.type];
   const accentBackground = hexToRgba(accentColor, 0.12);
-  const selectedImportBatchId = selectedStatement?.importBatchId ?? statementHistory[0]?.importBatchId ?? null;
   const visibleStatementPeriods = showAllStatementPeriods ? statementHistory : statementHistory.slice(0, 12);
+  const visibleStatementActions = showAllStatementActions ? statementActions : statementActions.slice(0, 3);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
@@ -1104,6 +1125,79 @@ function AccountDetailModal({
                               </div>
                               {insight.detail ? (
                                 <p className="mt-1 text-xs leading-relaxed opacity-90">{insight.detail}</p>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {statementActions.length > 0 ? (
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Acciones sugeridas
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Próximos pasos simples para mejorar tu tarjeta.
+                          </p>
+                        </div>
+                        {statementActions.length > 3 ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllStatementActions((value) => !value)}
+                            className="tap-feedback rounded-full border border-slate-200 bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                          >
+                            {showAllStatementActions ? "Mostrar menos" : "Mostrar más"}
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-2 space-y-2">
+                        {visibleStatementActions.map((action) => {
+                          const dot =
+                            action.tone === "alert"
+                              ? "bg-rose-500"
+                              : action.tone === "attention"
+                                ? "bg-amber-500"
+                                : action.tone === "positive"
+                                  ? "bg-emerald-500"
+                                  : "bg-slate-400";
+                          const toneText =
+                            action.tone === "alert"
+                              ? "text-rose-800"
+                              : action.tone === "attention"
+                                ? "text-amber-900"
+                                : action.tone === "positive"
+                                  ? "text-emerald-900"
+                                  : "text-slate-800";
+                          return (
+                            <div
+                              key={`${action.tone}-${action.title}`}
+                              className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200/70 bg-white/80 px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
+                                  <p className={`truncate text-sm font-semibold ${toneText}`}>{action.title}</p>
+                                </div>
+                                {action.detail ? (
+                                  <p className="mt-1 text-xs leading-relaxed text-slate-600">{action.detail}</p>
+                                ) : null}
+                              </div>
+                              {action.href ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Next.js typedRoutes doesn't infer template-literal query strings well here.
+                                    router.push(action.href as any);
+                                  }}
+                                  className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                                >
+                                  Abrir
+                                </button>
                               ) : null}
                             </div>
                           );
