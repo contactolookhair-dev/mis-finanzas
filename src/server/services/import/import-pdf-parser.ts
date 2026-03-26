@@ -238,6 +238,11 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       .map(normalizeLine)
       .filter(Boolean);
 
+    console.log("parsePdfImportFile normalized lines", {
+      lineCount: lines.length,
+      sample: lines.slice(0, 5).map((line) => line.slice(0, 120))
+    });
+
     if (lines.length === 0) {
       console.warn("parsePdfImportFile no text lines detected");
       return {

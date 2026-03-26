@@ -43,14 +43,41 @@ function jsonPreviewError(message?: string) {
   );
 }
 
+function resolveFunctionalPreviewMessage(params: { stage: string; errorMessage?: string; warnings?: string[] }) {
+  const { stage, errorMessage, warnings } = params;
+  const raw = (errorMessage ?? "").toLowerCase();
+  const firstWarning = warnings?.[0];
+
+  if (warnings?.some((warning) => warning.toLowerCase().includes("texto seleccionable"))) {
+    return "Este PDF no contiene texto seleccionable suficiente para generar la vista previa.";
+  }
+
+  if (raw.includes("formato de archivo no soportado")) {
+    return "No pudimos identificar el formato del archivo. Sube un PDF, CSV o Excel válido.";
+  }
+
+  if (raw.includes("no se pudo leer el pdf")) {
+    return "No fue posible leer el contenido del PDF. Revisa que no esté protegido o dañado.";
+  }
+
+  if (stage === "build_preview") {
+    return "No pudimos preparar la vista previa con la configuración actual. Intenta nuevamente.";
+  }
+
+  return getFriendlyPreviewError(errorMessage);
+}
+
 export async function POST(request: Request) {
+  let stage = "init";
   try {
+    stage = "load_dependencies";
     const [{ getWorkspaceContextFromRequest }, { hasPermission }, { previewImportFile }] = await Promise.all([
       import("@/server/tenant/workspace-context"),
       import("@/server/permissions/permissions"),
       import("@/server/services/import-service")
     ]);
 
+    stage = "resolve_context";
     const context = await getWorkspaceContextFromRequest(request as never);
     if (!context.workspaceId || !context.userKey || !context.role) {
       console.warn("imports preview auth context missing");
@@ -61,6 +88,7 @@ export async function POST(request: Request) {
       return jsonPreviewError();
     }
 
+    stage = "read_form_data";
     const formData = await request.formData();
     const file = formData.get("file");
     const selectedTemplateId = formData.get("templateId");
@@ -91,6 +119,7 @@ export async function POST(request: Request) {
       console.warn("imports preview accountId appears truncated", { preferredAccountId });
     }
 
+    stage = "read_file_bytes";
     const bytes = new Uint8Array(await file.arrayBuffer());
     console.log("imports preview parsing", {
       fileName: file.name,
@@ -99,6 +128,7 @@ export async function POST(request: Request) {
       preferredAccountId
     });
 
+    stage = "build_preview";
     const preview = await previewImportFile({
       workspaceId: context.workspaceId,
       fileName: file.name,
@@ -109,15 +139,36 @@ export async function POST(request: Request) {
       preferredImportType: importType
     });
 
+    if (preview.parser === "pdf" && !preview.supported) {
+      const message = resolveFunctionalPreviewMessage({
+        stage: "unsupported_pdf",
+        warnings: preview.warnings
+      });
+      return Response.json(
+        {
+          success: false,
+          error: "preview_not_supported",
+          message
+        },
+        { status: 200 }
+      );
+    }
+
     return Response.json({
       success: true,
       ...preview
     });
   } catch (error) {
     console.error("imports preview failed", {
+      stage,
       error,
       message: error instanceof Error ? error.message : "unknown"
     });
-    return jsonPreviewError(error instanceof Error ? error.message : undefined);
+    return jsonPreviewError(
+      resolveFunctionalPreviewMessage({
+        stage,
+        errorMessage: error instanceof Error ? error.message : undefined
+      })
+    );
   }
 }
