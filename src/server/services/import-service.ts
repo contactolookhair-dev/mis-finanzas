@@ -16,6 +16,7 @@ import { buildDuplicateFingerprint } from "@/server/services/import/import-finge
 import { detectImportTemplate } from "@/server/services/import/import-template-detection";
 import { listWorkspaceAwareImportTemplates } from "@/server/services/import/import-template-service";
 import { importCommitPayloadSchema, type ImportPreviewRow } from "@/shared/types/imports";
+import { DebtorStatus, ExpenseFrequency } from "@prisma/client";
 
 function normalizeLookupKey(value: string) {
   return value
@@ -226,7 +227,7 @@ export async function commitImportedTransactions(input: {
         seenDuringCommit.add(row.duplicateFingerprint);
 
         try {
-          await createTransactionWithAutomation(
+          const created = await createTransactionWithAutomation(
             {
               workspaceId: input.workspaceId,
               date: new Date(`${row.date}T12:00:00`),
@@ -252,12 +253,70 @@ export async function commitImportedTransactions(input: {
                   fileName: payload.fileName,
                   sourceAccountName: row.sourceAccountName ?? null,
                   originalRowNumber: row.rowNumber,
-                  suggestionMeta: row.suggestionMeta ?? {}
+                  suggestionMeta: row.suggestionMeta ?? {},
+                  classification: row.classification ?? null,
+                  debtorName: row.debtorName ?? null,
+                  owedAmount: typeof row.owedAmount === "number" ? row.owedAmount : null,
+                  debtMeta: row.classification === "PRESTADO"
+                    ? {
+                        isInstallmentDebt: row.isInstallmentDebt ?? false,
+                        installmentCount: row.installmentCount ?? 0,
+                        installmentValue: row.installmentValue ?? 0,
+                        nextInstallmentDate: row.nextInstallmentDate ?? null,
+                        debtNote: row.debtNote ?? null
+                      }
+                    : null
                 }
               }
             },
             db
           );
+
+          if (
+            row.classification === "PRESTADO" &&
+            row.type === "EGRESO" &&
+            typeof row.debtorName === "string" &&
+            row.debtorName.trim().length >= 3
+          ) {
+            const owedAmount =
+              typeof row.owedAmount === "number" && Number.isFinite(row.owedAmount) && row.owedAmount > 0
+                ? row.owedAmount
+                : Math.abs(row.amount);
+
+            const isInstallmentDebt = Boolean(row.isInstallmentDebt);
+            const installmentCount =
+              isInstallmentDebt && typeof row.installmentCount === "number" && Number.isFinite(row.installmentCount)
+                ? Math.max(0, Math.floor(row.installmentCount))
+                : 0;
+            const installmentValue =
+              isInstallmentDebt && typeof row.installmentValue === "number" && Number.isFinite(row.installmentValue)
+                ? Math.max(0, row.installmentValue)
+                : 0;
+            const nextInstallmentDate =
+              isInstallmentDebt && row.nextInstallmentDate
+                ? new Date(`${row.nextInstallmentDate}T12:00:00`)
+                : null;
+
+            await db.debtor.create({
+              data: {
+                workspaceId: input.workspaceId,
+                name: row.debtorName.trim(),
+                reason: row.description,
+                totalAmount: new Prisma.Decimal(owedAmount),
+                paidAmount: new Prisma.Decimal(0),
+                startDate: new Date(`${row.date}T12:00:00`),
+                estimatedPayDate: null,
+                status: DebtorStatus.PENDIENTE,
+                isInstallmentDebt,
+                installmentCount,
+                installmentValue: new Prisma.Decimal(installmentValue),
+                paidInstallments: 0,
+                installmentFrequency: ExpenseFrequency.MENSUAL,
+                nextInstallmentDate,
+                notes: row.debtNote ?? null
+              }
+            });
+          }
 
           imported += 1;
         } catch (error) {

@@ -5,6 +5,7 @@ export const importedFinancialOriginSchema = z.enum(["PERSONAL", "EMPRESA"]);
 export const importParserKindSchema = z.enum(["csv", "xlsx", "pdf"]);
 export const importDuplicateStatusSchema = z.enum(["none", "existing", "batch"]);
 export const suggestionSourceKindSchema = z.enum(["rule", "history", "detected", "manual"]);
+export const importClassificationSchema = z.enum(["PERSONAL", "NEGOCIO", "PRESTADO"]);
 
 export const importFieldSuggestionSchema = z.object({
   source: suggestionSourceKindSchema,
@@ -27,6 +28,14 @@ export const importPreviewRowSchema = z.object({
   financialOrigin: importedFinancialOriginSchema.default("PERSONAL"),
   isReimbursable: z.boolean().default(false),
   isBusinessPaidPersonally: z.boolean().default(false),
+  classification: importClassificationSchema.optional(),
+  debtorName: z.string().optional(),
+  owedAmount: z.number().finite().optional(),
+  isInstallmentDebt: z.boolean().optional(),
+  installmentCount: z.number().int().min(0).optional(),
+  installmentValue: z.number().finite().optional(),
+  nextInstallmentDate: z.string().optional().nullable(),
+  debtNote: z.string().optional().nullable(),
   duplicateFingerprint: z.string().optional(),
   duplicateStatus: importDuplicateStatusSchema.default("none"),
   suggestionMeta: z
@@ -59,6 +68,14 @@ export const importCommitRowSchema = z.object({
   financialOrigin: importedFinancialOriginSchema,
   isReimbursable: z.boolean().default(false),
   isBusinessPaidPersonally: z.boolean().default(false),
+  classification: importClassificationSchema.optional(),
+  debtorName: z.string().optional(),
+  owedAmount: z.number().finite().optional(),
+  isInstallmentDebt: z.boolean().optional(),
+  installmentCount: z.number().int().min(0).optional(),
+  installmentValue: z.number().finite().optional(),
+  nextInstallmentDate: z.string().optional().nullable(),
+  debtNote: z.string().optional().nullable(),
   duplicateFingerprint: z.string().optional(),
   duplicateStatus: importDuplicateStatusSchema.default("none"),
   suggestionMeta: z

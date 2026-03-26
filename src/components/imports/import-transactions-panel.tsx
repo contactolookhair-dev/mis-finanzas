@@ -58,6 +58,20 @@ type CommitSummary = {
   errors: Array<{ rowId: string; message: string }>;
 };
 
+function isCreditCardAccount(option?: ReferenceOption | null) {
+  return option?.type === "TARJETA_CREDITO";
+}
+
+function computeDefaultNextInstallmentDate(baseYmd?: string) {
+  const base = baseYmd ? new Date(`${baseYmd}T12:00:00`) : new Date();
+  const next = new Date(base);
+  next.setMonth(next.getMonth() + 1);
+  const year = next.getFullYear();
+  const month = `${next.getMonth() + 1}`.padStart(2, "0");
+  const day = `${next.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function getDuplicateLabel(status: ImportPreviewRow["duplicateStatus"]) {
   if (status === "existing") return "Duplicado existente";
   if (status === "batch") return "Duplicado en archivo";
@@ -127,6 +141,19 @@ export function ImportTransactionsPanel() {
     [rows]
   );
 
+  const accountById = useMemo(() => {
+    if (!preview) return new Map<string, ReferenceOption>();
+    return new Map(preview.references.accounts.map((account) => [account.id, account]));
+  }, [preview]);
+
+  const debtorNameOptions = useMemo(() => {
+    const names = rows
+      .map((row) => row.debtorName)
+      .filter((value): value is string => Boolean(value && value.trim().length >= 3))
+      .map((value) => value.trim());
+    return Array.from(new Set(names)).slice(0, 50);
+  }, [rows]);
+
   function updateRow(rowId: string, patch: Partial<ImportPreviewRow>) {
     setRows((current) =>
       current.map((row) => {
@@ -149,6 +176,19 @@ export function ImportTransactionsPanel() {
           nextIssues.push("Monto no reconocido");
         }
         if (!next.type) nextIssues.push("Tipo no reconocido");
+
+        if (next.classification === "NEGOCIO" && next.type === "EGRESO" && !next.businessUnitId) {
+          nextIssues.push("Selecciona unidad de negocio");
+        }
+        if (next.classification === "PRESTADO" && next.type === "EGRESO") {
+          if (!next.debtorName || next.debtorName.trim().length < 3) {
+            nextIssues.push("Falta nombre de persona");
+          }
+          if (next.isInstallmentDebt) {
+            if (!next.installmentCount || next.installmentCount < 1) nextIssues.push("Cuotas inválidas");
+            if (!next.installmentValue || next.installmentValue < 1) nextIssues.push("Valor cuota inválido");
+          }
+        }
 
         return {
           ...next,
@@ -241,6 +281,14 @@ export function ImportTransactionsPanel() {
           financialOrigin: row.financialOrigin,
           isReimbursable: row.isReimbursable,
           isBusinessPaidPersonally: row.isBusinessPaidPersonally,
+          classification: row.classification,
+          debtorName: row.debtorName,
+          owedAmount: row.owedAmount,
+          isInstallmentDebt: row.isInstallmentDebt,
+          installmentCount: row.installmentCount,
+          installmentValue: row.installmentValue,
+          nextInstallmentDate: row.nextInstallmentDate ?? null,
+          debtNote: row.debtNote ?? null,
           duplicateFingerprint: row.duplicateFingerprint,
           duplicateStatus: row.duplicateStatus,
           suggestionMeta: row.suggestionMeta,
@@ -449,6 +497,9 @@ export function ImportTransactionsPanel() {
           <div className="space-y-3">
             {rows.map((row) => {
               const duplicateLabel = getDuplicateLabel(row.duplicateStatus);
+              const selectedAccount = row.accountId ? accountById.get(row.accountId) ?? null : null;
+              const showClassification = row.type === "EGRESO" && isCreditCardAccount(selectedAccount);
+              const classificationValue = row.classification ?? "PERSONAL";
 
               return (
                 <div key={row.id} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
@@ -613,7 +664,10 @@ export function ImportTransactionsPanel() {
                       <span className="text-xs font-medium text-neutral-500">Cuenta interna</span>
                       <Select
                         value={row.accountId ?? ""}
-                        onChange={(event) => updateRow(row.id, { accountId: event.target.value || undefined })}
+                        onChange={(event) => {
+                          const accountId = event.target.value || undefined;
+                          updateRow(row.id, { accountId });
+                        }}
                       >
                         <option value="">Sin asignar</option>
                         {preview.references.accounts.map((account) => (
@@ -624,6 +678,200 @@ export function ImportTransactionsPanel() {
                       </Select>
                     </label>
                   </div>
+
+                  {showClassification ? (
+                    <div className="mt-4 rounded-[22px] border border-slate-200 bg-white/85 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                        Clasificación (tarjeta crédito)
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Personal, negocio o prestado. Si eliges prestado, se crea deuda automática en Pendientes.
+                      </p>
+
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <label className="space-y-2">
+                          <span className="text-xs font-medium text-neutral-500">Tipo</span>
+                          <Select
+                            value={classificationValue}
+                            onChange={(event) => {
+                              const next = event.target.value as "PERSONAL" | "NEGOCIO" | "PRESTADO";
+                              if (next === "PERSONAL") {
+                                updateRow(row.id, {
+                                  classification: "PERSONAL",
+                                  financialOrigin: "PERSONAL",
+                                  businessUnitId: undefined,
+                                  isReimbursable: false,
+                                  isBusinessPaidPersonally: false,
+                                  debtorName: undefined,
+                                  owedAmount: undefined,
+                                  isInstallmentDebt: undefined,
+                                  installmentCount: undefined,
+                                  installmentValue: undefined,
+                                  nextInstallmentDate: null,
+                                  debtNote: null
+                                });
+                              } else if (next === "NEGOCIO") {
+                                updateRow(row.id, {
+                                  classification: "NEGOCIO",
+                                  financialOrigin: "EMPRESA",
+                                  isReimbursable: false,
+                                  isBusinessPaidPersonally: true
+                                });
+                              } else {
+                                updateRow(row.id, {
+                                  classification: "PRESTADO",
+                                  financialOrigin: "PERSONAL",
+                                  businessUnitId: undefined,
+                                  isReimbursable: true,
+                                  isBusinessPaidPersonally: false,
+                                  owedAmount:
+                                    typeof row.amount === "number" ? Math.abs(row.amount) : undefined,
+                                  nextInstallmentDate: row.nextInstallmentDate ?? null,
+                                  debtNote: row.debtNote ?? null
+                                });
+                              }
+                            }}
+                          >
+                            <option value="PERSONAL">Personal</option>
+                            <option value="NEGOCIO">Negocio</option>
+                            <option value="PRESTADO">Prestado</option>
+                          </Select>
+                        </label>
+
+                        {classificationValue === "NEGOCIO" ? (
+                          <label className="space-y-2 md:col-span-2">
+                            <span className="text-xs font-medium text-neutral-500">Unidad de negocio</span>
+                            <Select
+                              value={row.businessUnitId ?? ""}
+                              onChange={(event) => {
+                                const businessUnitId = event.target.value || undefined;
+                                updateRow(row.id, {
+                                  businessUnitId,
+                                  financialOrigin: businessUnitId ? "EMPRESA" : row.financialOrigin,
+                                  isBusinessPaidPersonally: true
+                                });
+                              }}
+                            >
+                              <option value="">Selecciona negocio</option>
+                              {preview.references.businessUnits.map((unit) => (
+                                <option key={unit.id} value={unit.id}>
+                                  {unit.name}
+                                </option>
+                              ))}
+                            </Select>
+                          </label>
+                        ) : null}
+
+                        {classificationValue === "PRESTADO" ? (
+                          <>
+                            <label className="space-y-2 md:col-span-2">
+                              <span className="text-xs font-medium text-neutral-500">Persona</span>
+                              <Input
+                                placeholder="Nombre de quien te debe"
+                                value={row.debtorName ?? ""}
+                                onChange={(event) => updateRow(row.id, { debtorName: event.target.value })}
+                                list={`debtor-names-${row.id}`}
+                              />
+                              <datalist id={`debtor-names-${row.id}`}>
+                                {debtorNameOptions.map((name) => (
+                                  <option key={name} value={name} />
+                                ))}
+                              </datalist>
+                            </label>
+                            <label className="space-y-2">
+                              <span className="text-xs font-medium text-neutral-500">Monto adeudado</span>
+                              <Input
+                                type="number"
+                                value={row.owedAmount ?? (typeof row.amount === "number" ? Math.abs(row.amount) : "")}
+                                onChange={(event) =>
+                                  updateRow(row.id, {
+                                    owedAmount: event.target.value === "" ? undefined : Number(event.target.value)
+                                  })
+                                }
+                              />
+                            </label>
+
+                            <label className="mt-1 flex items-center gap-2 text-sm md:col-span-3">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(row.isInstallmentDebt)}
+                                onChange={(event) => {
+                                  const checked = event.target.checked;
+                                  if (!checked) {
+                                    updateRow(row.id, {
+                                      isInstallmentDebt: false,
+                                      installmentCount: undefined,
+                                      installmentValue: undefined,
+                                      nextInstallmentDate: null
+                                    });
+                                    return;
+                                  }
+                                  const count = row.installmentCount && row.installmentCount > 0 ? row.installmentCount : 3;
+                                  const baseAmount = typeof row.owedAmount === "number" ? row.owedAmount : typeof row.amount === "number" ? Math.abs(row.amount) : 0;
+                                  const value = row.installmentValue && row.installmentValue > 0 ? row.installmentValue : Math.ceil(baseAmount / Math.max(1, count));
+                                  updateRow(row.id, {
+                                    isInstallmentDebt: true,
+                                    installmentCount: count,
+                                    installmentValue: value,
+                                    nextInstallmentDate: row.nextInstallmentDate ?? computeDefaultNextInstallmentDate(row.date)
+                                  });
+                                }}
+                              />
+                              Registrar deuda en cuotas (opcional)
+                            </label>
+
+                            {row.isInstallmentDebt ? (
+                              <div className="grid gap-3 md:col-span-3 md:grid-cols-3">
+                                <label className="space-y-2">
+                                  <span className="text-xs font-medium text-neutral-500">Total cuotas</span>
+                                  <Input
+                                    type="number"
+                                    value={row.installmentCount ?? ""}
+                                    onChange={(event) =>
+                                      updateRow(row.id, {
+                                        installmentCount: event.target.value === "" ? undefined : Number(event.target.value)
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="space-y-2">
+                                  <span className="text-xs font-medium text-neutral-500">Valor cuota</span>
+                                  <Input
+                                    type="number"
+                                    value={row.installmentValue ?? ""}
+                                    onChange={(event) =>
+                                      updateRow(row.id, {
+                                        installmentValue: event.target.value === "" ? undefined : Number(event.target.value)
+                                      })
+                                    }
+                                  />
+                                </label>
+                                <label className="space-y-2">
+                                  <span className="text-xs font-medium text-neutral-500">Próxima cuota</span>
+                                  <Input
+                                    type="date"
+                                    value={row.nextInstallmentDate ?? ""}
+                                    onChange={(event) =>
+                                      updateRow(row.id, { nextInstallmentDate: event.target.value || null })
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            ) : null}
+
+                            <label className="space-y-2 md:col-span-3">
+                              <span className="text-xs font-medium text-neutral-500">Nota (opcional)</span>
+                              <Input
+                                placeholder="Ej: Compra prestada con mi tarjeta"
+                                value={row.debtNote ?? ""}
+                                onChange={(event) => updateRow(row.id, { debtNote: event.target.value || null })}
+                              />
+                            </label>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <label className="mt-4 flex items-center gap-2 text-sm">
                     <input
