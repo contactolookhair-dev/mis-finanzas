@@ -291,6 +291,22 @@ export async function commitImportedTransactions(input: {
       duplicateFingerprint
     };
   });
+
+  const primaryAccountId = (() => {
+    const counts = new Map<string, number>();
+    for (const row of preparedRows) {
+      if (!row.accountId) continue;
+      counts.set(row.accountId, (counts.get(row.accountId) ?? 0) + 1);
+    }
+    let best: { id: string; count: number } | null = null;
+    for (const [id, count] of counts.entries()) {
+      if (!best || count > best.count) best = { id, count };
+    }
+    // Require a strong majority to avoid incorrect association when importing mixed accounts.
+    if (!best) return null;
+    const ratio = best.count / Math.max(1, preparedRows.length);
+    return ratio >= 0.8 ? best.id : null;
+  })();
   const candidateFingerprints = [...new Set(preparedRows.map((row) => row.duplicateFingerprint))];
   const batch = await prisma.importBatch.create({
     data: {
@@ -363,8 +379,10 @@ export async function commitImportedTransactions(input: {
                 import: {
                   parser: payload.parser,
                   fileName: payload.fileName,
+                  appliedTemplateId: payload.appliedTemplateId ?? null,
                   sourceAccountName: row.sourceAccountName ?? null,
                   originalRowNumber: row.rowNumber,
+                  parserMeta: row.parserMeta ?? null,
                   suggestionMeta: row.suggestionMeta ?? {},
                   classification: row.classification ?? null,
                   debtorName: row.debtorName ?? null,
@@ -461,8 +479,113 @@ export async function commitImportedTransactions(input: {
           metadata: {
             parser: payload.parser,
             sourceRows: payload.rows.length,
-            includedRows: includedRows.length
-          }
+            includedRows: includedRows.length,
+            pdf: payload.parser === "pdf"
+              ? {
+                  appliedTemplateId: payload.appliedTemplateId ?? null,
+                  meta: (payload.pdfMeta ?? null) as unknown as Prisma.InputJsonValue,
+                  warnings: payload.pdfWarnings ?? [],
+                  primaryAccountId
+                }
+              : null,
+            creditCardStatement:
+              payload.parser === "pdf" &&
+              payload.pdfMeta &&
+              typeof payload.pdfMeta === "object" &&
+              (payload.pdfMeta as Record<string, unknown>).institution === "Banco Falabella"
+                ? (() => {
+                    const meta = payload.pdfMeta as Record<string, unknown>;
+                    const statement = {
+                      kind: "falabella-cmr",
+                      accountId: primaryAccountId,
+                      fileName: payload.fileName,
+                      periodStart: typeof meta.billingPeriodStart === "string" ? meta.billingPeriodStart : null,
+                      periodEnd: typeof meta.billingPeriodEnd === "string" ? meta.billingPeriodEnd : null,
+                      closingDate: typeof meta.closingDate === "string" ? meta.closingDate : null,
+                      paymentDate: typeof meta.paymentDate === "string" ? meta.paymentDate : null,
+                      totalBilled:
+                        typeof meta.totalBilled === "number" && Number.isFinite(meta.totalBilled)
+                          ? meta.totalBilled
+                          : null,
+                      minimumDue:
+                        typeof meta.minimumDue === "number" && Number.isFinite(meta.minimumDue)
+                          ? meta.minimumDue
+                          : null,
+                      creditLimit:
+                        typeof meta.creditLimit === "number" && Number.isFinite(meta.creditLimit)
+                          ? meta.creditLimit
+                          : null,
+                      creditUsed:
+                        typeof meta.creditUsed === "number" && Number.isFinite(meta.creditUsed)
+                          ? meta.creditUsed
+                          : null,
+                      creditAvailable:
+                        typeof meta.creditAvailable === "number" && Number.isFinite(meta.creditAvailable)
+                          ? meta.creditAvailable
+                          : null,
+                      parserConfidence:
+                        typeof meta.parserConfidence === "number" && Number.isFinite(meta.parserConfidence)
+                          ? meta.parserConfidence
+                          : null,
+                      missingFields: Array.isArray(meta.missingFields) ? meta.missingFields : [],
+                      warnings: payload.pdfWarnings ?? [],
+                      totals: (() => {
+                        const totals: Record<string, number> = {
+                          purchases: 0,
+                          installmentPurchases: 0,
+                          payments: 0,
+                          refunds: 0,
+                          fees: 0,
+                          interests: 0,
+                          cashAdvances: 0,
+                          taxes: 0,
+                          insurance: 0,
+                          unknownCharges: 0,
+                          unknownCredits: 0
+                        };
+                        let movementCount = 0;
+                        let dubiousCount = 0;
+
+                        for (const r of preparedRows) {
+                          movementCount += 1;
+                          const parserMeta = r.parserMeta as Record<string, unknown> | undefined;
+                          const classifiedAs = typeof parserMeta?.classifiedAs === "string" ? (parserMeta.classifiedAs as string) : "unknown";
+                          const isDubious = parserMeta?.dubious === true;
+                          if (isDubious) dubiousCount += 1;
+
+                          const amount = r.amount;
+                          if (!Number.isFinite(amount)) continue;
+
+                          if (r.type === "EGRESO") {
+                            const value = Math.abs(amount);
+                            if (classifiedAs === "purchase") totals.purchases += value;
+                            else if (classifiedAs === "installment_purchase") totals.installmentPurchases += value;
+                            else if (classifiedAs === "fee") totals.fees += value;
+                            else if (classifiedAs === "interest") totals.interests += value;
+                            else if (classifiedAs === "cash_advance") totals.cashAdvances += value;
+                            else if (classifiedAs === "tax") totals.taxes += value;
+                            else if (classifiedAs === "insurance") totals.insurance += value;
+                            else totals.unknownCharges += value;
+                          } else {
+                            const value = Math.abs(amount);
+                            if (classifiedAs === "payment") totals.payments += value;
+                            else if (classifiedAs === "refund") totals.refunds += value;
+                            else totals.unknownCredits += value;
+                          }
+                        }
+
+                        return {
+                          ...totals,
+                          movementCount,
+                          dubiousCount
+                        };
+                      })()
+                    };
+
+                    return statement;
+                  })()
+                : null
+          } as unknown as Prisma.InputJsonValue
         }
       });
     });

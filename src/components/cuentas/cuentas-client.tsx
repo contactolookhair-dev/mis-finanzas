@@ -506,6 +506,46 @@ function AccountDetailModal({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [latestImportedStatement, setLatestImportedStatement] = useState<{
+    batchId: string;
+    createdAt: string;
+    completedAt: string | null;
+    summary: {
+      kind: string;
+      accountId: string;
+      fileName: string;
+      periodStart: string | null;
+      periodEnd: string | null;
+      closingDate: string | null;
+      paymentDate: string | null;
+      totalBilled: number | null;
+      minimumDue: number | null;
+      creditLimit: number | null;
+      creditUsed: number | null;
+      creditAvailable: number | null;
+      parserConfidence: number | null;
+      missingFields: string[];
+      warnings: string[];
+      totals: {
+        movementCount: number;
+        dubiousCount: number;
+        purchases: number;
+        installmentPurchases: number;
+        payments: number;
+        refunds: number;
+        fees: number;
+        interests: number;
+        cashAdvances: number;
+        taxes: number;
+        insurance: number;
+        unknownCharges: number;
+        unknownCredits: number;
+      };
+    };
+  } | null>(null);
+  const [latestImportedStatementLoading, setLatestImportedStatementLoading] = useState(false);
+  const [latestImportedStatementError, setLatestImportedStatementError] = useState<string | null>(null);
+
   const [statementItems, setStatementItems] = useState<
     {
       id: string;
@@ -544,6 +584,35 @@ function AccountDetailModal({
     () => statementPayments.reduce((sum, item) => sum + item.amount, 0),
     [statementPayments]
   );
+
+  useEffect(() => {
+    let active = true;
+    async function loadLatestImportedStatement() {
+      if (!open || !account || account.type !== "CREDITO") {
+        setLatestImportedStatement(null);
+        return;
+      }
+      setLatestImportedStatementLoading(true);
+      setLatestImportedStatementError(null);
+      try {
+        const response = await fetch(`/api/accounts/${account.id}/statements/latest`, { cache: "no-store" });
+        if (!response.ok) throw new Error("No se pudo cargar el último estado importado.");
+        const payload = (await response.json()) as { latest: typeof latestImportedStatement };
+        if (!active) return;
+        setLatestImportedStatement(payload.latest ?? null);
+      } catch (error) {
+        if (!active) return;
+        setLatestImportedStatementError(error instanceof Error ? error.message : "No se pudo cargar el último estado importado.");
+      } finally {
+        if (active) setLatestImportedStatementLoading(false);
+      }
+    }
+
+    void loadLatestImportedStatement();
+    return () => {
+      active = false;
+    };
+  }, [open, account]);
 
   useEffect(() => {
     let active = true;
@@ -717,16 +786,167 @@ function AccountDetailModal({
         </SurfaceCard>
 
         {account.type === "CREDITO" ? (
-          <SurfaceCard variant="soft" padding="sm" className="mt-4 space-y-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Estado de cuenta</p>
-              <h4 className="mt-1 text-sm font-semibold text-slate-900">Período actual</h4>
-              <p className="mt-1 text-xs text-slate-500">
-                {billingPeriod
-                  ? `${billingPeriod.periodStart} → ${billingPeriod.periodEnd}`
-                  : "Basado en movimientos registrados en esta tarjeta."}
-              </p>
-            </div>
+          <>
+            <SurfaceCard variant="soft" padding="sm" className="mt-4 space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Estado de cuenta inteligente</p>
+                <h4 className="mt-1 text-sm font-semibold text-slate-900">Último estado importado</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  Importa un PDF de tu estado de cuenta para ver aquí el resumen del período.
+                </p>
+              </div>
+
+              {latestImportedStatementLoading ? (
+                <p className="text-xs text-slate-500">Cargando último estado importado...</p>
+              ) : latestImportedStatementError ? (
+                <p className="text-xs text-rose-600">{latestImportedStatementError}</p>
+              ) : !latestImportedStatement ? (
+                <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                  <p className="text-xs text-slate-600">
+                    Aún no has importado un estado de cuenta para esta tarjeta.
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Ve a <span className="font-semibold text-slate-700">Importaciones</span> y sube el PDF de CMR/Falabella para autocompletar el período, cupos y totales.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Período facturado</p>
+                      <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                        {latestImportedStatement.summary.periodStart && latestImportedStatement.summary.periodEnd
+                          ? `${latestImportedStatement.summary.periodStart} → ${latestImportedStatement.summary.periodEnd}`
+                          : "—"}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {latestImportedStatement.summary.parserConfidence !== null
+                          ? `Confianza ${Math.round(latestImportedStatement.summary.parserConfidence * 100)}%`
+                          : "Confianza —"}
+                        {" · "}
+                        {latestImportedStatement.summary.totals.dubiousCount > 0
+                          ? `${latestImportedStatement.summary.totals.dubiousCount} dudosas`
+                          : "Sin dudosas"}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Movimientos</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {latestImportedStatement.summary.totals.movementCount}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Total facturado</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {latestImportedStatement.summary.totalBilled === null ? "—" : formatCurrency(latestImportedStatement.summary.totalBilled)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Pago mínimo:{" "}
+                        {latestImportedStatement.summary.minimumDue === null ? "—" : formatCurrency(latestImportedStatement.summary.minimumDue)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Cupo</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        Disponible:{" "}
+                        {latestImportedStatement.summary.creditAvailable === null ? "—" : formatCurrency(latestImportedStatement.summary.creditAvailable)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Usado:{" "}
+                        {latestImportedStatement.summary.creditUsed === null ? "—" : formatCurrency(latestImportedStatement.summary.creditUsed)}
+                        {" · "}
+                        Total:{" "}
+                        {latestImportedStatement.summary.creditLimit === null ? "—" : formatCurrency(latestImportedStatement.summary.creditLimit)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Cierre</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {latestImportedStatement.summary.closingDate ?? "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pago</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {latestImportedStatement.summary.paymentDate ?? "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Totales compras</p>
+                      <p className="mt-1 text-base font-semibold text-rose-700">
+                        {formatCurrency(latestImportedStatement.summary.totals.purchases + latestImportedStatement.summary.totals.installmentPurchases)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Cuotas: {formatCurrency(latestImportedStatement.summary.totals.installmentPurchases)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Totales abonos</p>
+                      <p className="mt-1 text-base font-semibold text-emerald-700">
+                        {formatCurrency(latestImportedStatement.summary.totals.payments + latestImportedStatement.summary.totals.refunds)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Devoluciones: {formatCurrency(latestImportedStatement.summary.totals.refunds)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Intereses / comisiones</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        Intereses: {formatCurrency(latestImportedStatement.summary.totals.interests)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Comisiones: {formatCurrency(latestImportedStatement.summary.totals.fees)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Avances / seguros</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        Avances: {formatCurrency(latestImportedStatement.summary.totals.cashAdvances)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Seguros: {formatCurrency(latestImportedStatement.summary.totals.insurance)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {latestImportedStatement.summary.warnings.length > 0 ? (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      <p className="font-semibold">Warnings</p>
+                      <ul className="mt-1 list-disc pl-4">
+                        {latestImportedStatement.summary.warnings.slice(0, 3).map((w, idx) => (
+                          <li key={`${idx}-${w}`} className="mt-1">
+                            {w}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </SurfaceCard>
+
+            <SurfaceCard variant="soft" padding="sm" className="mt-4 space-y-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Estado de cuenta</p>
+                <h4 className="mt-1 text-sm font-semibold text-slate-900">Período actual</h4>
+                <p className="mt-1 text-xs text-slate-500">
+                  {billingPeriod
+                    ? `${billingPeriod.periodStart} → ${billingPeriod.periodEnd}`
+                    : "Basado en movimientos registrados en esta tarjeta."}
+                </p>
+              </div>
 
             {statementLoading ? (
               <p className="text-xs text-slate-500">Cargando estado de cuenta...</p>
@@ -813,7 +1033,8 @@ function AccountDetailModal({
                 </div>
               </>
             )}
-          </SurfaceCard>
+            </SurfaceCard>
+          </>
         ) : null}
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">

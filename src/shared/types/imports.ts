@@ -7,6 +7,22 @@ export const importDuplicateStatusSchema = z.enum(["none", "existing", "batch"])
 export const suggestionSourceKindSchema = z.enum(["rule", "history", "detected", "manual"]);
 export const importClassificationSchema = z.enum(["PERSONAL", "NEGOCIO", "PRESTADO"]);
 
+// Optional parser metadata for richer PDF imports (e.g. credit card statements).
+// This is intentionally generic so other banks can plug in later without breaking the API.
+export const importParserMetaSchema = z
+  .object({
+    kind: z.string().optional(),
+    classifiedAs: z.string().optional(),
+    section: z.string().optional(),
+    keywords: z.array(z.string()).optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    rawLine: z.string().optional(),
+    dubious: z.boolean().optional(),
+    dubiousReasons: z.array(z.string()).optional()
+  })
+  .strict()
+  .partial();
+
 export const importFieldSuggestionSchema = z.object({
   source: suggestionSourceKindSchema,
   label: z.string(),
@@ -36,6 +52,7 @@ export const importPreviewRowSchema = z.object({
   installmentValue: z.number().finite().optional(),
   nextInstallmentDate: z.string().optional().nullable(),
   debtNote: z.string().optional().nullable(),
+  parserMeta: importParserMetaSchema.optional(),
   duplicateFingerprint: z.string().optional(),
   duplicateStatus: importDuplicateStatusSchema.default("none"),
   suggestionMeta: z
@@ -76,6 +93,7 @@ export const importCommitRowSchema = z.object({
   installmentValue: z.number().finite().optional(),
   nextInstallmentDate: z.string().optional().nullable(),
   debtNote: z.string().optional().nullable(),
+  parserMeta: importParserMetaSchema.optional(),
   duplicateFingerprint: z.string().optional(),
   duplicateStatus: importDuplicateStatusSchema.default("none"),
   suggestionMeta: z
@@ -95,7 +113,10 @@ export const importCommitRowSchema = z.object({
 export const importCommitPayloadSchema = z.object({
   parser: importParserKindSchema,
   fileName: z.string().min(1),
-  rows: z.array(importCommitRowSchema)
+  rows: z.array(importCommitRowSchema),
+  pdfMeta: z.record(z.unknown()).optional(),
+  pdfWarnings: z.array(z.string()).optional(),
+  appliedTemplateId: z.string().optional()
 });
 
 export type ImportPreviewRow = z.infer<typeof importPreviewRowSchema>;
@@ -104,3 +125,4 @@ export type ImportCommitPayload = z.infer<typeof importCommitPayloadSchema>;
 export type ImportParserKind = z.infer<typeof importParserKindSchema>;
 export type ImportDuplicateStatus = z.infer<typeof importDuplicateStatusSchema>;
 export type ImportFieldSuggestion = z.infer<typeof importFieldSuggestionSchema>;
+export type ImportParserMeta = z.infer<typeof importParserMetaSchema>;

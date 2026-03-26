@@ -235,6 +235,28 @@ export function normalizeImportedRows(input: NormalizeInput): ImportPreviewRow[]
     const issues: string[] = [];
     const template = input.template ?? null;
 
+    const rawRow = row as Record<string, unknown>;
+    const parserMeta =
+      typeof rawRow.__cmrClassifiedAs === "string"
+        ? {
+            kind: "falabella-cmr",
+            classifiedAs: rawRow.__cmrClassifiedAs as string,
+            section: typeof rawRow.__cmrMatchedSection === "string" ? (rawRow.__cmrMatchedSection as string) : undefined,
+            keywords: Array.isArray(rawRow.__cmrMatchedKeywords)
+              ? (rawRow.__cmrMatchedKeywords as unknown[]).filter((v): v is string => typeof v === "string")
+              : undefined,
+            confidence:
+              typeof rawRow.__cmrConfidence === "number" && Number.isFinite(rawRow.__cmrConfidence)
+                ? (rawRow.__cmrConfidence as number)
+                : undefined,
+            rawLine: typeof rawRow.__cmrRawLine === "string" ? (rawRow.__cmrRawLine as string) : undefined,
+            dubious: rawRow.__cmrDubious === true,
+            dubiousReasons: Array.isArray(rawRow.__cmrDubiousReasons)
+              ? (rawRow.__cmrDubiousReasons as unknown[]).filter((v): v is string => typeof v === "string")
+              : undefined
+          }
+        : undefined;
+
     const parsedDate = parseDateValue(
       getValueFromTemplateColumns(row, template?.columns.date ?? [], DATE_ALIASES),
       template?.dateFormats ?? []
@@ -324,6 +346,7 @@ export function normalizeImportedRows(input: NormalizeInput): ImportPreviewRow[]
       suggestionMeta: {},
       issues,
       include: issues.length === 0,
+      parserMeta,
       rawValues: row
     };
   });

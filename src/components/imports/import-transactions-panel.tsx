@@ -7,7 +7,8 @@ import type {
   ImportCommitRow,
   ImportFieldSuggestion,
   ImportParserKind,
-  ImportPreviewRow
+  ImportPreviewRow,
+  ImportParserMeta
 } from "@/shared/types/imports";
 import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 import { Button } from "@/components/ui/button";
@@ -323,6 +324,9 @@ export function ImportTransactionsPanel() {
       const payload = {
         parser: preview.parser,
         fileName: selectedFile?.name ?? "importacion",
+        appliedTemplateId: preview.appliedTemplate?.id ?? undefined,
+        pdfMeta: preview.pdfMeta ?? undefined,
+        pdfWarnings: preview.warnings ?? undefined,
         rows: rows.map<ImportCommitRow>((row) => ({
           id: row.id,
           rowNumber: row.rowNumber,
@@ -346,6 +350,7 @@ export function ImportTransactionsPanel() {
           installmentValue: row.installmentValue,
           nextInstallmentDate: row.nextInstallmentDate ?? null,
           debtNote: row.debtNote ?? null,
+          parserMeta: (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta,
           duplicateFingerprint: row.duplicateFingerprint,
           duplicateStatus: row.duplicateStatus,
           suggestionMeta: row.suggestionMeta,
@@ -656,16 +661,11 @@ export function ImportTransactionsPanel() {
               const selectedAccount = row.accountId ? accountById.get(row.accountId) ?? null : null;
               const showClassification = row.type === "EGRESO" && isCreditCardAccount(selectedAccount);
               const classificationValue = row.classification ?? "PERSONAL";
-              const raw = row.rawValues as Record<string, unknown>;
-              const cmrClass =
-                typeof raw.__cmrClassifiedAs === "string" ? (raw.__cmrClassifiedAs as string) : null;
-              const cmrSection =
-                typeof raw.__cmrMatchedSection === "string" ? (raw.__cmrMatchedSection as string) : null;
-              const cmrConfidence =
-                typeof raw.__cmrConfidence === "number" && Number.isFinite(raw.__cmrConfidence)
-                  ? (raw.__cmrConfidence as number)
-                  : null;
-              const cmrDubious = raw.__cmrDubious === true;
+              const parserMeta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
+              const cmrClass = parserMeta?.kind === "falabella-cmr" ? (parserMeta.classifiedAs ?? null) : null;
+              const cmrSection = parserMeta?.kind === "falabella-cmr" ? (parserMeta.section ?? null) : null;
+              const cmrConfidence = parserMeta?.kind === "falabella-cmr" && typeof parserMeta.confidence === "number" ? parserMeta.confidence : null;
+              const cmrDubious = parserMeta?.kind === "falabella-cmr" ? Boolean(parserMeta.dubious) : false;
 
               return (
                 <div key={row.id} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
