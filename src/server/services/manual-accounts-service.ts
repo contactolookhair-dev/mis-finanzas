@@ -137,7 +137,7 @@ export async function ensureCashWalletAccount(workspaceId: string) {
 export async function listManualAccountsWithBalances(workspaceId: string) {
   await ensureCashWalletAccount(workspaceId);
 
-  const [accounts, sums, metaMap] = await Promise.all([
+  const [accounts, sums, noConsumeSums, metaMap] = await Promise.all([
     prisma.account.findMany({
       where: { workspaceId, isActive: true },
       orderBy: [{ type: "asc" }, { name: "asc" }]
@@ -145,6 +145,15 @@ export async function listManualAccountsWithBalances(workspaceId: string) {
     prisma.transaction.groupBy({
       by: ["accountId"],
       where: { workspaceId, accountId: { not: null } },
+      _sum: { amount: true }
+    }),
+    prisma.transaction.groupBy({
+      by: ["accountId"],
+      where: {
+        workspaceId,
+        accountId: { not: null },
+        creditImpactType: "no_consume_cupo"
+      },
       _sum: { amount: true }
     }),
     getAccountMetaMap(workspaceId)
@@ -156,24 +165,36 @@ export async function listManualAccountsWithBalances(workspaceId: string) {
       .map((row) => [row.accountId as string, toAmountNumber(row._sum.amount ?? 0)])
   );
 
-  return accounts.map((account) => ({
-    id: account.id,
-    name: account.name,
-    bank: account.institution ?? "Manual",
-    type:
-      account.type === AccountType.TARJETA_CREDITO
-        ? "CREDITO"
-        : account.type === AccountType.TARJETA_DEBITO
-          ? "DEBITO"
-          : "EFECTIVO",
-    balance: byAccountId.get(account.id) ?? 0,
-    color: metaMap[account.id]?.color ?? null,
-    icon: metaMap[account.id]?.icon ?? null,
-    appearanceMode: metaMap[account.id]?.appearanceMode ?? "manual",
-    creditLimit: metaMap[account.id]?.creditLimit ?? null,
-    closingDay: metaMap[account.id]?.closingDay ?? null,
-    paymentDay: metaMap[account.id]?.paymentDay ?? null
-  }));
+  const noConsumeByAccountId = new Map(
+    noConsumeSums
+      .filter((row) => row.accountId)
+      .map((row) => [row.accountId as string, toAmountNumber(row._sum.amount ?? 0)])
+  );
+
+  return accounts.map((account) => {
+    const rawBalance = byAccountId.get(account.id) ?? 0;
+    const excludedBalance = account.type === AccountType.TARJETA_CREDITO ? noConsumeByAccountId.get(account.id) ?? 0 : 0;
+    const creditBalance = account.type === AccountType.TARJETA_CREDITO ? rawBalance - excludedBalance : rawBalance;
+    return {
+      id: account.id,
+      name: account.name,
+      bank: account.institution ?? "Manual",
+      type:
+        account.type === AccountType.TARJETA_CREDITO
+          ? "CREDITO"
+          : account.type === AccountType.TARJETA_DEBITO
+            ? "DEBITO"
+            : "EFECTIVO",
+      balance: rawBalance,
+      creditBalance,
+      color: metaMap[account.id]?.color ?? null,
+      icon: metaMap[account.id]?.icon ?? null,
+      appearanceMode: metaMap[account.id]?.appearanceMode ?? "manual",
+      creditLimit: metaMap[account.id]?.creditLimit ?? null,
+      closingDay: metaMap[account.id]?.closingDay ?? null,
+      paymentDay: metaMap[account.id]?.paymentDay ?? null
+    };
+  });
 }
 
 export async function createManualAccount(input: {

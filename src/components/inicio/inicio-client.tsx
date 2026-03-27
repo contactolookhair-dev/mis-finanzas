@@ -51,6 +51,7 @@ const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
 type AccountItem = {
   id: string;
   balance: number;
+  creditBalance: number;
   name: string;
   bank: string;
   type: "CREDITO" | "DEBITO" | "EFECTIVO";
@@ -1062,7 +1063,10 @@ export function InicioClient() {
 
   const renderAccountCard = (account: AccountItem) => {
     const appearance = resolveAccountAppearance(account);
-    const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+    const credit =
+      account.type === "CREDITO"
+        ? computeCreditCardMetrics({ ...account, balance: account.creditBalance })
+        : null;
     const primaryAmount = account.type === "CREDITO" && credit ? credit.debt : account.balance;
     const primaryTone =
       account.type === "CREDITO"

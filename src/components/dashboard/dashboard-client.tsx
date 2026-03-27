@@ -53,6 +53,7 @@ type AccountItem = {
   bank: string;
   type: "CREDITO" | "DEBITO" | "EFECTIVO";
   balance: number;
+  creditBalance: number;
   color: string | null;
   icon: string | null;
   appearanceMode: "auto" | "manual";
@@ -108,7 +109,10 @@ const widgetMeta: Record<
 
 function AccountCard({ account }: { account: AccountItem }) {
   const appearance = resolveAccountAppearance(account);
-  const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+  const credit =
+    account.type === "CREDITO"
+      ? computeCreditCardMetrics({ ...account, balance: account.creditBalance })
+      : null;
   const primaryAmount = account.type === "CREDITO" && credit ? credit.debt : account.balance;
   const accentTone =
     account.type === "CREDITO"

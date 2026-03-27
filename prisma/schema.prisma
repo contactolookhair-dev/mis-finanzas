@@ -37,6 +37,13 @@ enum TransactionType {
   EGRESO
 }
 
+enum CreditImpactType {
+  consume_cupo
+  no_consume_cupo
+  pago_tarjeta
+  ajuste_manual
+}
+
 enum ReviewStatus {
   PENDIENTE
   REVISADO
@@ -277,6 +284,7 @@ model Transaction {
   subcategoryId             String?
   businessUnitId            String?
   financialOrigin           FinancialOrigin
+  creditImpactType          CreditImpactType @default(consume_cupo)
   notes                     String?
   isReimbursable            Boolean           @default(false)
   isBusinessPaidPersonally  Boolean           @default(false)

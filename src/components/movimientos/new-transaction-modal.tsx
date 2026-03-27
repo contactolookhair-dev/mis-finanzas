@@ -17,6 +17,7 @@ type AccountItem = {
   bank: string;
   type: "CREDITO" | "DEBITO" | "EFECTIVO";
   balance: number;
+  creditBalance: number;
   color: string | null;
   icon: string | null;
   appearanceMode: "auto" | "manual";
@@ -45,6 +46,20 @@ type Props = {
 };
 
 type TransactionKind = "GASTO" | "INGRESO" | "TRANSFERENCIA";
+type CreditImpactType = "consume_cupo" | "no_consume_cupo" | "pago_tarjeta" | "ajuste_manual";
+
+const CREDIT_IMPACT_OPTIONS: { value: CreditImpactType; label: string }[] = [
+  { value: "consume_cupo", label: "Compra nueva · consume cupo" },
+  { value: "no_consume_cupo", label: "Ya considerada · solo historial" },
+  { value: "pago_tarjeta", label: "Pago de tarjeta · libera cupo" },
+  { value: "ajuste_manual", label: "Ajuste manual · corrige deuda" }
+];
+
+function getDefaultCreditImpact(kind: TransactionKind): CreditImpactType {
+  if (kind === "INGRESO") return "pago_tarjeta";
+  if (kind === "TRANSFERENCIA") return "ajuste_manual";
+  return "consume_cupo";
+}
 const QUICK_PREFS_KEY = "mis-finanzas.quick-transaction";
 
 type QuickPrefs = {
@@ -88,6 +103,9 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const [installmentValue, setInstallmentValue] = useState("");
   const [nextInstallmentDate, setNextInstallmentDate] = useState("");
 
+  const [creditImpactType, setCreditImpactType] = useState<CreditImpactType>(getDefaultCreditImpact("GASTO"));
+  const [creditImpactDirty, setCreditImpactDirty] = useState(false);
+
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [debtors, setDebtors] = useState<DebtorPerson[]>([]);
@@ -109,6 +127,21 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     () => (selectedAccount ? resolveAccountAppearance(selectedAccount) : null),
     [selectedAccount]
   );
+
+  useEffect(() => {
+    if (selectedAccount?.type !== "CREDITO") {
+      setCreditImpactType("consume_cupo");
+      setCreditImpactDirty(false);
+      return;
+    }
+    if (!creditImpactDirty) {
+      setCreditImpactType(getDefaultCreditImpact(kind));
+    }
+  }, [kind, selectedAccount?.type, creditImpactDirty]);
+
+  useEffect(() => {
+    setCreditImpactDirty(false);
+  }, [selectedAccount?.id]);
 
   function resetForm() {
     setKind("GASTO");
@@ -332,7 +365,8 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
           businessUnitId: isCompanyDebt ? owedBusinessUnitId : isBusinessSpend ? (businessUnitId || null) : null,
           isBusinessPaidPersonally: (isCompanyDebt || isBusinessSpend) && transactionType === "EGRESO",
           isReimbursable: (isCompanyDebt || isLentSpend) && transactionType === "EGRESO",
-          notes: mergedNotes || undefined
+          notes: mergedNotes || undefined,
+          creditImpactType: selectedAccount?.type === "CREDITO" ? creditImpactType : undefined
         })
       });
       const payload = (await response.json()) as { message?: string };
@@ -479,6 +513,28 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
                   </Select>
                 </label>
               ) : null}
+            </SurfaceCard>
+          ) : null}
+
+          {selectedAccount?.type === "CREDITO" ? (
+            <SurfaceCard variant="soft" padding="sm" className="space-y-3 interactive-lift">
+              <div className="space-y-1">
+                <p className={fieldLabelClass}>Impacto en el cupo</p>
+                <p className="text-sm text-slate-500">Define cómo debe afectar esta transacción al cupo de la tarjeta.</p>
+              </div>
+              <Select
+                value={creditImpactType}
+                onChange={(event) => {
+                  setCreditImpactType(event.target.value as CreditImpactType);
+                  setCreditImpactDirty(true);
+                }}
+              >
+                {CREDIT_IMPACT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
             </SurfaceCard>
           ) : null}
 

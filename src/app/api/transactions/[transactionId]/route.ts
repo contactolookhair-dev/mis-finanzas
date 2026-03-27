@@ -14,7 +14,10 @@ const patchSchema = z.object({
   type: z.enum(["INGRESO", "EGRESO"]).optional(),
   accountId: z.string().optional().nullable(),
   categoryId: z.string().optional().nullable(),
-  notes: z.string().optional().nullable()
+  notes: z.string().optional().nullable(),
+  creditImpactType: z
+    .enum(["consume_cupo", "no_consume_cupo", "pago_tarjeta", "ajuste_manual"])
+    .optional()
 });
 
 function toSignedAmount(input: { type: "INGRESO" | "EGRESO"; amount: number }) {
@@ -65,7 +68,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { transa
       type: true,
       accountId: true,
       categoryId: true,
-      notes: true
+      notes: true,
+      creditImpactType: true
     }
   });
 
@@ -108,6 +112,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { transa
       accountId: input.accountId === undefined ? existing.accountId : input.accountId,
       categoryId: input.categoryId === undefined ? existing.categoryId : input.categoryId,
       notes: input.notes === undefined ? existing.notes : input.notes,
+      creditImpactType: input.creditImpactType ?? existing.creditImpactType,
       ...(duplicateFingerprint ? { duplicateFingerprint } : {})
     });
 
@@ -120,7 +125,8 @@ export async function PATCH(request: NextRequest, { params }: { params: { transa
         type: updated.type,
         accountId: updated.accountId,
         categoryId: updated.categoryId,
-        notes: updated.notes ?? null
+        notes: updated.notes ?? null,
+        creditImpactType: updated.creditImpactType
       }
     });
   } catch (error) {

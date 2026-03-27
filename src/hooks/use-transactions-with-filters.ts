@@ -18,6 +18,7 @@ export type TransactionRow = {
   reimbursable: boolean;
   reviewStatus: "PENDIENTE" | "REVISADO" | "OBSERVADO";
   notes?: string | null;
+  creditImpactType?: "consume_cupo" | "no_consume_cupo" | "pago_tarjeta" | "ajuste_manual";
 };
 
 type FilterRange = "today" | "week" | "month";
@@ -84,6 +85,8 @@ export function useTransactionsWithFilters() {
       name: string;
       bank: string;
       type: "CREDITO" | "DEBITO" | "EFECTIVO";
+      balance: number;
+      creditBalance: number;
       color: string | null;
       icon: string | null;
       appearanceMode: "auto" | "manual";
@@ -135,6 +138,8 @@ export function useTransactionsWithFilters() {
             name: string;
             bank: string;
             type: "CREDITO" | "DEBITO" | "EFECTIVO";
+            balance: number;
+            creditBalance: number;
             color: string | null;
             icon: string | null;
             appearanceMode: "auto" | "manual";

@@ -50,6 +50,7 @@ type AccountItem = {
   bank: string;
   type: "CREDITO" | "DEBITO" | "EFECTIVO";
   balance: number;
+  creditBalance: number;
   color: string | null;
   icon: string | null;
   appearanceMode: "auto" | "manual";
@@ -766,7 +767,10 @@ function AccountDetailModal({
   if (!open || !account) return null;
   const visual = resolveAccountVisual(account);
   const Icon = visual.icon;
-  const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+  const credit =
+    account.type === "CREDITO"
+      ? computeCreditCardMetrics({ ...account, balance: account.creditBalance })
+      : null;
   const balanceTone =
     account.type === "CREDITO"
       ? credit && credit.debt > 0
@@ -1818,7 +1822,10 @@ export function CuentasClient() {
             {sortedAccounts.map((account) => {
               const visual = resolveAccountVisual(account);
               const Icon = visual.icon;
-              const credit = account.type === "CREDITO" ? computeCreditCardMetrics(account) : null;
+                const credit =
+                  account.type === "CREDITO"
+                    ? computeCreditCardMetrics({ ...account, balance: account.creditBalance })
+                    : null;
               const balanceTone =
                 account.type === "CREDITO"
                   ? credit && credit.debt > 0

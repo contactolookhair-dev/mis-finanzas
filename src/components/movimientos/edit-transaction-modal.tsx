@@ -15,10 +15,21 @@ type AccountItem = {
   name: string;
   bank: string;
   type: "CREDITO" | "DEBITO" | "EFECTIVO";
+  balance: number;
+  creditBalance: number;
   color: string | null;
   icon: string | null;
   appearanceMode: "auto" | "manual";
 };
+
+type CreditImpactType = "consume_cupo" | "no_consume_cupo" | "pago_tarjeta" | "ajuste_manual";
+
+const CREDIT_IMPACT_OPTIONS: { value: CreditImpactType; label: string }[] = [
+  { value: "consume_cupo", label: "Compra nueva · consume cupo" },
+  { value: "no_consume_cupo", label: "Ya considerada · solo historial" },
+  { value: "pago_tarjeta", label: "Pago de tarjeta · libera cupo" },
+  { value: "ajuste_manual", label: "Ajuste manual · corrige deuda" }
+];
 
 type CategoryItem = {
   id: string;
@@ -55,6 +66,7 @@ export function EditTransactionModal({
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [notes, setNotes] = useState("");
+  const [creditImpactType, setCreditImpactType] = useState<CreditImpactType>("consume_cupo");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,8 +91,9 @@ export function EditTransactionModal({
       categories.find((c) => c.name.trim().toLowerCase() === transaction.category.trim().toLowerCase())?.id ??
       "";
     setCategoryId(matchedCategoryId);
-
+    
     setNotes(transaction.notes ?? "");
+    setCreditImpactType((transaction.creditImpactType ?? "consume_cupo") as CreditImpactType);
   }, [open, transaction, accounts, categories]);
 
   const selectedAccount = useMemo(
@@ -153,7 +166,8 @@ export function EditTransactionModal({
                   type,
                   accountId,
                   categoryId: categoryId || null,
-                  notes: notes.trim() ? notes.trim() : null
+                  notes: notes.trim() ? notes.trim() : null,
+                  creditImpactType
                 })
               });
               const payload = (await response.json().catch(() => ({}))) as { message?: string };
@@ -251,6 +265,19 @@ export function EditTransactionModal({
             ) : null}
           </div>
 
+          {selectedAccount?.type === "CREDITO" ? (
+            <label className="space-y-2">
+              <span className={fieldLabelClass}>Impacto en el cupo</span>
+              <Select value={creditImpactType} onChange={(event) => setCreditImpactType(event.target.value as CreditImpactType)}>
+                {CREDIT_IMPACT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          ) : null}
+
           <div className="space-y-1">
             <p className={fieldLabelClass}>Notas (opcional)</p>
             <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Ej: compra para..." />
@@ -280,4 +307,3 @@ export function EditTransactionModal({
     </div>
   );
 }
-

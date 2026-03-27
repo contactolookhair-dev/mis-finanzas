@@ -36,7 +36,11 @@ const createTransactionSchema = z.object({
   notes: z.string().optional(),
   isReimbursable: z.boolean().optional().default(false),
   isBusinessPaidPersonally: z.boolean().optional().default(false),
-  reviewStatus: z.enum(["PENDIENTE", "REVISADO", "OBSERVADO"]).optional().default("PENDIENTE")
+  reviewStatus: z.enum(["PENDIENTE", "REVISADO", "OBSERVADO"]).optional().default("PENDIENTE"),
+  creditImpactType: z
+    .enum(["consume_cupo", "no_consume_cupo", "pago_tarjeta", "ajuste_manual"])
+    .optional()
+    .default("consume_cupo")
 });
 
 function toStartDate(value?: string) {
@@ -99,6 +103,7 @@ export async function GET(request: NextRequest) {
         type: item.type,
         accountId: item.accountId,
         categoryId: item.categoryId,
+        creditImpactType: item.creditImpactType,
         notes: item.notes ?? null,
         account: item.account?.name ?? "Sin cuenta",
         category: item.category?.name ?? "Sin categoria",
@@ -165,6 +170,7 @@ export async function POST(request: NextRequest) {
       isReimbursable: input.isReimbursable,
       isBusinessPaidPersonally: input.isBusinessPaidPersonally,
       reviewStatus: input.reviewStatus,
+      creditImpactType: input.creditImpactType,
       duplicateFingerprint
     });
 
