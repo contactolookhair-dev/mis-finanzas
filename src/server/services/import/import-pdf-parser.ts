@@ -357,13 +357,20 @@ function dedupeRows(rows: RawRow[]) {
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
-    const { getDocument, GlobalWorkerOptions } = pdfjsLib as typeof import("pdfjs-dist/legacy/build/pdf");
+    let pdfjsLib;
+    try {
+      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    } catch {
+      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    }
+    const { getDocument, GlobalWorkerOptions } = pdfjsLib as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
     GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
     const parserLoaded = Boolean(getDocument);
     console.log("parsePdfImportFile parserLoaded", { parserLoaded });
 
-    const loadingTask = getDocument({ data: bytes.buffer });
+    const loadingTask = getDocument({
+      data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+    });
     const pdf = await loadingTask.promise;
     const pageTexts: string[] = [];
 
