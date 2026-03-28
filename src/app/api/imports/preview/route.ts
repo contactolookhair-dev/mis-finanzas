@@ -157,7 +157,7 @@ export async function POST(request: Request) {
     stage = "read_form_data";
     recordStage(stage);
     recordStage(stage);
-    const formData = await request.formData();
+      const formData = await request.formData();
     const file = formData.get("file");
     const selectedTemplateId = formData.get("templateId");
     const importTypeRaw = normalizeOptionalString(formData.get("type"));
@@ -206,7 +206,7 @@ export async function POST(request: Request) {
     });
 
     stage = "build_preview";
-    recordStage(stage, { fileName: file.name });
+    recordStage(stage, { fileName: file.name, fileType: file.type, fileSize: bytes.byteLength });
     const rawPreview = await previewImportFile({
       workspaceId: context.workspaceId,
       fileName: file.name,
@@ -217,7 +217,10 @@ export async function POST(request: Request) {
       preferredImportType: importType
     });
     previewResult = isPlainObject(rawPreview) ? rawPreview : {};
-    recordStage("preview_built", { parser: previewResult.parser });
+    recordStage("preview_built", {
+      parser: previewResult.parser,
+      rows: Array.isArray(previewResult.rows) ? previewResult.rows.length : 0
+    });
 
     if (previewResult?.parser === "pdf" && !previewResult.supported) {
       const message = resolveFunctionalPreviewMessage({
@@ -249,11 +252,12 @@ export async function POST(request: Request) {
       }))
     );
   } catch (error) {
-    console.error("imports preview failed", {
-      stage,
-      error,
-      stack: error instanceof Error ? error.stack : null
-    });
+      console.error("imports preview failed", {
+        stage,
+        file: file instanceof File ? { name: file.name, type: file.type, size: file.size } : null,
+        error,
+        stack: error instanceof Error ? error.stack : null
+      });
     const message = resolveFunctionalPreviewMessage({
       stage,
       errorMessage: error instanceof Error ? error.message : undefined
