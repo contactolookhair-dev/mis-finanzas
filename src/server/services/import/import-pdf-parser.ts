@@ -356,76 +356,34 @@ function dedupeRows(rows: RawRow[]) {
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  let parserInstance:
-    | { getText: () => Promise<{ text?: string }>; destroy?: () => Promise<void> | void }
-    | null = null;
-
   try {
-    const mod: unknown = await import("pdf-parse").catch((error) => {
-      console.error("parsePdfImportFile failed to load pdf-parse", error);
-      return null;
-    });
-
-    const parserLoaded = Boolean(mod);
+    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
+    const { getDocument, GlobalWorkerOptions } = pdfjsLib as typeof import("pdfjs-dist/legacy/build/pdf");
+    GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
+    const parserLoaded = Boolean(getDocument);
     console.log("parsePdfImportFile parserLoaded", { parserLoaded });
 
-    if (!mod) {
-      throw new Error("No se pudo cargar la librería pdf-parse");
+    const loadingTask = getDocument({ data: bytes.buffer });
+    const pdf = await loadingTask.promise;
+    const pageTexts: string[] = [];
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      const strings = content.items.map((item) => {
+        if (typeof item === "string") return item;
+        if ("str" in item && typeof item.str === "string") return item.str;
+        return "";
+      });
+      pageTexts.push(strings.join(" "));
     }
 
-    const parserFunction =
-      typeof mod === "function"
-        ? mod
-        : mod && typeof (mod as { default?: unknown }).default === "function"
-          ? (mod as { default: (buffer: Buffer) => Promise<{ text?: string }> }).default
-          : null;
-
-    if (parserFunction) {
-      const result = await parserFunction(Buffer.from(bytes));
-      console.log("parsePdfImportFile extractedTextLength", { length: typeof result?.text === "string" ? result.text.length : 0 });
-      return typeof result?.text === "string" ? result.text : "";
-    }
-
-    const moduleRecord = mod as Record<string, unknown> | null;
-    const PDFParseCtor =
-      moduleRecord && typeof moduleRecord.PDFParse === "function"
-        ? (moduleRecord.PDFParse as new (options: { data: Buffer }) => { getText: () => Promise<{ text?: string }>; })
-        : moduleRecord &&
-          moduleRecord.default &&
-          typeof (moduleRecord.default as Record<string, unknown>).PDFParse === "function"
-          ? ((moduleRecord.default as Record<string, unknown>).PDFParse as new (options: { data: Buffer }) => {
-              getText: () => Promise<{ text?: string }>;
-            })
-          : null;
-
-    if (!PDFParseCtor) {
-      throw new Error("No se encontró una API compatible en pdf-parse");
-    }
-
-    parserInstance = new PDFParseCtor({
-      data: Buffer.from(bytes),
-    });
-
-    if (!parserInstance) {
-      throw new Error("No se pudo inicializar el parser de pdf-parse");
-    }
-
-    const result = await parserInstance.getText();
-    console.log("parsePdfImportFile extractedTextLength", {
-      length: typeof result?.text === "string" ? result.text.length : 0
-    });
-    if (typeof result?.text !== "string") {
-      return "";
-    }
-    return result.text;
-  } finally {
-    if (parserInstance?.destroy) {
-      try {
-        await parserInstance.destroy();
-      } catch {
-        // ignore
-      }
-    }
+    const text = pageTexts.join("\n");
+    console.log("parsePdfImportFile extractedTextLength", { length: text.length });
+    return text;
+  } catch (error) {
+    console.warn("[imports/preview] pdf_text_extraction_failed", error);
+    throw new Error("pdf_text_extraction_failed");
   }
 }
 
