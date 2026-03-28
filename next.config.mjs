@@ -1,16 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    typedRoutes: true
+    typedRoutes: true,
   },
-  webpack(config) {
-    if (!config.resolve) config.resolve = {};
-    config.resolve.fallback = {
-      ...(config.resolve.fallback ?? {}),
-      canvas: false
-    };
-    return config;
-  }
+  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
 };
 
 export default nextConfig;
