@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { createAIProvider } from "@/server/services/ai-provider";
-import { getResolvedSettings } from "@/server/services/settings-service";
 
 const aiImportPreviewSchema = z.object({
   documentType: z.enum(["credit_card_statement", "bank_statement", "unknown"]),
@@ -62,73 +60,30 @@ export type AiStructurePdfResult =
       message: string;
     };
 
-function buildJsonSchemaForOpenAI() {
-  // Zod -> JSON Schema is overkill here; we keep a minimal compatible schema for response_format.
-  // The strict validation happens via Zod after parsing.
-  return {
-    name: "ai_import_preview",
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        documentType: {
-          type: "string",
-          enum: ["credit_card_statement", "bank_statement", "unknown"]
-        },
-        issuer: { type: ["string", "null"] },
-        accountName: { type: ["string", "null"] },
-        statementDate: { type: ["string", "null"] },
-        dueDate: { type: ["string", "null"] },
-        billedTotal: { type: ["number", "null"] },
-        minimumPayment: { type: ["number", "null"] },
-        creditLimitTotal: { type: ["number", "null"] },
-        creditLimitUsed: { type: ["number", "null"] },
-        creditLimitAvailable: { type: ["number", "null"] },
-        currency: { type: "string", enum: ["CLP", "USD", "UNKNOWN"] },
-        summaryNeedsReview: { type: "boolean" },
-        transactions: {
-          type: "array",
-          items: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              date: { type: ["string", "null"] },
-              merchant: { type: "string" },
-              amount: { type: "number" },
-              direction: { type: "string", enum: ["debit", "credit"] },
-              type: {
-                type: "string",
-                enum: ["purchase", "payment", "refund", "fee", "interest", "cash_advance", "other"]
-              },
-              categorySuggestion: { type: ["string", "null"] },
-              descriptionRaw: { type: ["string", "null"] },
-              installment: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  isInstallment: { type: "boolean" },
-                  installmentCurrent: { type: ["integer", "null"] },
-                  installmentTotal: { type: ["integer", "null"] },
-                  installmentsRemaining: { type: ["integer", "null"] },
-                  installmentAmount: { type: ["number", "null"] },
-                  originalAmount: { type: ["number", "null"] }
-                },
-                required: ["isInstallment"]
-              },
-              needsReview: { type: "boolean" }
-            },
-            required: ["merchant", "amount", "direction", "type", "installment", "needsReview"]
-          }
-        }
-      },
-      required: ["documentType", "currency", "summaryNeedsReview", "transactions"]
-    }
-  };
-}
-
 function truncateText(value: string, maxChars: number) {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, maxChars)}\n\n[TRUNCATED ${value.length - maxChars} chars]`;
+}
+
+function tryParseLooseJson(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed) as unknown;
+  } catch {
+    // Common case: model wraps JSON with extra text or code fences.
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      const slice = trimmed.slice(start, end + 1);
+      try {
+        return JSON.parse(slice) as unknown;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
 }
 
 export async function structurePdfTextWithAI(input: {
@@ -138,30 +93,15 @@ export async function structurePdfTextWithAI(input: {
   rawText: string;
   hintType?: "credit" | "account";
 }): Promise<AiStructurePdfResult> {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     return {
       ok: false,
       error: "ai_not_configured",
-      message: "La importación con IA no está configurada (falta OPENAI_API_KEY)."
+      message: "La lectura inteligente no está configurada todavía (falta GEMINI_API_KEY)."
     };
   }
 
-  const settings = await getResolvedSettings(input.workspaceId, input.userKey);
-  const provider = createAIProvider({
-    modelProvider: settings.aiSettings.modelProvider,
-    modelName: settings.aiSettings.modelName
-  });
-
-  if (provider.kind !== "openai") {
-    return {
-      ok: false,
-      error: "ai_not_configured",
-      message: "La importación con IA no está habilitada para este workspace."
-    };
-  }
-
-  const baseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-  const model = settings.aiSettings.modelName || process.env.OPENAI_MODEL || "gpt-4.1-mini";
+  const model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
 
   const system = [
     "Eres un motor de extracción de datos para importación de PDFs de finanzas personales (Chile).",
@@ -181,25 +121,33 @@ export async function structurePdfTextWithAI(input: {
   ].join("\n\n");
 
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.1,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user }
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: buildJsonSchemaForOpenAI()
-        }
-      })
-    });
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        model
+      )}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: system }]
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: user }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            // Ask for strict JSON, then validate with Zod.
+            responseMimeType: "application/json"
+          }
+        })
+      }
+    );
 
     if (!res.ok) {
       return {
@@ -210,17 +158,14 @@ export async function structurePdfTextWithAI(input: {
     }
 
     const payload = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
     };
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) {
-      return { ok: false, error: "ai_failed", message: "La IA devolvió contenido vacío." };
-    }
 
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(content);
-    } catch {
+    const text = payload.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const parsedJson = typeof text === "string" ? tryParseLooseJson(text) : null;
+    if (!parsedJson) {
       return { ok: false, error: "ai_invalid_response", message: "La IA no devolvió JSON válido." };
     }
 
@@ -246,4 +191,3 @@ export async function structurePdfTextWithAI(input: {
     };
   }
 }
-

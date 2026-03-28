@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, FileSpreadsheet, FileUp, Loader2 } from "lucide-react";
 import type { AuthSessionResponse } from "@/shared/types/auth";
 import type {
@@ -244,6 +244,8 @@ export function ImportTransactionsPanel(props: {
   const [commitSummary, setCommitSummary] = useState<CommitSummary | null>(null);
   const [creatingSuggestedAccount, setCreatingSuggestedAccount] = useState(false);
   const [selectedPdfAccountId, setSelectedPdfAccountId] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [rowView, setRowView] = useState<"all" | "normal" | "installments">("all");
 
   useEffect(() => {
     async function loadSession() {
@@ -258,6 +260,24 @@ export function ImportTransactionsPanel(props: {
     }
 
     void loadSession();
+  }, []);
+
+  useEffect(() => {
+    function handler(event: Event) {
+      const detail =
+        event instanceof CustomEvent && event.detail && typeof event.detail === "object"
+          ? (event.detail as { lane?: "account" | "credit" })
+          : {};
+      if (detail.lane) {
+        setImportLane(detail.lane);
+      }
+      setTimeout(() => {
+        fileInputRef.current?.click();
+      }, 0);
+    }
+
+    window.addEventListener("imports:open-file-picker", handler as EventListener);
+    return () => window.removeEventListener("imports:open-file-picker", handler as EventListener);
   }, []);
 
   const canImport =
@@ -678,11 +698,13 @@ export function ImportTransactionsPanel(props: {
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <Input
+          <input
+            ref={fileInputRef}
             type="file"
             accept=".csv,.xlsx,.pdf"
             disabled={!canImport || loadingPreview}
             onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+            className="h-11 w-full rounded-2xl border border-border bg-white/90 px-4 text-sm outline-none transition placeholder:text-neutral-400 focus:border-primary"
           />
           <Button onClick={handlePreview} disabled={!canImport || !selectedFile || loadingPreview}>
             {loadingPreview ? (
@@ -767,6 +789,29 @@ export function ImportTransactionsPanel(props: {
                     ? `· Período ${pdfMeta.billingPeriodStart} → ${pdfMeta.billingPeriodEnd}`
                     : null}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+                  {typeof pdfMeta.closingDate === "string" ? (
+                    <span>Cierre: {pdfMeta.closingDate}</span>
+                  ) : null}
+                  {typeof pdfMeta.paymentDate === "string" ? (
+                    <span>Pago: {pdfMeta.paymentDate}</span>
+                  ) : null}
+                  {typeof pdfMeta.totalBilled === "number" ? (
+                    <span>Total: {formatCurrencyCLP(pdfMeta.totalBilled)}</span>
+                  ) : null}
+                  {typeof pdfMeta.minimumDue === "number" ? (
+                    <span>Mínimo: {formatCurrencyCLP(pdfMeta.minimumDue)}</span>
+                  ) : null}
+                  {typeof pdfMeta.creditLimit === "number" ? (
+                    <span>Cupo: {formatCurrencyCLP(pdfMeta.creditLimit)}</span>
+                  ) : null}
+                  {typeof pdfMeta.creditUsed === "number" ? (
+                    <span>Usado: {formatCurrencyCLP(pdfMeta.creditUsed)}</span>
+                  ) : null}
+                  {typeof pdfMeta.creditAvailable === "number" ? (
+                    <span>Disponible: {formatCurrencyCLP(pdfMeta.creditAvailable)}</span>
+                  ) : null}
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {typeof pdfMeta.parserConfidence === "number" ? (
                     <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
@@ -923,20 +968,46 @@ export function ImportTransactionsPanel(props: {
             </Button>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            {(["all", "normal", "installments"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRowView(value)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                  rowView === value
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white/80 text-slate-700"
+                }`}
+              >
+                {value === "all" ? "Todos" : value === "normal" ? "Movimientos" : "Cuotas"}
+              </button>
+            ))}
+          </div>
+
           <div className="space-y-3">
-            {rows.map((row) => {
+            {rows
+              .filter((row) => {
+                if (rowView === "all") return true;
+                const installment = getInstallmentPreview(row);
+                if (rowView === "installments") return installment.isInstallmentPurchase;
+                return !installment.isInstallmentPurchase;
+              })
+              .map((row) => {
               const duplicateLabel = getDuplicateLabel(row.duplicateStatus);
               const selectedAccount = row.accountId ? accountById.get(row.accountId) ?? null : null;
               const showClassification = row.type === "EGRESO" && isCreditCardAccount(selectedAccount);
               const classificationValue = row.classification ?? "PERSONAL";
               const parserMeta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
-              const cmrClass = parserMeta?.kind === "falabella-cmr" ? (parserMeta.classifiedAs ?? null) : null;
-              const cmrSection = parserMeta?.kind === "falabella-cmr" ? (parserMeta.section ?? null) : null;
+              const isCmr = parserMeta?.kind === "falabella-cmr";
+              const isAi = parserMeta?.kind === "pdf-ai";
+              const cmrClass = isCmr ? (parserMeta.classifiedAs ?? null) : null;
+              const cmrSection = isCmr ? (parserMeta.section ?? null) : null;
               const cmrConfidence =
-                parserMeta?.kind === "falabella-cmr" && typeof parserMeta.confidence === "number"
+                isCmr && typeof parserMeta.confidence === "number"
                   ? parserMeta.confidence
                   : null;
-              const cmrDubious = parserMeta?.kind === "falabella-cmr" ? Boolean(parserMeta.dubious) : false;
+              const rowDubious = Boolean(parserMeta?.dubious);
               const installmentPreview = getInstallmentPreview(row);
 
               return (
@@ -950,10 +1021,28 @@ export function ImportTransactionsPanel(props: {
                       {row.sourceAccountName ? (
                         <p className="text-xs text-slate-500">Origen detectado: {row.sourceAccountName}</p>
                       ) : null}
+                      {isAi ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span
+                            className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${
+                              rowDubious
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : "border-slate-200 bg-slate-50 text-slate-700"
+                            }`}
+                          >
+                            Detectado por IA{rowDubious ? " · Revisar" : ""}
+                          </span>
+                          {typeof parserMeta?.confidence === "number" ? (
+                            <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700">
+                              {Math.round(parserMeta.confidence * 100)}%
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                       {cmrClass ? (
                         <div className="mt-2 flex flex-wrap gap-2">
                           <span
-                            className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${cmrDubious
+                            className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${rowDubious
                                 ? "border-amber-200 bg-amber-50 text-amber-800"
                                 : "border-slate-200 bg-slate-50 text-slate-700"
                               }`}

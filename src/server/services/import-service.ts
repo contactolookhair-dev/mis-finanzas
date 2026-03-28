@@ -135,7 +135,7 @@ export async function previewImportFile(input: {
 
       // Prefer AI structuring when configured. If not configured or it fails,
       // fall back to deterministic templates + generic line fallback.
-      const canUseAI = Boolean(process.env.OPENAI_API_KEY && input.userKey);
+      const canUseAI = Boolean(process.env.GEMINI_API_KEY && input.userKey);
       if (canUseAI) {
         const { structurePdfTextWithAI } = await import("@/server/services/import/import-ai-structurer");
         const ai = await structurePdfTextWithAI({

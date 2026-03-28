@@ -210,10 +210,29 @@ export function ImportacionesClient() {
     <PageContainer className="space-y-6">
       <SectionHeader
         eyebrow="Importaciones"
-        title="Subir cartolas"
-        description="Importa movimientos desde CSV, Excel o PDF y revisa antes de guardar."
-        actions={<StatPill tone="premium">Vista previa real</StatPill>}
+        title="Importar desde PDF"
+        description="Sube una cartola bancaria o estado de cuenta de tarjeta. Analizaremos el archivo y te mostraremos una vista previa editable antes de guardar."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              className="h-10 rounded-2xl"
+              onClick={() => {
+                const lane = importType === "credit" ? "credit" : "account";
+                window.dispatchEvent(new CustomEvent("imports:open-file-picker", { detail: { lane } }));
+                document.getElementById("imports-preview-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+            >
+              Subir PDF bancario
+            </Button>
+            <StatPill tone="premium">Preview editable</StatPill>
+          </div>
+        }
       />
+
+      <p className="text-sm text-slate-600">
+        Compatible con cartolas bancarias y estados de cuenta de tarjetas de crédito. Sube tu PDF para detectar movimientos, pagos y compras en cuotas antes de importar.
+      </p>
 
       <div className="grid gap-4 xl:grid-cols-[1.3fr_1.3fr_1.8fr]">
         <SurfaceCard variant="soft" padding="sm" className="space-y-3">
@@ -510,10 +529,12 @@ export function ImportacionesClient() {
         )}
       </SurfaceCard>
 
-      <ImportTransactionsPanel
-        initialLane={importType === "credit" ? "credit" : "account"}
-        initialAccountId={accountId}
-      />
+      <div id="imports-preview-panel">
+        <ImportTransactionsPanel
+          initialLane={importType === "credit" ? "credit" : "account"}
+          initialAccountId={accountId}
+        />
+      </div>
     </PageContainer>
   );
 }
