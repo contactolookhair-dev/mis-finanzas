@@ -39,18 +39,22 @@ function fallbackPlainTextParse(
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.js");
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
+    const getDocument = (pdfjs as any).getDocument;
+    if (typeof getDocument !== "function") {
+      throw new Error("pdfjs_getDocument_not_available");
+    }
 
-    // En 3.x esta bandera sí evita la ruta del worker en servidor.
     (pdfjs as any).GlobalWorkerOptions.workerSrc = "";
 
-    const loadingTask = (pdfjs as any).getDocument({
+    const loadingTask = getDocument({
       data: bytes,
       disableWorker: true,
       useWorkerFetch: false,
       isEvalSupported: false,
       disableFontFace: true,
       useSystemFonts: false,
+      useWorker: false,
     });
 
     const pdf = await loadingTask.promise;
@@ -72,7 +76,6 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     }
 
     const text = pages.join("\n").trim();
-
     if (!text || text.length < 20) {
       throw new Error("EMPTY_TEXT");
     }
