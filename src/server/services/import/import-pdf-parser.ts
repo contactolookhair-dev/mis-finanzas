@@ -365,18 +365,30 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     }
     const { getDocument } = pdfjsLib as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
     const parserLoaded = Boolean(getDocument);
-    console.log("parsePdfImportFile parserLoaded", { parserLoaded });
+    if (DEBUG_IMPORT_PREVIEW) {
+      console.log("[imports/preview] parserLoaded", { parserLoaded });
+      console.log("[imports/preview] pdf bytes", { length: bytes.length, useWorker: false });
+    }
 
     const loadingTask = getDocument({
       data: new Uint8Array(bytes).buffer,
       useWorker: false
     } as any);
     const pdf = await loadingTask.promise;
+    if (DEBUG_IMPORT_PREVIEW) {
+      console.log("[imports/preview] pdf loaded", { numPages: pdf.numPages });
+    }
     const pageTexts: string[] = [];
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
+      if (DEBUG_IMPORT_PREVIEW && pageNum === 1) {
+        console.log("[imports/preview] first page loaded", { pageNum });
+      }
       const content = await page.getTextContent();
+      if (DEBUG_IMPORT_PREVIEW && pageNum === 1) {
+        console.log("[imports/preview] first page content", { items: content.items.length });
+      }
       const strings = content.items.map((item) => {
         if (typeof item === "string") return item;
         if ("str" in item && typeof item.str === "string") return item.str;
@@ -389,7 +401,15 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     console.log("parsePdfImportFile extractedTextLength", { length: text.length });
     return text;
   } catch (error) {
-    console.warn("[imports/preview] pdf_text_extraction_failed", error);
+    if (DEBUG_IMPORT_PREVIEW) {
+      console.warn("[imports/preview] pdf_text_extraction_failed", {
+        message: error instanceof Error ? error.message : undefined,
+        name: error instanceof Error ? error.name : undefined,
+        stack: error instanceof Error ? error.stack : undefined,
+        type: typeof error,
+        cause: error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
+      });
+    }
     throw new Error("pdf_text_extraction_failed");
   }
 }
