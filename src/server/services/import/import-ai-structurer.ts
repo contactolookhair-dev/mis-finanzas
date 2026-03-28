@@ -53,11 +53,23 @@ export type AiStructurePdfResult =
       preview: AiImportPreview;
       warnings: string[];
       confidence: number | null;
+      debug: {
+        geminiKeyPresent: boolean;
+        geminiStatus: number | null;
+        geminiError: string | null;
+        geminiBody?: string;
+      };
     }
   | {
       ok: false;
       error: "ai_not_configured" | "ai_failed" | "ai_invalid_response";
       message: string;
+      debug: {
+        geminiKeyPresent: boolean;
+        geminiStatus: number | null;
+        geminiError: string | null;
+        geminiBody?: string;
+      };
     };
 
 function truncateText(value: string, maxChars: number) {
@@ -93,11 +105,23 @@ export async function structurePdfTextWithAI(input: {
   rawText: string;
   hintType?: "credit" | "account";
 }): Promise<AiStructurePdfResult> {
-  if (!process.env.GEMINI_API_KEY) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const geminiKeyPresent = Boolean(apiKey);
+  const includeDevBody = process.env.NODE_ENV !== "production";
+
+  // Always log presence of key (safe) for quick diagnosis.
+  console.log("[imports/ai] gemini key present:", geminiKeyPresent);
+
+  if (!apiKey) {
     return {
       ok: false,
       error: "ai_not_configured",
-      message: "La lectura inteligente no está configurada todavía (falta GEMINI_API_KEY)."
+      message: "La lectura inteligente no está configurada todavía (falta GEMINI_API_KEY).",
+      debug: {
+        geminiKeyPresent: false,
+        geminiStatus: null,
+        geminiError: "missing_api_key"
+      }
     };
   }
 
@@ -120,11 +144,13 @@ export async function structurePdfTextWithAI(input: {
     truncateText(input.rawText, 18000)
   ].join("\n\n");
 
+  let geminiStatus: number | null = null;
+  let geminiBody: string | undefined;
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
         model
-      )}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`,
+      )}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
         headers: {
@@ -149,15 +175,33 @@ export async function structurePdfTextWithAI(input: {
       }
     );
 
+    geminiStatus = res.status;
+    console.log("[imports/ai] gemini status:", res.status);
+
     if (!res.ok) {
+      geminiBody = await res.text().catch(() => "");
+      if (includeDevBody) {
+        console.log("[imports/ai] gemini error body:", geminiBody);
+      }
       return {
         ok: false,
         error: "ai_failed",
-        message: `La IA no respondió correctamente (${res.status}).`
+        message: `Gemini respondió error (${res.status}).`,
+        debug: {
+          geminiKeyPresent,
+          geminiStatus: res.status,
+          geminiError: geminiBody ? geminiBody.slice(0, 1200) : `HTTP_${res.status}`,
+          geminiBody: includeDevBody ? geminiBody : undefined
+        }
       };
     }
 
-    const payload = (await res.json()) as {
+    const payloadText = await res.text();
+    if (includeDevBody) {
+      geminiBody = payloadText;
+      console.log("[imports/ai] gemini ok body:", payloadText);
+    }
+    const payload = (payloadText ? JSON.parse(payloadText) : null) as {
       candidates?: Array<{
         content?: { parts?: Array<{ text?: string }> };
       }>;
@@ -166,7 +210,17 @@ export async function structurePdfTextWithAI(input: {
     const text = payload.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const parsedJson = typeof text === "string" ? tryParseLooseJson(text) : null;
     if (!parsedJson) {
-      return { ok: false, error: "ai_invalid_response", message: "La IA no devolvió JSON válido." };
+      return {
+        ok: false,
+        error: "ai_invalid_response",
+        message: "La IA no devolvió JSON válido.",
+        debug: {
+          geminiKeyPresent,
+          geminiStatus,
+          geminiError: "invalid_json",
+          geminiBody: includeDevBody ? geminiBody : undefined
+        }
+      };
     }
 
     const preview = aiImportPreviewSchema.parse(parsedJson);
@@ -182,12 +236,35 @@ export async function structurePdfTextWithAI(input: {
         ? Math.max(0.2, 1 - dubiousCount / Math.max(1, preview.transactions.length))
         : null;
 
-    return { ok: true, preview, warnings, confidence };
+    return {
+      ok: true,
+      preview,
+      warnings,
+      confidence,
+      debug: {
+        geminiKeyPresent,
+        geminiStatus,
+        geminiError: null,
+        geminiBody: includeDevBody ? geminiBody : undefined
+      }
+    };
   } catch (error) {
+    const errMessage = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : null;
+    console.log("[imports/ai] gemini exception:", errMessage);
+    if (includeDevBody && errStack) {
+      console.log("[imports/ai] gemini exception stack:", errStack);
+    }
     return {
       ok: false,
       error: "ai_failed",
-      message: error instanceof Error ? error.message : String(error)
+      message: errMessage,
+      debug: {
+        geminiKeyPresent,
+        geminiStatus,
+        geminiError: errMessage,
+        geminiBody: includeDevBody ? geminiBody : undefined
+      }
     };
   }
 }

@@ -133,6 +133,19 @@ export async function previewImportFile(input: {
         .map((line) => line.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim())
         .filter(Boolean);
 
+      const pdfDebug: {
+        aiUsed: boolean;
+        geminiStatus: number | null;
+        geminiError: string | null;
+        textLength: number;
+        geminiBody?: string;
+      } = {
+        aiUsed: false,
+        geminiStatus: null,
+        geminiError: null,
+        textLength: rawText.length
+      };
+
       // Prefer AI structuring when configured. If not configured or it fails,
       // fall back to deterministic templates + generic line fallback.
       const aiConfigured = Boolean(process.env.GEMINI_API_KEY && input.userKey);
@@ -151,6 +164,11 @@ export async function previewImportFile(input: {
         });
 
         if (ai.ok) {
+          pdfDebug.aiUsed = true;
+          pdfDebug.geminiStatus = ai.debug.geminiStatus;
+          pdfDebug.geminiError = ai.debug.geminiError;
+          if (ai.debug.geminiBody) pdfDebug.geminiBody = ai.debug.geminiBody;
+
           const transactions = ai.preview.transactions ?? [];
           const dubiousCount = transactions.filter((t) => t.needsReview).length;
 
@@ -220,7 +238,16 @@ export async function previewImportFile(input: {
               }
             }
           };
+
+          // attach debug (plain JSON)
+          (parsed as unknown as Record<string, unknown>).debug = pdfDebug;
         } else {
+          pdfDebug.aiUsed = true;
+          pdfDebug.geminiStatus = ai.debug.geminiStatus;
+          pdfDebug.geminiError =
+            ai.debug.geminiError ?? `${ai.error}: ${ai.message}`;
+          if (ai.debug.geminiBody) pdfDebug.geminiBody = ai.debug.geminiBody;
+
           console.warn("previewImportFile AI structuring failed; falling back", {
             fileName: input.fileName,
             error: ai.error,
@@ -246,6 +273,7 @@ export async function previewImportFile(input: {
               statement: falabella.meta
             }
           };
+          (parsed as unknown as Record<string, unknown>).debug = pdfDebug;
         } else {
           parsed = {
             parser: "pdf",
@@ -257,6 +285,7 @@ export async function previewImportFile(input: {
             ].filter((v): v is string => typeof v === "string" && v.trim().length > 0),
             supported: true
           };
+          (parsed as unknown as Record<string, unknown>).debug = pdfDebug;
         }
       }
     }
