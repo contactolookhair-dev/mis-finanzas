@@ -1,3 +1,6 @@
+// 🔥 FIX VERCEL DOMMatrix
+(global as any).DOMMatrix = class { };
+
 import { tryParseFalabellaCmrPdf, type FalabellaCmrStatementMeta } from "@/server/services/import/pdf-templates/falabella-cmr";
 
 export const runtime = "nodejs";
