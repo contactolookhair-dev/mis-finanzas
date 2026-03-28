@@ -45,7 +45,11 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
       throw new Error("pdfjs_getDocument_not_available");
     }
 
-    (pdfjs as any).GlobalWorkerOptions.workerSrc = "";
+    const globalWorkerOptions = (pdfjs as any).GlobalWorkerOptions ?? {};
+    globalWorkerOptions.workerSrc = "";
+    globalWorkerOptions.workerPort = null;
+    globalWorkerOptions.workerSrc = "";
+    globalWorkerOptions.workerPort = null;
 
     const loadingTask = getDocument({
       data: bytes,
