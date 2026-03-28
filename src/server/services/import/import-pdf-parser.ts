@@ -1,9 +1,12 @@
 import DOMMatrix from "@thednp/dommatrix";
 
-// 🔥 polyfill real para pdfjs en Node (Vercel)
+// 🔥 FIX REAL para Vercel + pdfjs
 (global as any).DOMMatrix = DOMMatrix;
 
-import { tryParseFalabellaCmrPdf, type FalabellaCmrStatementMeta } from "@/server/services/import/pdf-templates/falabella-cmr";
+import {
+  tryParseFalabellaCmrPdf,
+  type FalabellaCmrStatementMeta,
+} from "@/server/services/import/pdf-templates/falabella-cmr";
 
 export const runtime = "nodejs";
 
@@ -24,7 +27,10 @@ function normalizeLine(value: string) {
   return value.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
 }
 
-function fallbackPlainTextParse(_bytes: Uint8Array, warning: string): ParsedPdfImport {
+function fallbackPlainTextParse(
+  _bytes: Uint8Array,
+  warning: string
+): ParsedPdfImport {
   return {
     rows: [],
     headers: [],
@@ -33,19 +39,24 @@ function fallbackPlainTextParse(_bytes: Uint8Array, warning: string): ParsedPdfI
   };
 }
 
+/**
+ * 🔥 EXTRACTOR FINAL ESTABLE PARA VERCEL
+ */
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
     const loadingTask = pdfjs.getDocument({
       data: bytes,
+      disableWorker: true, // 🔥 CLAVE
       useWorkerFetch: false,
       isEvalSupported: false,
       useSystemFonts: true,
       disableFontFace: true,
-    });
+    } as any);
 
     const pdf = await loadingTask.promise;
+
     const pages: string[] = [];
 
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -55,7 +66,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
       const strings = content.items
         .map((item: any) => {
           if (typeof item === "string") return item;
-          if (item?.str) return item.str;
+          if (typeof item?.str === "string") return item.str;
           return "";
         })
         .filter(Boolean);
@@ -82,7 +93,9 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   }
 }
 
-export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfImport> {
+export async function parsePdfImportFile(
+  bytes: Uint8Array
+): Promise<ParsedPdfImport> {
   try {
     const rawText = await extractPdfText(bytes);
 
@@ -92,9 +105,13 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       .filter(Boolean);
 
     if (!lines.length) {
-      return fallbackPlainTextParse(bytes, "PDF sin texto seleccionable");
+      return fallbackPlainTextParse(
+        bytes,
+        "PDF sin texto seleccionable"
+      );
     }
 
+    // 🔥 parser Falabella (mantienes inteligencia)
     const falabella = tryParseFalabellaCmrPdf(lines);
 
     if (falabella && falabella.rows.length > 5) {
@@ -110,6 +127,7 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       };
     }
 
+    // 🔥 fallback básico (igual muestra datos)
     return {
       rows: lines.map((line, i) => ({
         id: i,
