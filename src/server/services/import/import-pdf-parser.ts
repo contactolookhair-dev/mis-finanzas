@@ -36,8 +36,13 @@ function fallbackPlainTextParse(
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
-    const mod = await import("pdf-parse");
-    const pdfParse = (mod as any).default ?? mod;
+    // Load the CommonJS entry explicitly to avoid Next/Vercel bundling the ESM/worker build.
+    const { createRequire } = await import("node:module");
+    const req = createRequire(
+      // `__filename` exists in CJS bundles; fallback keeps createRequire happy in ESM contexts.
+      typeof __filename === "string" ? __filename : `${process.cwd()}/import-pdf-parser.cjs`
+    );
+    const pdfParse = req("pdf-parse/lib/pdf-parse.js") as (buf: Buffer) => Promise<{ text?: string }>;
 
     const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const result = await pdfParse(buffer);

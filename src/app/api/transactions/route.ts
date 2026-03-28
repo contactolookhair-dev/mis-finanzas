@@ -19,7 +19,6 @@ const transactionsQuerySchema = z.object({
   reviewStatus: z.enum(["PENDIENTE", "REVISADO", "OBSERVADO"]).optional(),
   search: z.string().optional(),
   type: z.enum(["INGRESO", "EGRESO"]).optional(),
-  take: z.coerce.number().int().min(1).optional(),
   cursor: z.string().optional()
 });
 
@@ -61,6 +60,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const takeParam = request.nextUrl.searchParams.get("take");
+    const parsedTake = takeParam ? Number.parseInt(takeParam, 10) : NaN;
+    const safeTake =
+      Number.isFinite(parsedTake) && parsedTake > 0 ? Math.min(parsedTake, 500) : undefined;
+
     const query = transactionsQuerySchema.parse({
       startDate: request.nextUrl.searchParams.get("startDate") ?? undefined,
       endDate: request.nextUrl.searchParams.get("endDate") ?? undefined,
@@ -71,7 +75,6 @@ export async function GET(request: NextRequest) {
       reviewStatus: request.nextUrl.searchParams.get("reviewStatus") ?? undefined,
       search: request.nextUrl.searchParams.get("search") ?? undefined,
       type: request.nextUrl.searchParams.get("type") ?? undefined,
-      take: request.nextUrl.searchParams.get("take") ?? undefined,
       cursor: request.nextUrl.searchParams.get("cursor") ?? undefined
     });
 
@@ -86,7 +89,7 @@ export async function GET(request: NextRequest) {
       type: query.type,
       reviewStatus: query.reviewStatus,
       search: query.search,
-      take: Math.min(query.take ?? 50, 500),
+      take: safeTake ?? 50,
       cursor: query.cursor,
       order: {
         field: "date",
