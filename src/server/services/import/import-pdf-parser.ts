@@ -369,7 +369,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     console.log("parsePdfImportFile parserLoaded", { parserLoaded });
 
     const loadingTask = getDocument({
-      data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+      data: new Uint8Array(bytes).buffer
     });
     const pdf = await loadingTask.promise;
     const pageTexts: string[] = [];
