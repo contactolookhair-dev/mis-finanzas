@@ -135,8 +135,12 @@ export async function previewImportFile(input: {
 
       // Prefer AI structuring when configured. If not configured or it fails,
       // fall back to deterministic templates + generic line fallback.
-      const canUseAI = Boolean(process.env.GEMINI_API_KEY && input.userKey);
-      if (canUseAI) {
+      const aiConfigured = Boolean(process.env.GEMINI_API_KEY && input.userKey);
+      const aiStatusWarning = aiConfigured
+        ? null
+        : "La lectura con IA no está configurada todavía. Puedes continuar con detección básica o revisar manualmente antes de guardar.";
+
+      if (aiConfigured) {
         const { structurePdfTextWithAI } = await import("@/server/services/import/import-ai-structurer");
         const ai = await structurePdfTextWithAI({
           workspaceId: input.workspaceId,
@@ -233,7 +237,9 @@ export async function previewImportFile(input: {
             parser: "pdf",
             rows: falabella.rows,
             headers: ["fecha", "descripcion", "cargo", "abono"],
-            warnings: falabella.warnings,
+            warnings: [aiStatusWarning, ...falabella.warnings].filter(
+              (v): v is string => typeof v === "string" && v.trim().length > 0
+            ),
             supported: falabella.rows.length > 5,
             meta: {
               kind: "falabella-cmr",
@@ -246,8 +252,9 @@ export async function previewImportFile(input: {
             rows: lines.map((line, i) => ({ id: i, raw: line, description: line })),
             headers: ["raw"],
             warnings: [
+              aiStatusWarning,
               "No se pudo estructurar automáticamente este PDF. Puedes revisar y editar manualmente los movimientos antes de guardar."
-            ],
+            ].filter((v): v is string => typeof v === "string" && v.trim().length > 0),
             supported: true
           };
         }

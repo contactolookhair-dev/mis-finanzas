@@ -286,6 +286,18 @@ export function ImportTransactionsPanel(props: {
       : false;
 
   const normalizedRows = useMemo(() => (Array.isArray(rows) ? rows : []), [rows]);
+  const aiUsed = useMemo(
+    () =>
+      normalizedRows.some((row) => {
+        const meta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
+        return meta?.kind === "pdf-ai";
+      }),
+    [normalizedRows]
+  );
+  const selectedIsPdf = Boolean(
+    selectedFile &&
+      (selectedFile.type.toLowerCase().includes("pdf") || selectedFile.name.toLowerCase().endsWith(".pdf"))
+  );
   const readyToImportCount = useMemo(
     () => normalizedRows.filter((row) => row.include && row.issues.length === 0).length,
     [normalizedRows]
@@ -715,13 +727,13 @@ export function ImportTransactionsPanel(props: {
             ) : (
               <>
                 <FileUp className="mr-2 h-4 w-4" />
-                {importLane === "credit" ? "Subir estado (PDF)" : "Subir y revisar"}
+                {selectedIsPdf ? "Leer PDF con IA" : "Subir y revisar"}
               </>
             )}
           </Button>
         </div>
 
-        {preview?.availableTemplates?.length ? (
+        {preview?.availableTemplates?.length && !aiUsed ? (
           <div className="grid gap-3 md:grid-cols-[1fr_auto]">
             <Select
               value={selectedTemplateId}
@@ -783,6 +795,22 @@ export function ImportTransactionsPanel(props: {
                   {typeof pdfMeta.institution === "string" ? pdfMeta.institution : "Estado de cuenta"}
                   {typeof pdfMeta.brand === "string" ? ` · ${pdfMeta.brand}` : null}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {aiUsed ? (
+                    <span className="inline-flex rounded-full border border-slate-900 bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-white">
+                      Lectura con IA
+                    </span>
+                  ) : (
+                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                      Detección básica
+                    </span>
+                  )}
+                  {pdfMeta.aiFallbackRecommended === true ? (
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800">
+                      Revisar
+                    </span>
+                  ) : null}
+                </div>
                 <p className="mt-1 text-xs text-slate-600">
                   {typeof pdfMeta.cardLabel === "string" ? pdfMeta.cardLabel : "Tarjeta"}{" "}
                   {typeof pdfMeta.billingPeriodStart === "string" && typeof pdfMeta.billingPeriodEnd === "string"
