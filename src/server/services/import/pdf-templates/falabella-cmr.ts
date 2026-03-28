@@ -338,6 +338,23 @@ function detectSection(line: string): SectionKind | null {
 
 function parseMovementLine(line: string) {
   const trimmed = normalizeWhitespace(line);
+  const specialMatch = trimmed.match(/^\s*(?:[A-Za-zÀ-ÿ\.\-\d\s]+?)?\s+(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s+T\s+([\d.]+)(?:\s|$)/i);
+  if (specialMatch) {
+    const [, dateStr, descriptionSegment, amountRaw] = specialMatch;
+    const amount = Number(amountRaw.replace(/[.\s]/g, "")) || 0;
+    const [dayStr, monthStr, yearStr] = dateStr.split("/");
+    return {
+      day: Number(dayStr),
+      month: Number(monthStr),
+      yearToken: Number(yearStr),
+      description: descriptionSegment.trim(),
+      amount,
+      fecha: dateStr,
+      descripcion: descriptionSegment.trim(),
+      cargo: amount,
+      abono: null,
+    };
+  }
   const match = trimmed.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\s+(.+)$/);
   if (!match) return null;
 

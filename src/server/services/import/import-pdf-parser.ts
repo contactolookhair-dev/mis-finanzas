@@ -1,9 +1,7 @@
-import "pdf-parse/worker";
 import {
   tryParseFalabellaCmrPdf,
   type FalabellaCmrStatementMeta,
 } from "@/server/services/import/pdf-templates/falabella-cmr";
-import { PDFParse } from "pdf-parse";
 
 export const runtime = "nodejs";
 
@@ -37,13 +35,14 @@ function fallbackPlainTextParse(
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  let parser: PDFParse | null = null;
-
   try {
-    parser = new PDFParse({ data: bytes });
-    const result = await parser.getText();
+    const mod = await import("pdf-parse");
+    const pdfParse = (mod as any).default ?? mod;
 
-    const normalized = (result?.text ?? "")
+    const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const result = await pdfParse(buffer);
+
+    const normalized = String(result?.text ?? "")
       .replace(/\r/g, "")
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
@@ -56,15 +55,10 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     return normalized;
   } catch (error) {
     throw new Error(
-      `pdf_text_extraction_failed | ${error instanceof Error ? error.message : String(error)
+      `pdf_text_extraction_failed | ${
+        error instanceof Error ? error.message : String(error)
       }`
     );
-  } finally {
-    try {
-      await parser?.destroy?.();
-    } catch {
-      // noop
-    }
   }
 }
 
@@ -99,8 +93,9 @@ export async function parsePdfImportFile(
     }
 
     console.log("[imports/preview] falabella fallback", {
-      rawSnippet: rawText.slice(0, 200),
-      firstLines: lines.slice(0, 5),
+      rawSnippet: rawText.slice(0, 400),
+      firstLines: lines.slice(0, 15),
+      totalLines: lines.length,
     });
 
     return {

@@ -19,7 +19,7 @@ const transactionsQuerySchema = z.object({
   reviewStatus: z.enum(["PENDIENTE", "REVISADO", "OBSERVADO"]).optional(),
   search: z.string().optional(),
   type: z.enum(["INGRESO", "EGRESO"]).optional(),
-  take: z.coerce.number().int().min(1).max(100).optional(),
+  take: z.coerce.number().int().min(1).optional(),
   cursor: z.string().optional()
 });
 
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
       type: query.type,
       reviewStatus: query.reviewStatus,
       search: query.search,
-      take: query.take ?? 50,
+      take: Math.min(query.take ?? 50, 500),
       cursor: query.cursor,
       order: {
         field: "date",
