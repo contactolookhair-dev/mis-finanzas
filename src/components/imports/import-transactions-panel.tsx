@@ -23,6 +23,13 @@ type PreviewResponse = {
   success?: boolean;
   error?: string;
   message?: string;
+  debug?: {
+    aiUsed?: boolean;
+    geminiStatus?: number | null;
+    geminiError?: string | null;
+    textLength?: number;
+    geminiBody?: string;
+  };
   parser: ImportParserKind;
   supported: boolean;
   warnings: string[];
@@ -491,19 +498,27 @@ export function ImportTransactionsPanel(props: {
         );
       }
 
-      if (!payload || !response.ok || payload.success === false) {
+      const payloadRows = Array.isArray(payload?.rows) ? payload.rows : [];
+      const hasRows = payloadRows.length > 0;
+
+      // If we have rows, always allow the user to review/edit, even if AI failed.
+      if (!payload || !response.ok || (payload.success === false && !hasRows)) {
         throw new Error(
           getFriendlyPreviewError(
             payload?.message ??
-            "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente."
+              "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente."
           )
         );
       }
 
       setPreview(payload);
       setSelectedTemplateId(payload.appliedTemplate?.id ?? "");
-      setRows(Array.isArray(payload.rows) ? payload.rows.map(normalizePreviewRow) : []);
+      setRows(payloadRows.map(normalizePreviewRow));
       setSelectedPdfAccountId(payload.pdfAccountSuggestion?.accountId ?? contextualAccountId ?? "");
+
+      if (payload?.debug?.aiUsed && payload?.debug?.geminiError && hasRows) {
+        setSuccess("No pudimos usar IA, pero puedes revisar los movimientos detectados manualmente.");
+      }
     } catch (previewError) {
       setError(
         previewError instanceof Error
@@ -952,7 +967,21 @@ export function ImportTransactionsPanel(props: {
           </SurfaceCard>
         ) : null}
 
-        {error ? <ErrorStateCard title="No se pudo generar la vista previa" description={error} /> : null}
+        {preview?.debug ? (
+          <SurfaceCard variant="soft" padding="sm" className="border-slate-200 bg-white/80 text-sm text-slate-700">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Debug (preview)</p>
+            <div className="mt-2 grid gap-1 text-xs">
+              <div>aiUsed: <span className="font-mono">{String(preview.debug.aiUsed ?? "—")}</span></div>
+              <div>geminiStatus: <span className="font-mono">{String(preview.debug.geminiStatus ?? "—")}</span></div>
+              <div>geminiError: <span className="font-mono">{String(preview.debug.geminiError ?? "—")}</span></div>
+              <div>textLength: <span className="font-mono">{String(preview.debug.textLength ?? "—")}</span></div>
+            </div>
+          </SurfaceCard>
+        ) : null}
+
+        {error && rows.length === 0 ? (
+          <ErrorStateCard title="No se pudo generar la vista previa" description={error} />
+        ) : null}
 
         {success ? (
           <SurfaceCard

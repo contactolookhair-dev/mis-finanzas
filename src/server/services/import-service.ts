@@ -521,6 +521,10 @@ export async function previewImportFile(input: {
     parser: parsed.parser,
     supported: parsed.supported,
     warnings: parsed.warnings,
+    debug:
+      parsed && typeof parsed === "object" && "debug" in parsed && typeof (parsed as any).debug === "object"
+        ? ((parsed as any).debug as unknown)
+        : undefined,
     pdfMeta,
     pdfAccountSuggestion,
     appliedTemplate: templateDetection.detectedTemplate
