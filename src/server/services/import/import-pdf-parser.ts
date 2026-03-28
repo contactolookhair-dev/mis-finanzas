@@ -396,7 +396,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
       if (DEBUG && pageNum === 1) {
         console.log("[imports/preview] first page content", { items: content.items.length });
       }
-      const strings = content.items.map((item) => {
+      const strings = content.items.map((item: any) => {
         if (typeof item === "string") return item;
         if ("str" in item && typeof item.str === "string") return item.str;
         return "";
