@@ -225,6 +225,9 @@ export async function POST(request: Request) {
       preferredImportType: importType
     });
     previewResult = isPlainObject(rawPreview) ? rawPreview : {};
+    if (previewResult?.parser === "pdf" && !previewResult.supported && looksLikePdf) {
+      previewResult.supported = true;
+    }
     recordStage("preview_built", {
       parser: previewResult.parser,
       rows: Array.isArray(previewResult.rows) ? previewResult.rows.length : 0
