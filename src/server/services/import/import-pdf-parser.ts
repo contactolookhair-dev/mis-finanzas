@@ -363,14 +363,14 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     } catch {
       pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
     }
-    const { getDocument, GlobalWorkerOptions } = pdfjsLib as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
-    GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
+    const { getDocument } = pdfjsLib as typeof import("pdfjs-dist/legacy/build/pdf.mjs");
     const parserLoaded = Boolean(getDocument);
     console.log("parsePdfImportFile parserLoaded", { parserLoaded });
 
     const loadingTask = getDocument({
-      data: new Uint8Array(bytes).buffer
-    });
+      data: new Uint8Array(bytes).buffer,
+      useWorker: false
+    } as any);
     const pdf = await loadingTask.promise;
     const pageTexts: string[] = [];
 
