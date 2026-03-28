@@ -1,6 +1,4 @@
 import DOMMatrix from "@thednp/dommatrix";
-
-// 🔥 FIX REAL para Vercel + pdfjs
 (global as any).DOMMatrix = DOMMatrix;
 
 import {
@@ -39,24 +37,23 @@ function fallbackPlainTextParse(
   };
 }
 
-/**
- * 🔥 EXTRACTOR FINAL ESTABLE PARA VERCEL
- */
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.js");
 
-    const loadingTask = pdfjs.getDocument({
+    // En 3.x esta bandera sí evita la ruta del worker en servidor.
+    (pdfjs as any).GlobalWorkerOptions.workerSrc = "";
+
+    const loadingTask = (pdfjs as any).getDocument({
       data: bytes,
-      disableWorker: true, // 🔥 CLAVE
+      disableWorker: true,
       useWorkerFetch: false,
       isEvalSupported: false,
-      useSystemFonts: true,
       disableFontFace: true,
-    } as any);
+      useSystemFonts: false,
+    });
 
     const pdf = await loadingTask.promise;
-
     const pages: string[] = [];
 
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -80,12 +77,8 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
       throw new Error("EMPTY_TEXT");
     }
 
-    console.log("[PDF OK pdfjs] length:", text.length);
-
     return text;
   } catch (error) {
-    console.error("[PDF ERROR pdfjs]", error);
-
     throw new Error(
       `pdf_text_extraction_failed | ${error instanceof Error ? error.message : String(error)
       }`
@@ -105,13 +98,9 @@ export async function parsePdfImportFile(
       .filter(Boolean);
 
     if (!lines.length) {
-      return fallbackPlainTextParse(
-        bytes,
-        "PDF sin texto seleccionable"
-      );
+      return fallbackPlainTextParse(bytes, "PDF sin texto seleccionable");
     }
 
-    // 🔥 parser Falabella (mantienes inteligencia)
     const falabella = tryParseFalabellaCmrPdf(lines);
 
     if (falabella && falabella.rows.length > 5) {
@@ -127,7 +116,6 @@ export async function parsePdfImportFile(
       };
     }
 
-    // 🔥 fallback básico (igual muestra datos)
     return {
       rows: lines.map((line, i) => ({
         id: i,
@@ -139,8 +127,6 @@ export async function parsePdfImportFile(
       supported: true,
     };
   } catch (error) {
-    console.error("parsePdfImportFile failed", error);
-
     return {
       rows: [],
       headers: [],
