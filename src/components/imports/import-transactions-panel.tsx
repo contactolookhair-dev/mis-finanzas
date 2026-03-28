@@ -76,6 +76,23 @@ type CommitSummary = {
   errors: Array<{ rowId: string; message: string }>;
 };
 
+type InstallmentPreviewFields = {
+  descripcionBase?: string;
+  esCompraEnCuotas?: boolean;
+  cuotaActual?: number | null;
+  cuotaTotal?: number | null;
+  montoCuota?: number | null;
+  montoTotalCompra?: number | null;
+  cuotasRestantes?: number | null;
+  descriptionBase?: string;
+  isInstallmentPurchase?: boolean;
+  currentInstallment?: number | null;
+  totalInstallments?: number | null;
+  installmentAmount?: number | null;
+  totalPurchaseAmount?: number | null;
+  remainingInstallments?: number | null;
+};
+
 function isCreditCardAccount(option?: ReferenceOption | null) {
   return option?.type === "TARJETA_CREDITO";
 }
@@ -105,6 +122,82 @@ function getFriendlyPreviewError(message: string) {
   }
 
   return message;
+}
+
+function formatCurrencyCLP(value?: number | null) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return `$${value.toLocaleString("es-CL")}`;
+}
+
+function getInstallmentPreview(row: ImportPreviewRow) {
+  const data = row as ImportPreviewRow & InstallmentPreviewFields;
+
+  const descriptionBase =
+    typeof data.descripcionBase === "string" && data.descripcionBase.trim().length > 0
+      ? data.descripcionBase.trim()
+      : typeof data.descriptionBase === "string" && data.descriptionBase.trim().length > 0
+        ? data.descriptionBase.trim()
+        : null;
+
+  const isInstallmentPurchase =
+    data.esCompraEnCuotas === true || data.isInstallmentPurchase === true;
+
+  const currentInstallment =
+    typeof data.cuotaActual === "number"
+      ? data.cuotaActual
+      : typeof data.currentInstallment === "number"
+        ? data.currentInstallment
+        : null;
+
+  const totalInstallments =
+    typeof data.cuotaTotal === "number"
+      ? data.cuotaTotal
+      : typeof data.totalInstallments === "number"
+        ? data.totalInstallments
+        : null;
+
+  const installmentAmount =
+    typeof data.montoCuota === "number"
+      ? data.montoCuota
+      : typeof data.installmentAmount === "number"
+        ? data.installmentAmount
+        : null;
+
+  const totalPurchaseAmount =
+    typeof data.montoTotalCompra === "number"
+      ? data.montoTotalCompra
+      : typeof data.totalPurchaseAmount === "number"
+        ? data.totalPurchaseAmount
+        : null;
+
+  const remainingInstallments =
+    typeof data.cuotasRestantes === "number"
+      ? data.cuotasRestantes
+      : typeof data.remainingInstallments === "number"
+        ? data.remainingInstallments
+        : null;
+
+  return {
+    descriptionBase,
+    isInstallmentPurchase,
+    currentInstallment,
+    totalInstallments,
+    installmentAmount,
+    totalPurchaseAmount,
+    remainingInstallments
+  };
+}
+
+function normalizePreviewRow(row: ImportPreviewRow): ImportPreviewRow {
+  const installment = getInstallmentPreview(row);
+
+  if (!installment.descriptionBase) return row;
+  if (row.description === installment.descriptionBase) return row;
+
+  return {
+    ...row,
+    description: installment.descriptionBase
+  };
 }
 
 function SuggestionBadge({ suggestion }: { suggestion?: ImportFieldSuggestion }) {
@@ -172,9 +265,10 @@ export function ImportTransactionsPanel(props: {
       ? authSession.permissions.canImportTransactions
       : false;
 
+  const normalizedRows = useMemo(() => (Array.isArray(rows) ? rows : []), [rows]);
   const readyToImportCount = useMemo(
-    () => rows.filter((row) => row.include && row.issues.length === 0).length,
-    [rows]
+    () => normalizedRows.filter((row) => row.include && row.issues.length === 0).length,
+    [normalizedRows]
   );
 
   const accountById = useMemo(() => {
@@ -182,7 +276,14 @@ export function ImportTransactionsPanel(props: {
     return new Map(preview.references.accounts.map((account) => [account.id, account]));
   }, [preview]);
 
-  const pdfMeta = useMemo(() => (preview?.pdfMeta && typeof preview.pdfMeta === "object" ? (preview.pdfMeta as Record<string, unknown>) : null), [preview]);
+  const pdfMeta = useMemo(
+    () =>
+      preview?.pdfMeta && typeof preview.pdfMeta === "object"
+        ? (preview.pdfMeta as Record<string, unknown>)
+        : null,
+    [preview]
+  );
+
   const pdfSuggestion = preview?.pdfAccountSuggestion ?? null;
   const [isMobile, setIsMobile] = useState(false);
 
@@ -195,7 +296,6 @@ export function ImportTransactionsPanel(props: {
       mq.addEventListener("change", update);
       return () => mq.removeEventListener("change", update);
     }
-    // Safari < 14 fallback
     const legacyMq = mq as unknown as {
       addListener?: (listener: () => void) => void;
       removeListener?: (listener: () => void) => void;
@@ -232,12 +332,12 @@ export function ImportTransactionsPanel(props: {
   }, [importLane, initialAccountId, preview]);
 
   const debtorNameOptions = useMemo(() => {
-    const names = rows
+    const names = normalizedRows
       .map((row) => row.debtorName)
       .filter((value): value is string => Boolean(value && value.trim().length >= 3))
       .map((value) => value.trim());
     return Array.from(new Set(names)).slice(0, 50);
-  }, [rows]);
+  }, [normalizedRows]);
 
   function updateRow(rowId: string, patch: Partial<ImportPreviewRow>) {
     setRows((current) =>
@@ -361,13 +461,16 @@ export function ImportTransactionsPanel(props: {
 
       if (!payload || !response.ok || payload.success === false) {
         throw new Error(
-          getFriendlyPreviewError(payload?.message ?? "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente.")
+          getFriendlyPreviewError(
+            payload?.message ??
+            "No pudimos leer este PDF. Verifica el archivo o intenta nuevamente."
+          )
         );
       }
 
       setPreview(payload);
       setSelectedTemplateId(payload.appliedTemplate?.id ?? "");
-      setRows(payload.rows);
+      setRows(Array.isArray(payload.rows) ? payload.rows.map(normalizePreviewRow) : []);
       setSelectedPdfAccountId(payload.pdfAccountSuggestion?.accountId ?? contextualAccountId ?? "");
     } catch (previewError) {
       setError(
@@ -407,14 +510,18 @@ export function ImportTransactionsPanel(props: {
       setSuccess("Cuenta creada. Reinterpretando el PDF...");
       await handlePreview();
     } catch (accountError) {
-      setError(accountError instanceof Error ? accountError.message : "No se pudo crear la cuenta sugerida.");
+      setError(
+        accountError instanceof Error
+          ? accountError.message
+          : "No se pudo crear la cuenta sugerida."
+      );
     } finally {
       setCreatingSuggestedAccount(false);
     }
   }
 
   function applyPdfAccountToAllRows(accountId: string) {
-    setRows((current) => current.map((row) => ({ ...row, accountId })));
+    setRows((current) => (Array.isArray(current) ? current : []).map((row) => ({ ...row, accountId })));
   }
 
   async function handleCommit() {
@@ -483,7 +590,9 @@ export function ImportTransactionsPanel(props: {
       setPreview(null);
       setSelectedFile(null);
     } catch (commitError) {
-      setError(commitError instanceof Error ? commitError.message : "Error al guardar movimientos.");
+      setError(
+        commitError instanceof Error ? commitError.message : "Error al guardar movimientos."
+      );
     } finally {
       setCommitting(false);
     }
@@ -522,16 +631,14 @@ export function ImportTransactionsPanel(props: {
           <button
             type="button"
             onClick={() => setImportLane("account")}
-            className={`tap-feedback rounded-2xl border p-4 text-left shadow-[0_10px_22px_rgba(15,23,42,0.05)] ${
-              importLane === "account"
+            className={`tap-feedback rounded-2xl border p-4 text-left shadow-[0_10px_22px_rgba(15,23,42,0.05)] ${importLane === "account"
                 ? "border-slate-900 bg-slate-900 text-white"
                 : "border-slate-200 bg-white/80 text-slate-900"
-            }`}
+              }`}
           >
             <p
-              className={`text-xs font-semibold uppercase tracking-[0.24em] ${
-                importLane === "account" ? "text-white/80" : "text-slate-500"
-              }`}
+              className={`text-xs font-semibold uppercase tracking-[0.24em] ${importLane === "account" ? "text-white/80" : "text-slate-500"
+                }`}
             >
               Cuenta corriente / Débito
             </p>
@@ -543,16 +650,14 @@ export function ImportTransactionsPanel(props: {
           <button
             type="button"
             onClick={() => setImportLane("credit")}
-            className={`tap-feedback rounded-2xl border p-4 text-left shadow-[0_10px_22px_rgba(15,23,42,0.05)] ${
-              importLane === "credit"
+            className={`tap-feedback rounded-2xl border p-4 text-left shadow-[0_10px_22px_rgba(15,23,42,0.05)] ${importLane === "credit"
                 ? "border-slate-900 bg-slate-900 text-white"
                 : "border-slate-200 bg-white/80 text-slate-900"
-            }`}
+              }`}
           >
             <p
-              className={`text-xs font-semibold uppercase tracking-[0.24em] ${
-                importLane === "credit" ? "text-white/80" : "text-slate-500"
-              }`}
+              className={`text-xs font-semibold uppercase tracking-[0.24em] ${importLane === "credit" ? "text-white/80" : "text-slate-500"
+                }`}
             >
               Tarjeta de crédito
             </p>
@@ -626,11 +731,15 @@ export function ImportTransactionsPanel(props: {
             </div>
             <div className="rounded-2xl bg-white/80 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Duplicados</p>
-              <p className="mt-1 text-xl font-semibold">{rows.filter((row) => row.duplicateStatus !== "none").length}</p>
+              <p className="mt-1 text-xl font-semibold">
+                {normalizedRows.filter((row) => row.duplicateStatus !== "none").length}
+              </p>
             </div>
             <div className="rounded-2xl bg-white/80 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Con observaciones</p>
-              <p className="mt-1 text-xl font-semibold">{rows.filter((row) => row.issues.length > 0).length}</p>
+              <p className="mt-1 text-xl font-semibold">
+                {normalizedRows.filter((row) => row.issues.length > 0).length}
+              </p>
             </div>
             <div className="rounded-2xl bg-white/80 p-4">
               <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Plantilla aplicada</p>
@@ -823,11 +932,18 @@ export function ImportTransactionsPanel(props: {
               const parserMeta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
               const cmrClass = parserMeta?.kind === "falabella-cmr" ? (parserMeta.classifiedAs ?? null) : null;
               const cmrSection = parserMeta?.kind === "falabella-cmr" ? (parserMeta.section ?? null) : null;
-              const cmrConfidence = parserMeta?.kind === "falabella-cmr" && typeof parserMeta.confidence === "number" ? parserMeta.confidence : null;
+              const cmrConfidence =
+                parserMeta?.kind === "falabella-cmr" && typeof parserMeta.confidence === "number"
+                  ? parserMeta.confidence
+                  : null;
               const cmrDubious = parserMeta?.kind === "falabella-cmr" ? Boolean(parserMeta.dubious) : false;
+              const installmentPreview = getInstallmentPreview(row);
 
               return (
-                <div key={row.id} className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                <div
+                  key={row.id}
+                  className="rounded-[24px] border border-slate-200 bg-white/80 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">Fila #{row.rowNumber}</p>
@@ -837,11 +953,10 @@ export function ImportTransactionsPanel(props: {
                       {cmrClass ? (
                         <div className="mt-2 flex flex-wrap gap-2">
                           <span
-                            className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${
-                              cmrDubious
+                            className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${cmrDubious
                                 ? "border-amber-200 bg-amber-50 text-amber-800"
                                 : "border-slate-200 bg-slate-50 text-slate-700"
-                            }`}
+                              }`}
                           >
                             {cmrClass}
                             {cmrSection ? ` · ${cmrSection}` : null}
@@ -888,13 +1003,40 @@ export function ImportTransactionsPanel(props: {
                         onChange={(event) => updateRow(row.id, { date: event.target.value || undefined })}
                       />
                     </label>
-                    <label className="space-y-2 xl:col-span-2">
+
+                    <div className="space-y-2 xl:col-span-2">
                       <span className="text-xs font-medium text-neutral-500">Descripcion</span>
                       <Input
-                        value={row.description}
-                        onChange={(event) => updateRow(row.id, { description: event.target.value })}
+                        value={installmentPreview.descriptionBase || row.description}
+                        onChange={(event) =>
+                          updateRow(row.id, { description: event.target.value })
+                        }
                       />
-                    </label>
+
+                      {installmentPreview.isInstallmentPurchase ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
+                          <div className="font-medium text-slate-900">
+                            {installmentPreview.currentInstallment != null &&
+                              installmentPreview.totalInstallments != null
+                              ? `Cuota ${installmentPreview.currentInstallment} de ${installmentPreview.totalInstallments}`
+                              : "Compra en cuotas"}
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                            {formatCurrencyCLP(installmentPreview.installmentAmount) ? (
+                              <span>Pagas: {formatCurrencyCLP(installmentPreview.installmentAmount)}</span>
+                            ) : null}
+                            {formatCurrencyCLP(installmentPreview.totalPurchaseAmount) ? (
+                              <span>Total: {formatCurrencyCLP(installmentPreview.totalPurchaseAmount)}</span>
+                            ) : null}
+                            {typeof installmentPreview.remainingInstallments === "number" ? (
+                              <span>Restantes: {installmentPreview.remainingInstallments}</span>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
                     <label className="space-y-2">
                       <span className="text-xs font-medium text-neutral-500">Monto</span>
                       <Input
@@ -907,6 +1049,7 @@ export function ImportTransactionsPanel(props: {
                         }
                       />
                     </label>
+
                     <label className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium text-neutral-500">Tipo</span>
@@ -928,6 +1071,7 @@ export function ImportTransactionsPanel(props: {
                         <option value="EGRESO">Egreso</option>
                       </Select>
                     </label>
+
                     <label className="space-y-2">
                       <span className="text-xs font-medium text-neutral-500">Saldo</span>
                       <Input
@@ -940,6 +1084,7 @@ export function ImportTransactionsPanel(props: {
                         }
                       />
                     </label>
+
                     <label className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium text-neutral-500">Categoria</span>
@@ -961,6 +1106,7 @@ export function ImportTransactionsPanel(props: {
                         ))}
                       </Select>
                     </label>
+
                     <label className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium text-neutral-500">Unidad de negocio</span>
@@ -987,6 +1133,7 @@ export function ImportTransactionsPanel(props: {
                         ))}
                       </Select>
                     </label>
+
                     <label className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium text-neutral-500">Origen financiero</span>
@@ -1004,6 +1151,7 @@ export function ImportTransactionsPanel(props: {
                         <option value="EMPRESA">Empresa</option>
                       </Select>
                     </label>
+
                     <label className="space-y-2">
                       <span className="text-xs font-medium text-neutral-500">Cuenta interna</span>
                       <Select
@@ -1122,11 +1270,15 @@ export function ImportTransactionsPanel(props: {
                                 ))}
                               </datalist>
                             </label>
+
                             <label className="space-y-2">
                               <span className="text-xs font-medium text-neutral-500">Monto adeudado</span>
                               <Input
                                 type="number"
-                                value={row.owedAmount ?? (typeof row.amount === "number" ? Math.abs(row.amount) : "")}
+                                value={
+                                  row.owedAmount ??
+                                  (typeof row.amount === "number" ? Math.abs(row.amount) : "")
+                                }
                                 onChange={(event) =>
                                   updateRow(row.id, {
                                     owedAmount: event.target.value === "" ? undefined : Number(event.target.value)
@@ -1150,14 +1302,26 @@ export function ImportTransactionsPanel(props: {
                                     });
                                     return;
                                   }
-                                  const count = row.installmentCount && row.installmentCount > 0 ? row.installmentCount : 3;
-                                  const baseAmount = typeof row.owedAmount === "number" ? row.owedAmount : typeof row.amount === "number" ? Math.abs(row.amount) : 0;
-                                  const value = row.installmentValue && row.installmentValue > 0 ? row.installmentValue : Math.ceil(baseAmount / Math.max(1, count));
+                                  const count =
+                                    row.installmentCount && row.installmentCount > 0
+                                      ? row.installmentCount
+                                      : 3;
+                                  const baseAmount =
+                                    typeof row.owedAmount === "number"
+                                      ? row.owedAmount
+                                      : typeof row.amount === "number"
+                                        ? Math.abs(row.amount)
+                                        : 0;
+                                  const value =
+                                    row.installmentValue && row.installmentValue > 0
+                                      ? row.installmentValue
+                                      : Math.ceil(baseAmount / Math.max(1, count));
                                   updateRow(row.id, {
                                     isInstallmentDebt: true,
                                     installmentCount: count,
                                     installmentValue: value,
-                                    nextInstallmentDate: row.nextInstallmentDate ?? computeDefaultNextInstallmentDate(row.date)
+                                    nextInstallmentDate:
+                                      row.nextInstallmentDate ?? computeDefaultNextInstallmentDate(row.date)
                                   });
                                 }}
                               />
@@ -1173,11 +1337,13 @@ export function ImportTransactionsPanel(props: {
                                     value={row.installmentCount ?? ""}
                                     onChange={(event) =>
                                       updateRow(row.id, {
-                                        installmentCount: event.target.value === "" ? undefined : Number(event.target.value)
+                                        installmentCount:
+                                          event.target.value === "" ? undefined : Number(event.target.value)
                                       })
                                     }
                                   />
                                 </label>
+
                                 <label className="space-y-2">
                                   <span className="text-xs font-medium text-neutral-500">Valor cuota</span>
                                   <Input
@@ -1185,11 +1351,13 @@ export function ImportTransactionsPanel(props: {
                                     value={row.installmentValue ?? ""}
                                     onChange={(event) =>
                                       updateRow(row.id, {
-                                        installmentValue: event.target.value === "" ? undefined : Number(event.target.value)
+                                        installmentValue:
+                                          event.target.value === "" ? undefined : Number(event.target.value)
                                       })
                                     }
                                   />
                                 </label>
+
                                 <label className="space-y-2">
                                   <span className="text-xs font-medium text-neutral-500">Próxima cuota</span>
                                   <Input
@@ -1229,10 +1397,12 @@ export function ImportTransactionsPanel(props: {
                     />
                     Marcar como gasto empresarial pagado por mi / reembolsable
                   </label>
+
                   <div className="mt-2 flex items-center gap-2">
                     <SuggestionBadge suggestion={row.suggestionMeta?.isReimbursable} />
                     <SuggestionBadge suggestion={row.suggestionMeta?.isBusinessPaidPersonally} />
                   </div>
+
                   <label className="mt-3 flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"

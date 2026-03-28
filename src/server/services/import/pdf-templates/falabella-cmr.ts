@@ -96,7 +96,6 @@ function inferYearForDmy(params: {
 }) {
   const { month, periodStart, periodEnd, fallbackYear } = params;
   if (!periodEnd) return fallbackYear;
-  // Handles statements that cross year boundary (e.g. Dec -> Jan).
   if (periodStart && periodStart.year === periodEnd.year) {
     return periodEnd.year;
   }
@@ -104,6 +103,141 @@ function inferYearForDmy(params: {
     return month > periodEnd.month ? periodEnd.year - 1 : periodEnd.year;
   }
   return periodEnd.year;
+}
+
+function cleanInstallmentDescription(value: string) {
+  return value
+    .replace(/\(\s*\)/g, "")
+    .replace(/\bcuota\b/gi, " ")
+    .replace(/\bde\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractInstallmentMetaFromDescription(description: string, amount?: number) {
+  const raw = String(description ?? "").trim();
+
+  const patterns = [
+    /\(\s*cuota\s+(\d{1,2})\s+de\s+(\d{1,2})\s*\)/i,
+    /\bcuota\s+(\d{1,2})\s+de\s+(\d{1,2})\b/i,
+    /\(\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\)/i,
+    /\b(\d{1,2})\s*\/\s*(\d{1,2})\b/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (!match) continue;
+
+    const cuotaActual = Number(match[1]);
+    const cuotaTotal = Number(match[2]);
+
+    if (!Number.isFinite(cuotaActual) || !Number.isFinite(cuotaTotal)) continue;
+    if (cuotaActual < 1 || cuotaTotal < 1 || cuotaActual > cuotaTotal) continue;
+
+    const descripcionBase = cleanInstallmentDescription(raw.replace(pattern, " "));
+
+    const montoCuota =
+      typeof amount === "number" && Number.isFinite(amount) ? Math.abs(amount) : null;
+    const montoTotalCompra = montoCuota != null ? montoCuota * cuotaTotal : null;
+
+    return {
+      descripcionBase: descripcionBase || raw,
+      esCompraEnCuotas: cuotaTotal > 1,
+      cuotaActual,
+      cuotaTotal,
+      installments: cuotaTotal,
+      installmentLabel: `${cuotaTotal} cuotas`,
+      montoCuota,
+      montoTotalCompra,
+      cuotasRestantes: cuotaTotal - cuotaActual,
+    };
+  }
+
+  return {
+    descripcionBase: raw,
+    esCompraEnCuotas: false,
+    cuotaActual: null,
+    cuotaTotal: null,
+    installments: null,
+    installmentLabel: null,
+    montoCuota:
+      typeof amount === "number" && Number.isFinite(amount) ? Math.abs(amount) : null,
+    montoTotalCompra: null,
+    cuotasRestantes: null,
+  };
+}
+
+function extractInstallmentMeta(params: {
+  description: string;
+  fullLine?: string;
+  amount?: number;
+}) {
+  const { description, fullLine = "", amount } = params;
+  const fromDescription = extractInstallmentMetaFromDescription(description, amount);
+
+  if (fromDescription.esCompraEnCuotas) {
+    return fromDescription;
+  }
+
+  const rawFullLine = String(fullLine ?? "");
+  const rawDescription = String(description ?? "").trim();
+
+  const linePatterns = [
+    /\b(\d{1,2})\s*\/\s*(\d{1,2})\b/,
+    /\bcuota\s+(\d{1,2})\s+de\s+(\d{1,2})\b/i,
+  ];
+
+  for (const pattern of linePatterns) {
+    const match = rawFullLine.match(pattern);
+    if (!match) continue;
+
+    const cuotaActual = Number(match[1]);
+    const cuotaTotal = Number(match[2]);
+
+    if (!Number.isFinite(cuotaActual) || !Number.isFinite(cuotaTotal)) continue;
+    if (cuotaActual < 1 || cuotaTotal < 1 || cuotaActual > cuotaTotal) continue;
+
+    const montoCuota =
+      typeof amount === "number" && Number.isFinite(amount) ? Math.abs(amount) : null;
+
+    const allAmounts = findAllAmountsOnLine(rawFullLine).map((v) => Math.abs(v));
+    const uniqueAmounts = Array.from(new Set(allAmounts)).sort((a, b) => a - b);
+
+    let montoTotalCompra: number | null = null;
+    if (montoCuota != null) {
+      const largerAmounts = uniqueAmounts.filter((value) => value > montoCuota);
+      if (largerAmounts.length > 0) {
+        montoTotalCompra = largerAmounts[largerAmounts.length - 1] ?? null;
+      } else if (cuotaTotal > 1) {
+        montoTotalCompra = montoCuota * cuotaTotal;
+      }
+    }
+
+    return {
+      descripcionBase: rawDescription || "Movimiento",
+      esCompraEnCuotas: cuotaTotal > 1,
+      cuotaActual,
+      cuotaTotal,
+      installments: cuotaTotal,
+      installmentLabel: `${cuotaTotal} cuotas`,
+      montoCuota,
+      montoTotalCompra,
+      cuotasRestantes: cuotaTotal - cuotaActual,
+    };
+  }
+
+  return {
+    descripcionBase: rawDescription || "Movimiento",
+    esCompraEnCuotas: false,
+    cuotaActual: null,
+    cuotaTotal: null,
+    installments: null,
+    installmentLabel: null,
+    montoCuota:
+      typeof amount === "number" && Number.isFinite(amount) ? Math.abs(amount) : null,
+    montoTotalCompra: null,
+    cuotasRestantes: null,
+  };
 }
 
 function extractHeaderMeta(lines: string[]) {
@@ -115,7 +249,6 @@ function extractHeaderMeta(lines: string[]) {
     brand: "CMR"
   };
 
-  // Card last 4 digits.
   const last4Match =
     joined.match(/(?:\*{2,}|x{2,})\s*(\d{4})/i) ??
     joined.match(/\b(?:tarjeta|cmr)\s*(?:n(?:u|ú)m(?:ero)?\s*)?(\d{4})\b/i);
@@ -123,7 +256,6 @@ function extractHeaderMeta(lines: string[]) {
     meta.cardLast4 = last4Match[1];
   }
 
-  // Billing period
   const periodMatch =
     joined.match(
       /(?:periodo|per[ií]odo)\s*(?:facturado|facturacion|facturación)?\s*[:\-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4}).{0,16}(?:al|hasta|-|a)\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})/i
@@ -135,7 +267,6 @@ function extractHeaderMeta(lines: string[]) {
     if (end) meta.billingPeriodEnd = end;
   }
 
-  // Closing / payment dates
   const closingMatch =
     joined.match(/fecha\s+de\s+cierre\s*[:\-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})/i) ?? null;
   if (closingMatch?.[1]) {
@@ -149,7 +280,6 @@ function extractHeaderMeta(lines: string[]) {
     if (parsed) meta.paymentDate = parsed;
   }
 
-  // Totals
   for (const line of lines.slice(0, 160)) {
     const n = normalizeText(line);
     if (!meta.totalBilled && (n.includes("total facturado") || n.includes("monto facturado"))) {
@@ -185,7 +315,13 @@ function extractHeaderMeta(lines: string[]) {
   return meta as FalabellaCmrStatementMeta;
 }
 
-type SectionKind = "unknown" | "purchases" | "purchases_international" | "payments" | "refunds" | "installments";
+type SectionKind =
+  | "unknown"
+  | "purchases"
+  | "purchases_international"
+  | "payments"
+  | "refunds"
+  | "installments";
 
 function detectSection(line: string): SectionKind | null {
   const n = normalizeText(line);
@@ -204,6 +340,7 @@ function parseMovementLine(line: string) {
   const trimmed = normalizeWhitespace(line);
   const match = trimmed.match(/^(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\s+(.+)$/);
   if (!match) return null;
+
   const day = Number(match[1]);
   const month = Number(match[2]);
   const yearToken = match[3] ? Number(match[3].length === 2 ? `20${match[3]}` : match[3]) : null;
@@ -211,9 +348,9 @@ function parseMovementLine(line: string) {
 
   const amounts = findAllAmountsOnLine(rest);
   if (!amounts.length) return null;
+
   const amount = Math.abs(amounts[amounts.length - 1] ?? 0);
 
-  // Description is everything before last amount token.
   const tokens = rest.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?/g) ?? [];
   let desc = rest;
   const lastToken = tokens[tokens.length - 1];
@@ -221,7 +358,16 @@ function parseMovementLine(line: string) {
     const idx = rest.lastIndexOf(lastToken);
     if (idx >= 0) desc = rest.slice(0, idx);
   }
-  const description = normalizeWhitespace(desc).replace(/\s{2,}/g, " ").trim();
+
+  let description = normalizeWhitespace(desc).replace(/\s{2,}/g, " ").trim();
+  if (!description || description.length < 2) return null;
+
+  description = description
+    .replace(/\bT\b$/i, "")
+    .replace(/\bT\b(?=\s)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
   if (!description || description.length < 2) return null;
 
   return { day, month, yearToken, description, amount };
@@ -267,7 +413,6 @@ function classifyMovement(params: { section: SectionKind; description: string })
   const n = normalizeText(description);
   const matchedGroups = matchKeywords(description);
 
-  // Explicit groups win over section inference.
   if (matchedGroups.includes("interest")) return { classifiedAs: "interest" as const, matchedGroups };
   if (matchedGroups.includes("fee")) return { classifiedAs: "fee" as const, matchedGroups };
   if (matchedGroups.includes("insurance")) return { classifiedAs: "insurance" as const, matchedGroups };
@@ -305,8 +450,14 @@ function computeMovementConfidence(params: {
 
 export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseResult | null {
   const firstBlock = normalizeText(lines.slice(0, 120).join(" "));
-  const isCmr = firstBlock.includes("cmr") && (firstBlock.includes("falabella") || firstBlock.includes("banco falabella"));
-  const isStatement = firstBlock.includes("estado de cuenta") || firstBlock.includes("resumen") || firstBlock.includes("facturacion");
+  const isCmr =
+    firstBlock.includes("cmr") &&
+    (firstBlock.includes("falabella") || firstBlock.includes("banco falabella"));
+  const isStatement =
+    firstBlock.includes("estado de cuenta") ||
+    firstBlock.includes("resumen") ||
+    firstBlock.includes("facturacion");
+
   if (!isCmr || !isStatement) return null;
 
   const meta = extractHeaderMeta(lines);
@@ -319,7 +470,11 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
   const periodEnd = meta.billingPeriodEnd ? new Date(`${meta.billingPeriodEnd}T12:00:00`) : null;
   const periodStartYM = periodStart ? { year: periodStart.getFullYear(), month: periodStart.getMonth() + 1 } : undefined;
   const periodEndYM = periodEnd ? { year: periodEnd.getFullYear(), month: periodEnd.getMonth() + 1 } : undefined;
-  const fallbackYear = periodEndYM?.year ?? (meta.closingDate ? new Date(`${meta.closingDate}T12:00:00`).getFullYear() : new Date().getFullYear());
+  const fallbackYear =
+    periodEndYM?.year ??
+    (meta.closingDate
+      ? new Date(`${meta.closingDate}T12:00:00`).getFullYear()
+      : new Date().getFullYear());
 
   let section: SectionKind = "unknown";
   const rows: RawRow[] = [];
@@ -339,18 +494,22 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
 
     let movement = parseMovementLine(normalizedLine);
     let rawLine = normalizedLine;
+
     if (!movement && mergedCandidate) {
       movement = parseMovementLine(mergedCandidate);
       if (movement) rawLine = mergedCandidate;
     }
+
     if (!movement) {
-      // Track candidate lines that look like movements but didn't parse (for warnings).
-      const hasAmount = /\d{1,3}(?:[.\s]\d{3})+/.test(normalizedLine) || /\$\s*\d+/.test(normalizedLine);
-      const looksLikeMaybeMovement = hasAmount && section !== "unknown" && normalizedLine.length >= 10;
+      const hasAmount =
+        /\d{1,3}(?:[.\s]\d{3})+/.test(normalizedLine) || /\$\s*\d+/.test(normalizedLine);
+      const looksLikeMaybeMovement =
+        hasAmount && section !== "unknown" && normalizedLine.length >= 10;
+
       if (looksLikeMaybeMovement) {
         unparsedCandidates.push(normalizedLine);
       }
-      // Buffer potential wrapped lines (date + text but amount on next line)
+
       if (/^\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s+/.test(normalizedLine) && !hasAmount) {
         pending = normalizedLine;
       } else {
@@ -358,8 +517,8 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
       }
       continue;
     }
+
     pending = null;
-    if (!movement) continue;
 
     const year =
       movement.yearToken ??
@@ -383,14 +542,30 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
     if (section === "unknown") dubiousReasons.push("Fuera de sección reconocida");
     if (classifiedAs === "unknown") dubiousReasons.push("Concepto ambiguo");
     if (confidence < 0.65) dubiousReasons.push("Baja confianza");
+
     const isDubious = dubiousReasons.length > 0;
     if (isDubious) {
       dubious.push({ rawLine, reason: dubiousReasons[0] ?? "Dudosa" });
     }
 
+    const installment = extractInstallmentMeta({
+      description: movement.description,
+      fullLine: rawLine,
+      amount: movement.amount
+    });
+
     const base: RawRow = {
       fecha,
-      descripcion: movement.description,
+      descripcion: installment.descripcionBase,
+      descripcionBase: installment.descripcionBase,
+      esCompraEnCuotas: installment.esCompraEnCuotas,
+      cuotaActual: installment.cuotaActual,
+      cuotaTotal: installment.cuotaTotal,
+      installments: installment.installments,
+      installmentLabel: installment.installmentLabel,
+      montoCuota: installment.montoCuota,
+      montoTotalCompra: installment.montoTotalCompra,
+      cuotasRestantes: installment.cuotasRestantes,
       tarjeta: meta.cardLabel,
       __cmrClassifiedAs: classifiedAs,
       __cmrMatchedSection: section,
@@ -401,7 +576,12 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
       __cmrDubiousReasons: dubiousReasons
     };
 
-    const isCreditLike = section === "payments" || section === "refunds" || classifiedAs === "payment" || classifiedAs === "refund";
+    const isCreditLike =
+      section === "payments" ||
+      section === "refunds" ||
+      classifiedAs === "payment" ||
+      classifiedAs === "refund";
+
     if (isCreditLike) {
       rows.push({
         ...base,
@@ -427,7 +607,6 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
   if (typeof meta.creditUsed !== "number") missingFields.push("cupo usado");
   if (typeof meta.creditAvailable !== "number") missingFields.push("cupo disponible");
 
-  // Simple consistency checks (don't invent data).
   if (
     typeof meta.creditLimit === "number" &&
     typeof meta.creditUsed === "number" &&
@@ -450,18 +629,26 @@ export function tryParseFalabellaCmrPdf(lines: string[]): FalabellaCmrPdfParseRe
 
   const parsedMovements = rows.length;
   const dubiousMovements = rows.filter((row) => Boolean((row as Record<string, unknown>).__cmrDubious)).length;
-  const confidence = parsedMovements === 0 ? 0 : Math.max(0.1, Math.min(0.98, 1 - dubiousMovements / Math.max(1, parsedMovements)));
+  const confidence =
+    parsedMovements === 0
+      ? 0
+      : Math.max(0.1, Math.min(0.98, 1 - dubiousMovements / Math.max(1, parsedMovements)));
+
   meta.parsedMovements = parsedMovements;
   meta.dubiousMovements = dubiousMovements;
   meta.missingFields = missingFields;
   meta.parserConfidence = confidence;
-  meta.aiFallbackRecommended = confidence < 0.6 || dubiousMovements / Math.max(1, parsedMovements) > 0.25;
+  meta.aiFallbackRecommended =
+    confidence < 0.6 || dubiousMovements / Math.max(1, parsedMovements) > 0.25;
 
   if (rows.length === 0) {
     return {
       meta,
       rows: [],
-      warnings: [...warnings, "No se detectaron movimientos en el PDF de CMR/Falabella con el parser especializado."],
+      warnings: [
+        ...warnings,
+        "No se detectaron movimientos en el PDF de CMR/Falabella con el parser especializado."
+      ],
       headersForDetection: ["cmr", "banco falabella", "estado de cuenta"]
     };
   }

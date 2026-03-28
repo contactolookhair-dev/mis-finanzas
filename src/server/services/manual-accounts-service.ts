@@ -137,7 +137,7 @@ export async function ensureCashWalletAccount(workspaceId: string) {
 export async function listManualAccountsWithBalances(workspaceId: string) {
   await ensureCashWalletAccount(workspaceId);
 
-  const [accounts, sums, noConsumeSums, metaMap] = await Promise.all([
+  const [accounts, sums, metaMap] = await Promise.all([
     prisma.account.findMany({
       where: { workspaceId, isActive: true },
       orderBy: [{ type: "asc" }, { name: "asc" }]
@@ -147,17 +147,25 @@ export async function listManualAccountsWithBalances(workspaceId: string) {
       where: { workspaceId, accountId: { not: null } },
       _sum: { amount: true }
     }),
-    prisma.transaction.groupBy({
-      by: ["accountId"],
-      where: {
-        workspaceId,
-        accountId: { not: null },
-        creditImpactType: "no_consume_cupo"
-      },
-      _sum: { amount: true }
-    }),
     getAccountMetaMap(workspaceId)
   ]);
+
+  const noConsumeSums = await (async () => {
+    try {
+      return await prisma.transaction.groupBy({
+        by: ["accountId"],
+        where: {
+          workspaceId,
+          accountId: { not: null },
+          creditImpactType: "no_consume_cupo"
+        },
+        _sum: { amount: true }
+      });
+    } catch (error) {
+      console.error("manual accounts no-consume groupBy failed", { workspaceId, error });
+      return [];
+    }
+  })();
 
   const byAccountId = new Map(
     sums

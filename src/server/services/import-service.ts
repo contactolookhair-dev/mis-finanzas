@@ -5,16 +5,8 @@ import { listBusinessUnits } from "@/server/repositories/business-unit-repositor
 import { listCategories } from "@/server/repositories/category-repository";
 import { createAdminAuditLog } from "@/server/repositories/admin-audit-repository";
 import { findTransactionsByFingerprints } from "@/server/repositories/transaction-repository";
-import {
-  applyClassificationSuggestions,
-  getClassificationEngineContext
-} from "@/server/services/classification-service";
 import { createTransactionWithAutomation } from "@/server/services/transaction-service";
-import { parseImportFile } from "@/server/services/import/import-parser";
-import { normalizeImportedRows } from "@/server/services/import/import-normalizer";
 import { buildDuplicateFingerprint } from "@/server/services/import/import-fingerprint";
-import { detectImportTemplate } from "@/server/services/import/import-template-detection";
-import { listWorkspaceAwareImportTemplates } from "@/server/services/import/import-template-service";
 import { importCommitPayloadSchema, type ImportPreviewRow } from "@/shared/types/imports";
 import { DebtorStatus, ExpenseFrequency } from "@prisma/client";
 
@@ -95,6 +87,33 @@ export async function previewImportFile(input: {
     preferredImportType: input.preferredImportType ?? null
   });
 
+  const [
+    { normalizeImportedRows },
+    { detectImportTemplate },
+    { listWorkspaceAwareImportTemplates },
+    { applyClassificationSuggestions, getClassificationEngineContext }
+  ] = await Promise.all([
+    import("@/server/services/import/import-normalizer"),
+    import("@/server/services/import/import-template-detection"),
+    import("@/server/services/import/import-template-service"),
+    import("@/server/services/classification-service")
+  ]);
+
+  let parseImportFile: (typeof import("@/server/services/import/import-parser"))["parseImportFile"];
+
+  try {
+    const parserModule = await import("@/server/services/import/import-parser");
+    parseImportFile = parserModule.parseImportFile;
+  } catch (error) {
+    console.error("previewImportFile parser module load failed", {
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      bytesLength: input.bytes.length,
+      error: error instanceof Error ? error.message : error
+    });
+    throw error;
+  }
+
   let parsed: Awaited<ReturnType<typeof parseImportFile>>;
   try {
     parsed = await parseImportFile({
@@ -119,10 +138,12 @@ export async function previewImportFile(input: {
     rows: parsed.rows.length,
     hasMeta: Boolean(parsed.meta)
   });
+
   const availableTemplates = await listWorkspaceAwareImportTemplates({
     workspaceId: input.workspaceId,
     parser: parsed.parser
   });
+
   const templateDetection = detectImportTemplate({
     parser: parsed.parser,
     fileName: input.fileName,
@@ -150,24 +171,25 @@ export async function previewImportFile(input: {
 
   const pdfStatement =
     parsed.parser === "pdf" &&
-    parsed.meta &&
-    typeof parsed.meta === "object" &&
-    (parsed.meta as { kind?: unknown }).kind === "falabella-cmr"
+      parsed.meta &&
+      typeof parsed.meta === "object" &&
+      (parsed.meta as { kind?: unknown }).kind === "falabella-cmr"
       ? (parsed.meta as { kind: "falabella-cmr"; statement: unknown }).statement
       : null;
 
-  // If the PDF is a Falabella/CMR statement, try to auto-map to an existing credit card account.
   if (pdfStatement && typeof pdfStatement === "object") {
     const statement = pdfStatement as Record<string, unknown>;
     const cardLabel = typeof statement.cardLabel === "string" ? statement.cardLabel : null;
+
     if (cardLabel) {
       const normalizedLabel = normalizeLookupKey(cardLabel);
-      // Map the detected card label to the most likely Falabella credit card account.
+
       const candidates = references.accounts.filter((account) => {
         const institution = typeof account.institution === "string" ? account.institution : "";
         const normalizedInstitution = normalizeLookupKey(institution);
         const normalizedName = normalizeLookupKey(account.name);
         const isCredit = String(account.type) === "TARJETA_CREDITO";
+
         return (
           isCredit &&
           (normalizedInstitution.includes("falabella") ||
@@ -193,17 +215,21 @@ export async function previewImportFile(input: {
     accountLookup,
     template: templateDetection.detectedTemplate
   });
+
   const classificationContext = await getClassificationEngineContext(input.workspaceId);
   const suggestedRows = applyClassificationSuggestions(normalizedRows, classificationContext);
+
   const candidateFingerprints = suggestedRows
     .map((row) => row.duplicateFingerprint)
     .filter((value): value is string => Boolean(value));
+
   const existing = await findTransactionsByFingerprints(input.workspaceId, candidateFingerprints);
   const existingFingerprints = new Set(
     existing
       .map((item) => item.duplicateFingerprint)
       .filter((value): value is string => Boolean(value))
   );
+
   const rows = markDuplicateStatuses(suggestedRows, existingFingerprints);
 
   const summary = {
@@ -215,9 +241,9 @@ export async function previewImportFile(input: {
 
   const pdfMeta =
     parsed.parser === "pdf" &&
-    parsed.meta &&
-    typeof parsed.meta === "object" &&
-    (parsed.meta as { kind?: unknown }).kind === "falabella-cmr"
+      parsed.meta &&
+      typeof parsed.meta === "object" &&
+      (parsed.meta as { kind?: unknown }).kind === "falabella-cmr"
       ? (parsed.meta as { kind: "falabella-cmr"; statement: unknown }).statement
       : null;
 
@@ -242,18 +268,21 @@ export async function previewImportFile(input: {
       typeof statement.creditLimit === "number" && Number.isFinite(statement.creditLimit)
         ? statement.creditLimit
         : null;
-    const closingDay = typeof statement.closingDate === "string"
-      ? Number(statement.closingDate.slice(-2))
-      : null;
-    const paymentDay = typeof statement.paymentDate === "string"
-      ? Number(statement.paymentDate.slice(-2))
-      : null;
+    const closingDay =
+      typeof statement.closingDate === "string"
+        ? Number(statement.closingDate.slice(-2))
+        : null;
+    const paymentDay =
+      typeof statement.paymentDate === "string"
+        ? Number(statement.paymentDate.slice(-2))
+        : null;
 
     const candidates = references.accounts.filter((account) => {
       const institution = typeof account.institution === "string" ? account.institution : "";
       const normalizedInstitution = normalizeLookupKey(institution);
       const normalizedName = normalizeLookupKey(account.name);
       const isCredit = String(account.type) === "TARJETA_CREDITO";
+
       return (
         isCredit &&
         (normalizedInstitution.includes("falabella") ||
@@ -273,7 +302,11 @@ export async function previewImportFile(input: {
     } else if (candidates.length > 1) {
       pdfAccountSuggestion = {
         mode: "ambiguous",
-        candidates: candidates.map((c) => ({ id: c.id, name: c.name, institution: c.institution ?? null }))
+        candidates: candidates.map((c) => ({
+          id: c.id,
+          name: c.name,
+          institution: c.institution ?? null
+        }))
       };
     } else {
       pdfAccountSuggestion = {
@@ -298,13 +331,13 @@ export async function previewImportFile(input: {
     pdfAccountSuggestion,
     appliedTemplate: templateDetection.detectedTemplate
       ? {
-          id: templateDetection.detectedTemplate.id,
-          name: templateDetection.detectedTemplate.name,
-          institution: templateDetection.detectedTemplate.institution,
-          sourceType: templateDetection.detectedTemplate.sourceType,
-          mode: templateDetection.mode,
-          confidence: templateDetection.confidence
-        }
+        id: templateDetection.detectedTemplate.id,
+        name: templateDetection.detectedTemplate.name,
+        institution: templateDetection.detectedTemplate.institution,
+        sourceType: templateDetection.detectedTemplate.sourceType,
+        mode: templateDetection.mode,
+        confidence: templateDetection.confidence
+      }
       : null,
     availableTemplates: availableTemplates.map((template) => ({
       id: template.id,
@@ -327,11 +360,13 @@ export async function commitImportedTransactions(input: {
 }) {
   const payload = importCommitPayloadSchema.parse(input.payload);
   const includedRows = payload.rows.filter((row) => row.include);
+
   const parserByPayload = {
     csv: "CSV",
     xlsx: "XLSX",
     pdf: "PDF"
   } as const;
+
   const preparedRows = includedRows.map((row) => {
     const duplicateFingerprint = buildDuplicateFingerprint({
       date: new Date(`${row.date}T12:00:00`),
@@ -348,20 +383,26 @@ export async function commitImportedTransactions(input: {
 
   const primaryAccountId = (() => {
     const counts = new Map<string, number>();
+
     for (const row of preparedRows) {
       if (!row.accountId) continue;
       counts.set(row.accountId, (counts.get(row.accountId) ?? 0) + 1);
     }
+
     let best: { id: string; count: number } | null = null;
+
     for (const [id, count] of counts.entries()) {
       if (!best || count > best.count) best = { id, count };
     }
-    // Require a strong majority to avoid incorrect association when importing mixed accounts.
+
     if (!best) return null;
+
     const ratio = best.count / Math.max(1, preparedRows.length);
     return ratio >= 0.8 ? best.id : null;
   })();
+
   const candidateFingerprints = [...new Set(preparedRows.map((row) => row.duplicateFingerprint))];
+
   const batch = await prisma.importBatch.create({
     data: {
       workspaceId: input.workspaceId,
@@ -393,11 +434,13 @@ export async function commitImportedTransactions(input: {
           duplicateFingerprint: true
         }
       });
+
       const existingFingerprints = new Set(
         existing
           .map((item) => item.duplicateFingerprint)
           .filter((value): value is string => Boolean(value))
       );
+
       const seenDuringCommit = new Set<string>();
 
       for (const row of preparedRows) {
@@ -406,6 +449,7 @@ export async function commitImportedTransactions(input: {
           omitted += 1;
           continue;
         }
+
         seenDuringCommit.add(row.duplicateFingerprint);
 
         try {
@@ -441,15 +485,16 @@ export async function commitImportedTransactions(input: {
                   classification: row.classification ?? null,
                   debtorName: row.debtorName ?? null,
                   owedAmount: typeof row.owedAmount === "number" ? row.owedAmount : null,
-                  debtMeta: row.classification === "PRESTADO"
-                    ? {
+                  debtMeta:
+                    row.classification === "PRESTADO"
+                      ? {
                         isInstallmentDebt: row.isInstallmentDebt ?? false,
                         installmentCount: row.installmentCount ?? 0,
                         installmentValue: row.installmentValue ?? 0,
                         nextInstallmentDate: row.nextInstallmentDate ?? null,
                         debtNote: row.debtNote ?? null
                       }
-                    : null
+                      : null
                 }
               }
             },
@@ -534,110 +579,117 @@ export async function commitImportedTransactions(input: {
             parser: payload.parser,
             sourceRows: payload.rows.length,
             includedRows: includedRows.length,
-            pdf: payload.parser === "pdf"
-              ? {
+            pdf:
+              payload.parser === "pdf"
+                ? {
                   appliedTemplateId: payload.appliedTemplateId ?? null,
                   meta: (payload.pdfMeta ?? null) as unknown as Prisma.InputJsonValue,
                   warnings: payload.pdfWarnings ?? [],
                   primaryAccountId
                 }
-              : null,
+                : null,
             creditCardStatement:
               payload.parser === "pdf" &&
-              payload.pdfMeta &&
-              typeof payload.pdfMeta === "object" &&
-              (payload.pdfMeta as Record<string, unknown>).institution === "Banco Falabella"
+                payload.pdfMeta &&
+                typeof payload.pdfMeta === "object" &&
+                (payload.pdfMeta as Record<string, unknown>).institution === "Banco Falabella"
                 ? (() => {
-                    const meta = payload.pdfMeta as Record<string, unknown>;
-                    const statement = {
-                      kind: "falabella-cmr",
-                      accountId: primaryAccountId,
-                      fileName: payload.fileName,
-                      periodStart: typeof meta.billingPeriodStart === "string" ? meta.billingPeriodStart : null,
-                      periodEnd: typeof meta.billingPeriodEnd === "string" ? meta.billingPeriodEnd : null,
-                      closingDate: typeof meta.closingDate === "string" ? meta.closingDate : null,
-                      paymentDate: typeof meta.paymentDate === "string" ? meta.paymentDate : null,
-                      totalBilled:
-                        typeof meta.totalBilled === "number" && Number.isFinite(meta.totalBilled)
-                          ? meta.totalBilled
-                          : null,
-                      minimumDue:
-                        typeof meta.minimumDue === "number" && Number.isFinite(meta.minimumDue)
-                          ? meta.minimumDue
-                          : null,
-                      creditLimit:
-                        typeof meta.creditLimit === "number" && Number.isFinite(meta.creditLimit)
-                          ? meta.creditLimit
-                          : null,
-                      creditUsed:
-                        typeof meta.creditUsed === "number" && Number.isFinite(meta.creditUsed)
-                          ? meta.creditUsed
-                          : null,
-                      creditAvailable:
-                        typeof meta.creditAvailable === "number" && Number.isFinite(meta.creditAvailable)
-                          ? meta.creditAvailable
-                          : null,
-                      parserConfidence:
-                        typeof meta.parserConfidence === "number" && Number.isFinite(meta.parserConfidence)
-                          ? meta.parserConfidence
-                          : null,
-                      missingFields: Array.isArray(meta.missingFields) ? meta.missingFields : [],
-                      warnings: payload.pdfWarnings ?? [],
-                      totals: (() => {
-                        const totals: Record<string, number> = {
-                          purchases: 0,
-                          installmentPurchases: 0,
-                          payments: 0,
-                          refunds: 0,
-                          fees: 0,
-                          interests: 0,
-                          cashAdvances: 0,
-                          taxes: 0,
-                          insurance: 0,
-                          unknownCharges: 0,
-                          unknownCredits: 0
-                        };
-                        let movementCount = 0;
-                        let dubiousCount = 0;
+                  const meta = payload.pdfMeta as Record<string, unknown>;
 
-                        for (const r of preparedRows) {
-                          movementCount += 1;
-                          const parserMeta = r.parserMeta as Record<string, unknown> | undefined;
-                          const classifiedAs = typeof parserMeta?.classifiedAs === "string" ? (parserMeta.classifiedAs as string) : "unknown";
-                          const isDubious = parserMeta?.dubious === true;
-                          if (isDubious) dubiousCount += 1;
+                  const statement = {
+                    kind: "falabella-cmr",
+                    accountId: primaryAccountId,
+                    fileName: payload.fileName,
+                    periodStart: typeof meta.billingPeriodStart === "string" ? meta.billingPeriodStart : null,
+                    periodEnd: typeof meta.billingPeriodEnd === "string" ? meta.billingPeriodEnd : null,
+                    closingDate: typeof meta.closingDate === "string" ? meta.closingDate : null,
+                    paymentDate: typeof meta.paymentDate === "string" ? meta.paymentDate : null,
+                    totalBilled:
+                      typeof meta.totalBilled === "number" && Number.isFinite(meta.totalBilled)
+                        ? meta.totalBilled
+                        : null,
+                    minimumDue:
+                      typeof meta.minimumDue === "number" && Number.isFinite(meta.minimumDue)
+                        ? meta.minimumDue
+                        : null,
+                    creditLimit:
+                      typeof meta.creditLimit === "number" && Number.isFinite(meta.creditLimit)
+                        ? meta.creditLimit
+                        : null,
+                    creditUsed:
+                      typeof meta.creditUsed === "number" && Number.isFinite(meta.creditUsed)
+                        ? meta.creditUsed
+                        : null,
+                    creditAvailable:
+                      typeof meta.creditAvailable === "number" && Number.isFinite(meta.creditAvailable)
+                        ? meta.creditAvailable
+                        : null,
+                    parserConfidence:
+                      typeof meta.parserConfidence === "number" && Number.isFinite(meta.parserConfidence)
+                        ? meta.parserConfidence
+                        : null,
+                    missingFields: Array.isArray(meta.missingFields) ? meta.missingFields : [],
+                    warnings: payload.pdfWarnings ?? [],
+                    totals: (() => {
+                      const totals: Record<string, number> = {
+                        purchases: 0,
+                        installmentPurchases: 0,
+                        payments: 0,
+                        refunds: 0,
+                        fees: 0,
+                        interests: 0,
+                        cashAdvances: 0,
+                        taxes: 0,
+                        insurance: 0,
+                        unknownCharges: 0,
+                        unknownCredits: 0
+                      };
 
-                          const amount = r.amount;
-                          if (!Number.isFinite(amount)) continue;
+                      let movementCount = 0;
+                      let dubiousCount = 0;
 
-                          if (r.type === "EGRESO") {
-                            const value = Math.abs(amount);
-                            if (classifiedAs === "purchase") totals.purchases += value;
-                            else if (classifiedAs === "installment_purchase") totals.installmentPurchases += value;
-                            else if (classifiedAs === "fee") totals.fees += value;
-                            else if (classifiedAs === "interest") totals.interests += value;
-                            else if (classifiedAs === "cash_advance") totals.cashAdvances += value;
-                            else if (classifiedAs === "tax") totals.taxes += value;
-                            else if (classifiedAs === "insurance") totals.insurance += value;
-                            else totals.unknownCharges += value;
-                          } else {
-                            const value = Math.abs(amount);
-                            if (classifiedAs === "payment") totals.payments += value;
-                            else if (classifiedAs === "refund") totals.refunds += value;
-                            else totals.unknownCredits += value;
-                          }
+                      for (const r of preparedRows) {
+                        movementCount += 1;
+                        const parserMeta = r.parserMeta as Record<string, unknown> | undefined;
+                        const classifiedAs =
+                          typeof parserMeta?.classifiedAs === "string"
+                            ? (parserMeta.classifiedAs as string)
+                            : "unknown";
+                        const isDubious = parserMeta?.dubious === true;
+
+                        if (isDubious) dubiousCount += 1;
+
+                        const amount = r.amount;
+                        if (!Number.isFinite(amount)) continue;
+
+                        if (r.type === "EGRESO") {
+                          const value = Math.abs(amount);
+                          if (classifiedAs === "purchase") totals.purchases += value;
+                          else if (classifiedAs === "installment_purchase") totals.installmentPurchases += value;
+                          else if (classifiedAs === "fee") totals.fees += value;
+                          else if (classifiedAs === "interest") totals.interests += value;
+                          else if (classifiedAs === "cash_advance") totals.cashAdvances += value;
+                          else if (classifiedAs === "tax") totals.taxes += value;
+                          else if (classifiedAs === "insurance") totals.insurance += value;
+                          else totals.unknownCharges += value;
+                        } else {
+                          const value = Math.abs(amount);
+                          if (classifiedAs === "payment") totals.payments += value;
+                          else if (classifiedAs === "refund") totals.refunds += value;
+                          else totals.unknownCredits += value;
                         }
+                      }
 
-                        return {
-                          ...totals,
-                          movementCount,
-                          dubiousCount
-                        };
-                      })()
-                    };
+                      return {
+                        ...totals,
+                        movementCount,
+                        dubiousCount
+                      };
+                    })()
+                  };
 
-                    return statement;
-                  })()
+                  return statement;
+                })()
                 : null
           } as unknown as Prisma.InputJsonValue
         }
