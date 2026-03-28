@@ -32,15 +32,43 @@ function getFriendlyPreviewError(message?: string) {
   return fallback;
 }
 
-function jsonPreviewError(message?: string) {
-  return Response.json(
-    {
-      success: false,
-      error: "preview_failed",
-      message: getFriendlyPreviewError(message)
-    },
-    { status: 200 }
-  );
+const DEBUG_IMPORT_PREVIEW = process.env.DEBUG_IMPORT_PREVIEW === "true";
+
+function safeJsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+function jsonPreviewError(message?: string, debug?: Record<string, unknown>) {
+  const payload: Record<string, unknown> = {
+    success: false,
+    error: "preview_failed",
+    message: getFriendlyPreviewError(message)
+  };
+  if (DEBUG_IMPORT_PREVIEW && debug && typeof debug === "object") {
+    payload.debug = debug;
+  }
+  return safeJsonResponse(payload);
+}
+
+function buildDebugPayload(params: {
+  stage: string;
+  errorMessage?: string;
+  parser?: string;
+  supported?: boolean;
+  looksLikePdf?: boolean;
+}) {
+  if (!DEBUG_IMPORT_PREVIEW) return undefined;
+  const { stage, errorMessage, parser, supported, looksLikePdf } = params;
+  return {
+    stage,
+    errorMessage: errorMessage ?? null,
+    parser: parser ?? null,
+    supported: supported ?? null,
+    fileAppearsPdf: looksLikePdf ?? null
+  };
 }
 
 function resolveFunctionalPreviewMessage(params: { stage: string; errorMessage?: string; warnings?: string[] }) {
@@ -69,15 +97,51 @@ function resolveFunctionalPreviewMessage(params: { stage: string; errorMessage?:
 
 export async function POST(request: Request) {
   let stage = "init";
+  let previewResult: Record<string, unknown> | null = null;
+  let looksLikePdf = false;
+  const debugEntries: Array<{ stage: string; payload?: Record<string, unknown> }> = [];
+
+  const recordStage = (name: string, payload?: Record<string, unknown>) => {
+    if (DEBUG_IMPORT_PREVIEW) {
+      debugEntries.push({ stage: name, payload });
+      console.log("imports preview stage", name, payload ?? "no payload");
+    }
+  };
+
+  const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value && typeof value === "object" && !Array.isArray(value));
+
+  const safePreviewResult = () => (isPlainObject(previewResult) ? previewResult : {});
+
+  if (process.env.DEBUG_IMPORT_PREVIEW_ISOLATE === "true") {
+    console.warn("imports preview isolation mode active");
+    return safeJsonResponse({ success: true, isolated: true });
+  }
   try {
-    stage = "load_dependencies";
-    const [{ getWorkspaceContextFromRequest }, { hasPermission }, { previewImportFile }] = await Promise.all([
-      import("@/server/tenant/workspace-context"),
-      import("@/server/permissions/permissions"),
-      import("@/server/services/import-service")
-    ]);
+    stage = "load_dependencies:tenant:start";
+    recordStage(stage);
+    const tenantModule = await import("@/server/tenant/workspace-context");
+    stage = "load_dependencies:tenant:ok";
+    recordStage(stage);
+
+    stage = "load_dependencies:permissions:start";
+    recordStage(stage);
+    const permissionsModule = await import("@/server/permissions/permissions");
+    stage = "load_dependencies:permissions:ok";
+    recordStage(stage);
+
+    stage = "load_dependencies:import-service:start";
+    recordStage(stage);
+    const importServiceModule = await import("@/server/services/import-service");
+    stage = "load_dependencies:import-service:ok";
+    recordStage(stage);
+
+    const { getWorkspaceContextFromRequest } = tenantModule;
+    const { hasPermission } = permissionsModule;
+    const { previewImportFile } = importServiceModule;
 
     stage = "resolve_context";
+    recordStage(stage);
     const context = await getWorkspaceContextFromRequest(request as never);
     if (!context.workspaceId || !context.userKey || !context.role) {
       console.warn("imports preview auth context missing");
@@ -89,6 +153,8 @@ export async function POST(request: Request) {
     }
 
     stage = "read_form_data";
+    recordStage(stage);
+    recordStage(stage);
     const formData = await request.formData();
     const file = formData.get("file");
     const selectedTemplateId = formData.get("templateId");
@@ -120,7 +186,16 @@ export async function POST(request: Request) {
     }
 
     stage = "read_file_bytes";
+    recordStage(stage);
+    recordStage(stage);
     const bytes = new Uint8Array(await file.arrayBuffer());
+    looksLikePdf =
+      bytes.length >= 5 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46 &&
+      bytes[4] === 0x2d;
     console.log("imports preview parsing", {
       fileName: file.name,
       fileSize: bytes.byteLength,
@@ -129,7 +204,8 @@ export async function POST(request: Request) {
     });
 
     stage = "build_preview";
-    const preview = await previewImportFile({
+    recordStage(stage, { fileName: file.name });
+    const rawPreview = await previewImportFile({
       workspaceId: context.workspaceId,
       fileName: file.name,
       mimeType: file.type,
@@ -138,36 +214,56 @@ export async function POST(request: Request) {
       preferredAccountId,
       preferredImportType: importType
     });
+    previewResult = isPlainObject(rawPreview) ? rawPreview : {};
+    recordStage("preview_built", { parser: previewResult.parser });
 
-    if (preview.parser === "pdf" && !preview.supported) {
+    if (previewResult?.parser === "pdf" && !previewResult.supported) {
       const message = resolveFunctionalPreviewMessage({
         stage: "unsupported_pdf",
-        warnings: preview.warnings
+        warnings: Array.isArray(previewResult?.warnings)
+          ? previewResult.warnings.filter((warning): warning is string => typeof warning === "string")
+          : undefined
       });
-      return Response.json(
-        {
-          success: false,
-          error: "preview_not_supported",
-          message
-        },
-        { status: 200 }
-      );
+      recordStage("unsupported_response", { parser: previewResult.parser });
+      return safeJsonResponse({
+        success: false,
+        error: "preview_not_supported",
+        message,
+        debug: buildDebugPayload({
+          stage: "unsupported_pdf",
+          parser: previewResult.parser,
+          supported: previewResult.supported,
+          looksLikePdf
+        })
+      });
     }
 
-    return Response.json({
-      success: true,
-      ...preview
-    });
+    stage = "build_response";
+    recordStage(stage, { success: true });
+    return safeJsonResponse(
+      JSON.parse(JSON.stringify({
+        success: true,
+        ...safePreviewResult()
+      }))
+    );
   } catch (error) {
     console.error("imports preview failed", {
       stage,
       error,
-      message: error instanceof Error ? error.message : "unknown"
+      stack: error instanceof Error ? error.stack : null
+    });
+    const message = resolveFunctionalPreviewMessage({
+      stage,
+      errorMessage: error instanceof Error ? error.message : undefined
     });
     return jsonPreviewError(
-      resolveFunctionalPreviewMessage({
+      message,
+      buildDebugPayload({
         stage,
-        errorMessage: error instanceof Error ? error.message : undefined
+        errorMessage: error instanceof Error ? error.message : undefined,
+        parser: previewResult?.parser,
+        supported: previewResult?.supported,
+        looksLikePdf
       })
     );
   }
