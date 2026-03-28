@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
-import { generateDebtPdfBundle } from "@/server/services/debt-pdf-service";
 
 const querySchema = z.object({
   kind: z.enum(["person", "company"])
@@ -24,20 +23,7 @@ export async function GET(
       kind: request.nextUrl.searchParams.get("kind") ?? undefined
     });
 
-    const bundle = await generateDebtPdfBundle({
-      workspaceId: context.workspaceId,
-      debtId: params.debtorId,
-      kind: query.kind
-    });
-
-    return new NextResponse(new Uint8Array(bundle.buffer), {
-      status: 200,
-      headers: {
-        "Content-Type": bundle.contentType,
-        "Content-Disposition": `attachment; filename="${bundle.fileName}"`,
-        "Cache-Control": "no-store"
-      }
-    });
+    throw new Error("PDF export temporalmente deshabilitado");
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
