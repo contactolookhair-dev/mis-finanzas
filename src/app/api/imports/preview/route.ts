@@ -157,8 +157,7 @@ export async function POST(request: Request) {
 
     stage = "read_form_data";
     recordStage(stage);
-    recordStage(stage);
-      const formData = await request.formData();
+    const formData = await request.formData();
     const file = formData.get("file");
     if (file instanceof File) {
       safeFile = file;
@@ -193,7 +192,6 @@ export async function POST(request: Request) {
 
     stage = "read_file_bytes";
     recordStage(stage);
-    recordStage(stage);
     const bytes = new Uint8Array(await file.arrayBuffer());
     looksLikePdf =
       bytes.length >= 5 &&
@@ -202,18 +200,6 @@ export async function POST(request: Request) {
       bytes[2] === 0x44 &&
       bytes[3] === 0x46 &&
       bytes[4] === 0x2d;
-    const parser = "pdf";
-    const looksLikePdfFlag = true;
-    const supported = true;
-    console.log("[PDF DEBUG]", {
-      name: file?.name ?? null,
-      type: file?.type ?? null,
-      size: file instanceof File ? file.size : null,
-      parser,
-      looksLikePdf: looksLikePdfFlag,
-      supported
-    });
-    looksLikePdf = looksLikePdfFlag;
     console.log("imports preview parsing", {
       fileName: file.name,
       fileSize: bytes.byteLength,
@@ -237,13 +223,6 @@ export async function POST(request: Request) {
       preferredImportType: importType
     });
     previewResult = isPlainObject(rawPreview) ? rawPreview : {};
-    if (isPlainObject(previewResult)) {
-      previewResult.parser = parser;
-      previewResult.supported = supported;
-    }
-    if (previewResult?.parser === "pdf" && !previewResult.supported && looksLikePdf) {
-      previewResult.supported = true;
-    }
     recordStage("preview_built", {
       parser: previewResult.parser,
       rows: Array.isArray(previewResult.rows) ? previewResult.rows.length : 0

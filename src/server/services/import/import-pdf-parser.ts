@@ -2,6 +2,7 @@ import {
   tryParseFalabellaCmrPdf,
   type FalabellaCmrStatementMeta,
 } from "@/server/services/import/pdf-templates/falabella-cmr";
+import { createRequire } from "module";
 
 export const runtime = "nodejs";
 
@@ -36,32 +37,31 @@ function fallbackPlainTextParse(
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
-    // Load the CommonJS entry explicitly to avoid Next/Vercel bundling the ESM/worker build.
-    const { createRequire } = await import("node:module");
-    const req = createRequire(
-      // `__filename` exists in CJS bundles; fallback keeps createRequire happy in ESM contexts.
-      typeof __filename === "string" ? __filename : `${process.cwd()}/import-pdf-parser.cjs`
-    );
-    const pdfParse = req("pdf-parse/lib/pdf-parse.js") as (buf: Buffer) => Promise<{ text?: string }>;
+    // IMPORTANT: avoid `import("pdf-parse")` here, because under Next/Vercel it can
+    // resolve to the ESM/worker build which has caused runtime crashes in production.
+    // Loading the Node (CJS) entry keeps the execution server-only and stable.
+    const require = createRequire(import.meta.url);
+    const pdfParse: unknown = require("pdf-parse/node");
+
+    if (typeof pdfParse !== "function") throw new Error("PDF_PARSE_INVALID");
 
     const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const result = await pdfParse(buffer);
+    const result = await (pdfParse as (buffer: Buffer) => Promise<{ text?: unknown }>)(buffer);
 
-    const normalized = String(result?.text ?? "")
+    const text = String(result?.text ?? "")
       .replace(/\r/g, "")
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
 
-    if (!normalized || normalized.length < 20) {
+    if (!text || text.length < 20) {
       throw new Error("EMPTY_TEXT");
     }
 
-    return normalized;
+    return text;
   } catch (error) {
     throw new Error(
-      `pdf_text_extraction_failed | ${
-        error instanceof Error ? error.message : String(error)
+      `pdf_text_extraction_failed | ${error instanceof Error ? error.message : String(error)
       }`
     );
   }
