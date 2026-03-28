@@ -1,10 +1,8 @@
-import DOMMatrix from "@thednp/dommatrix";
-(global as any).DOMMatrix = DOMMatrix;
-
 import {
   tryParseFalabellaCmrPdf,
   type FalabellaCmrStatementMeta,
 } from "@/server/services/import/pdf-templates/falabella-cmr";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 export const runtime = "nodejs";
 
@@ -39,57 +37,23 @@ function fallbackPlainTextParse(
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf");
-    const getDocument = (pdfjs as any).getDocument;
-    if (typeof getDocument !== "function") {
-      throw new Error("pdfjs_getDocument_not_available");
-    }
+    const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const { text } = await pdfParse(buffer);
+    const normalized = (text ?? "")
+      .replace(/\r/g, "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
 
-    const globalWorkerOptions = (pdfjs as any).GlobalWorkerOptions ?? {};
-    globalWorkerOptions.workerSrc = "";
-    globalWorkerOptions.workerPort = null;
-    globalWorkerOptions.workerSrc = "";
-    globalWorkerOptions.workerPort = null;
-
-    const loadingTask = getDocument({
-      data: bytes,
-      disableWorker: true,
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      disableFontFace: true,
-      useSystemFonts: false,
-      useWorker: false,
-    });
-
-    const pdf = await loadingTask.promise;
-    const pages: string[] = [];
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-
-      const strings = content.items
-        .map((item: any) => {
-          if (typeof item === "string") return item;
-          if (typeof item?.str === "string") return item.str;
-          return "";
-        })
-        .filter(Boolean);
-
-      pages.push(strings.join(" "));
-    }
-
-    const text = pages.join("\n").trim();
-    if (!text || text.length < 20) {
+    if (!normalized || normalized.length < 20) {
       throw new Error("EMPTY_TEXT");
     }
 
-    return text;
+    return normalized;
   } catch (error) {
-    throw new Error(
-      `pdf_text_extraction_failed | ${error instanceof Error ? error.message : String(error)
-      }`
-    );
+    throw new Error(`pdf_text_extraction_failed | ${
+      error instanceof Error ? error.message : String(error)
+    }`);
   }
 }
 
@@ -123,6 +87,10 @@ export async function parsePdfImportFile(
       };
     }
 
+    console.log("[imports/preview] falabella fallback", {
+      rawSnippet: rawText.slice(0, 200),
+      firstLines: lines.slice(0, 5)
+    });
     return {
       rows: lines.map((line, i) => ({
         id: i,
