@@ -95,6 +95,8 @@ function resolveFunctionalPreviewMessage(params: { stage: string; errorMessage?:
   return getFriendlyPreviewError(errorMessage);
 }
 
+export const runtime = "nodejs";
+
 export async function POST(request: Request) {
   let stage = "init";
   let previewResult: Record<string, unknown> | null = null;

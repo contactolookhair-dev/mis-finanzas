@@ -361,7 +361,17 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     | null = null;
 
   try {
-    const mod = eval("require")("pdf-parse");
+    const mod = await import("pdf-parse").catch((error) => {
+      console.error("parsePdfImportFile failed to load pdf-parse", error);
+      return null;
+    });
+
+    const parserLoaded = Boolean(mod);
+    console.log("parsePdfImportFile parserLoaded", { parserLoaded });
+
+    if (!mod) {
+      throw new Error("No se pudo cargar la librería pdf-parse");
+    }
 
     const maybeFunction =
       typeof mod === "function"
@@ -372,6 +382,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
 
     if (maybeFunction) {
       const result = await maybeFunction(Buffer.from(bytes));
+      console.log("parsePdfImportFile extractedTextLength", { length: typeof result?.text === "string" ? result.text.length : 0 });
       return typeof result?.text === "string" ? result.text : "";
     }
 
@@ -395,7 +406,13 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     }
 
     const result = await parserInstance.getText();
-    return typeof result?.text === "string" ? result.text : "";
+    console.log("parsePdfImportFile extractedTextLength", {
+      length: typeof result?.text === "string" ? result.text.length : 0
+    });
+    if (typeof result?.text !== "string") {
+      return "";
+    }
+    return result.text;
   } finally {
     if (parserInstance?.destroy) {
       try {
