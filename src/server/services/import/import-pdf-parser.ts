@@ -1,5 +1,6 @@
-import { PDFParse } from "pdf-parse";
 import { tryParseFalabellaCmrPdf, type FalabellaCmrStatementMeta } from "@/server/services/import/pdf-templates/falabella-cmr";
+
+export const runtime = "nodejs";
 
 type RawRow = Record<string, unknown>;
 
@@ -14,347 +15,492 @@ type ParsedPdfImport = {
   };
 };
 
-type HeaderProfile = {
-  hasDebit: boolean;
-  hasCredit: boolean;
-  hasBalance: boolean;
-  raw: string | null;
-};
-
-const AMOUNT_TOKEN_REGEX = /-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?|-?\$?\(?\d+(?:,\d{1,2})?\)?/g;
-const DATE_AT_START_REGEX = /^(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\s+(.+)$/;
-
-function normalizeText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function normalizeWhitespace(value: string) {
-  return value.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-}
+const AMOUNT_TOKEN_REGEX = /\d{1,3}(?:\.\d{3})+/g;
+const FULL_DATE_REGEX = /\d{1,2}\/\d{1,2}\/\d{4}/;
+const INSTALLMENT_REGEX = /\b(\d{1,2})\/(\d{1,2})\b/;
+const MONTH_TEXT_REGEX = /\b[a-z]{3}-\d{4}\b/i;
 
 function normalizeLine(value: string) {
   return value.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
 }
 
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\?/g, "n")
+    .toLowerCase()
+    .trim();
+}
+
+function fallbackPlainTextParse(_bytes: Uint8Array, warning: string): ParsedPdfImport {
+  return {
+    rows: [],
+    headers: [],
+    warnings: [warning],
+    supported: false,
+  };
+}
+
 function parseAmountToken(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  const negative = trimmed.includes("(") || trimmed.startsWith("-");
-  const sanitized = trimmed.replace(/[$()\s-]/g, "");
-  const normalized = sanitized.includes(",")
-    ? sanitized.replace(/\./g, "").replace(",", ".")
-    : sanitized.replace(/\./g, "");
-
-  const parsed = Number(normalized);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-
-  return negative ? -Math.abs(parsed) : parsed;
+  const numeric = Number(value.replace(/\./g, ""));
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function looksLikeNoise(line: string) {
   const normalized = normalizeText(line);
   if (!normalized) return true;
+  if (normalized.length <= 2) return true;
 
   return [
-    "pagina ",
-    "página ",
-    "cartola ",
     "estado de cuenta",
-    "saldo anterior",
-    "saldo inicial",
-    "saldo final",
-    "total cargos",
-    "total abonos",
+    "cliente elite",
+    "nombre del titular",
+    "cupon de pago",
+    "cupon de pago n",
+    "resumen",
+    "de pago",
+    "monto total facturado",
+    "monto minimo a pagar",
+    "monto mínimo a pagar",
+    "cmr puntos",
+    "informacion general",
+    "información general",
+    "cupo total",
+    "cupo utilizado",
+    "cupo disponible",
+    "tasa interes vigente",
+    "tasa interés vigente",
+    "periodo facturado",
+    "período facturado",
+    "pagar hasta",
+    "detalle",
+    "periodo anterior",
+    "período anterior",
+    "periodo actual",
+    "período actual",
+    "total operaciones",
+    "saldo adeudado",
+    "monto facturado",
+    "monto pagado",
     "www.",
+    "bancofalabella",
+    "pagina",
+    "página",
     "rut ",
-    "ejecutivo",
-    "sucursal",
-    "fecha emision"
+    "cae ",
+    "desde hasta",
+    "saldo adeudado inicio",
+    "saldo adeudado final",
+    "monto facturado o a pagar",
+    "total cupo",
+    "cupo compras",
+    "cupo avance",
+    "super avance",
+    "súper avance",
+    "fecha facturacion",
+    "fecha facturación",
+    "n de contrato",
   ].some((token) => normalized.includes(token));
 }
 
-function detectHeaderProfile(lines: string[]): HeaderProfile {
-  for (const line of lines.slice(0, 40)) {
-    const normalized = normalizeText(line);
-    if (!normalized.includes("fecha")) continue;
+function isLikelyGarbageDescription(description: string) {
+  const normalized = normalizeText(description);
 
-    const hasDescription =
-      normalized.includes("descripcion") ||
-      normalized.includes("descripción") ||
-      normalized.includes("detalle") ||
-      normalized.includes("glosa") ||
-      normalized.includes("concepto");
+  if (!normalized) return true;
+  if (normalized.length < 3) return true;
 
-    const hasDebit =
-      normalized.includes("cargo") || normalized.includes("debito") || normalized.includes("débito");
-    const hasCredit =
-      normalized.includes("abono") ||
-      normalized.includes("credito") ||
-      normalized.includes("crédito");
-    const hasBalance = normalized.includes("saldo");
-
-    if (hasDescription || hasDebit || hasCredit || hasBalance) {
-      return {
-        hasDebit,
-        hasCredit,
-        hasBalance,
-        raw: line
-      };
-    }
-  }
-
-  return {
-    hasDebit: true,
-    hasCredit: true,
-    hasBalance: true,
-    raw: null
-  };
+  return [
+    "falabella cost t",
+    "total",
+    "detalle",
+    "periodo",
+    "periodo actual",
+    "periodo anterior",
+    "resumen",
+    "pago",
+    "movimiento",
+  ].includes(normalized);
 }
 
-function mapAmountTokens(tokens: string[], header: HeaderProfile) {
-  const amounts = tokens.map(parseAmountToken).filter((value): value is number => value !== null);
+function titleCase(value: string) {
+  return value
+    .toLowerCase()
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function removeTrailingAmounts(text: string) {
+  return text.replace(/(?:\s+\d{1,3}(?:\.\d{3})+)+$/g, "").trim();
+}
+
+function cleanMerchantDescription(raw: string) {
+  let text = raw;
+
+  text = text
+    .replace(/\bS\/I\b/gi, " ")
+    .replace(/\bC\/I\b/gi, " ")
+    .replace(MONTH_TEXT_REGEX, " ")
+    .replace(/\bT\b/g, " ")
+    .replace(/\bNACION\b/gi, " ")
+    .replace(/\bINT\b/gi, " ")
+    .replace(/\bCUOTA\b/gi, " ")
+    .replace(/\bCUOTAS\b/gi, " ")
+    .replace(/\bCOMPRA EN CUOTAS\b/gi, " ")
+    .replace(/\bCOMPRA\b/gi, " ")
+    .replace(/\bPAGO\b/gi, " ")
+    .replace(/\bSEGURO\b/gi, " ")
+    .replace(/\bCOST\b/gi, " ")
+    .replace(/\bTOTAL\b/gi, " ")
+    .replace(/\bTRANSACCION\b/gi, " ")
+    .replace(/\bOPERACION\b/gi, " ")
+    .replace(/\bOPERACIONES\b/gi, " ");
+
+  text = text.replace(/\s+/g, " ").trim();
+  text = removeTrailingAmounts(text);
+
+  if (!text) return "Movimiento";
+
+  const normalized = normalizeText(text);
+
+  const merchantMap: Array<[string, string]> = [
+    ["fundacion america solidaria", "Fundación América Solidaria"],
+    ["fundacion solidaria", "Fundación Solidaria"],
+    ["homecenter", "Homecenter"],
+    ["homcenter", "Homecenter"],
+    ["sodimac", "Sodimac"],
+    ["falabella", "Falabella"],
+    ["tottus", "Tottus"],
+    ["uber", "Uber"],
+    ["mercado libre", "Mercado Libre"],
+    ["mercadolibre", "Mercado Libre"],
+    ["spotify", "Spotify"],
+    ["netflix", "Netflix"],
+    ["google", "Google"],
+    ["apple", "Apple"],
+    ["shell", "Shell"],
+    ["copec", "Copec"],
+    ["lipigas", "Lipigas"],
+    ["jumbo", "Jumbo"],
+    ["lider", "Lider"],
+    ["unimarc", "Unimarc"],
+    ["santa isabel", "Santa Isabel"],
+  ];
+
+  for (const [match, label] of merchantMap) {
+    if (normalized.includes(match)) return label;
+  }
+
+  return titleCase(text);
+}
+
+function classifyMerchant(description: string) {
+  const normalized = normalizeText(description);
+
+  if (normalized.includes("falabella")) return "retail";
+  if (normalized.includes("homecenter")) return "hogar";
+  if (normalized.includes("sodimac")) return "hogar";
+  if (normalized.includes("tottus")) return "supermercado";
+  if (normalized.includes("jumbo")) return "supermercado";
+  if (normalized.includes("lider")) return "supermercado";
+  if (normalized.includes("unimarc")) return "supermercado";
+  if (normalized.includes("santa isabel")) return "supermercado";
+  if (normalized.includes("uber")) return "transporte";
+  if (normalized.includes("shell")) return "combustible";
+  if (normalized.includes("copec")) return "combustible";
+  if (normalized.includes("mercado libre")) return "compras";
+  if (normalized.includes("spotify")) return "suscripciones";
+  if (normalized.includes("netflix")) return "suscripciones";
+  if (normalized.includes("google")) return "suscripciones";
+  if (normalized.includes("apple")) return "suscripciones";
+
+  return "sin_categoria";
+}
+
+function detectSubscription(description: string) {
+  const normalized = normalizeText(description);
+
+  return [
+    "spotify",
+    "netflix",
+    "google",
+    "apple",
+    "youtube",
+    "disney",
+    "prime video",
+    "amazon prime",
+    "chatgpt",
+    "openai",
+    "icloud",
+  ].some((token) => normalized.includes(token));
+}
+
+function inferInstallmentAmounts(
+  rawMiddle: string,
+  montoCuota: number,
+  cuotaActual?: number,
+  cuotaTotal?: number
+) {
+  const amounts = (rawMiddle.match(AMOUNT_TOKEN_REGEX) ?? [])
+    .map(parseAmountToken)
+    .filter((v): v is number => v !== null);
 
   if (amounts.length === 0) {
     return {
-      amount: undefined,
-      debit: undefined,
-      credit: undefined,
-      balance: undefined
+      esCompraEnCuotas: false,
+      montoCuota,
+      montoTotalCompra: null as number | null,
     };
   }
 
-  if (header.hasDebit && header.hasCredit && header.hasBalance) {
-    if (amounts.length >= 3) {
-      return {
-        amount: undefined,
-        debit: Math.abs(amounts[0] ?? 0) > 0 ? Math.abs(amounts[0]) : undefined,
-        credit: Math.abs(amounts[1] ?? 0) > 0 ? Math.abs(amounts[1]) : undefined,
-        balance: amounts[2]
-      };
-    }
+  const uniqueAmounts = Array.from(new Set(amounts));
+  const candidates = uniqueAmounts.filter((value) => value > montoCuota);
 
-    if (amounts.length === 2) {
-      const [first, second] = amounts;
-      return {
-        amount: undefined,
-        debit: first < 0 ? Math.abs(first) : undefined,
-        credit: first > 0 ? Math.abs(first) : undefined,
-        balance: second
-      };
-    }
+  let montoTotalCompra: number | null = null;
+
+  if (candidates.length > 0) {
+    montoTotalCompra = Math.max(...candidates);
+  } else if (cuotaTotal && cuotaTotal > 1) {
+    montoTotalCompra = montoCuota * cuotaTotal;
   }
 
-  if (header.hasBalance && amounts.length >= 2) {
-    return {
-      amount: amounts[0],
-      debit: undefined,
-      credit: undefined,
-      balance: amounts[amounts.length - 1]
-    };
-  }
+  const esCompraEnCuotas = Boolean(cuotaActual && cuotaTotal && cuotaTotal > 1);
 
   return {
-    amount: amounts[0],
-    debit: undefined,
-    credit: undefined,
-    balance: undefined
+    esCompraEnCuotas,
+    montoCuota,
+    montoTotalCompra,
   };
 }
 
-function tokenizeMovementLine(
-  line: string,
-  header: HeaderProfile
-): (RawRow & { __isMovement: true }) | null {
-  const match = line.match(DATE_AT_START_REGEX);
-  const dateValue = match?.[1];
-  const restValue = match?.[2];
-  if (!dateValue || !restValue) {
-    return null;
-  }
+function parseFlexibleLine(line: string) {
+  const dateMatch = line.match(FULL_DATE_REGEX);
+  if (!dateMatch) return null;
 
-  const rest = restValue.trim();
-  const amountTokens = rest.match(AMOUNT_TOKEN_REGEX) ?? [];
-  let description = normalizeWhitespace(rest);
+  const fecha = dateMatch[0];
 
-  if (amountTokens.length > 0) {
-    const lastToken = amountTokens[amountTokens.length - 1];
-    const lastIndex = rest.lastIndexOf(lastToken);
-    if (lastIndex >= 0) {
-      description = normalizeWhitespace(rest.slice(0, lastIndex));
-    }
-  }
+  const amounts = line.match(AMOUNT_TOKEN_REGEX);
+  if (!amounts || amounts.length === 0) return null;
 
-  if (!description || description.length < 2) {
-    description = normalizeWhitespace(rest.replace(AMOUNT_TOKEN_REGEX, " "));
-  }
+  const montoRaw = amounts[amounts.length - 1];
+  const montoCuota = parseAmountToken(montoRaw);
+  if (montoCuota === null || montoCuota <= 0) return null;
 
-  const mapped = mapAmountTokens(amountTokens, header);
+  const start = line.indexOf(fecha) + fecha.length;
+  const end = line.lastIndexOf(montoRaw);
+
+  if (end <= start) return null;
+
+  const rawMiddle = line.slice(start, end).trim();
+  if (!rawMiddle) return null;
+
+  const installmentMatch = rawMiddle.match(INSTALLMENT_REGEX);
+  const cuotaActual = installmentMatch ? Number(installmentMatch[1]) : undefined;
+  const cuotaTotal = installmentMatch ? Number(installmentMatch[2]) : undefined;
+
+  const descripcionBase = cleanMerchantDescription(rawMiddle);
+  if (isLikelyGarbageDescription(descripcionBase)) return null;
+
+  const categoriaSugerida = classifyMerchant(descripcionBase);
+  const esSuscripcion = detectSubscription(descripcionBase);
+  const descripcion = descripcionBase;
+
+  const installmentInfo = inferInstallmentAmounts(rawMiddle, montoCuota, cuotaActual, cuotaTotal);
 
   return {
     __isMovement: true,
-    fecha: dateValue,
-    descripcion: description,
-    cargo: mapped.debit,
-    abono: mapped.credit,
-    monto: mapped.amount,
-    saldo: mapped.balance
+    fecha,
+    descripcion,
+    descripcionBase,
+    cargo: montoCuota,
+    abono: undefined,
+    monto: -montoCuota,
+    cuotaActual,
+    cuotaTotal,
+    installments: cuotaTotal,
+    installmentLabel: cuotaTotal ? `${cuotaTotal} cuotas` : undefined,
+    esEnCuotas: installmentInfo.esCompraEnCuotas,
+    esCompraEnCuotas: installmentInfo.esCompraEnCuotas,
+    montoCuota: installmentInfo.montoCuota,
+    montoTotalCompra: installmentInfo.montoTotalCompra,
+    cuotasRestantes:
+      cuotaActual && cuotaTotal && cuotaTotal >= cuotaActual ? cuotaTotal - cuotaActual : undefined,
+    categoriaSugerida,
+    esSuscripcion,
+    bancoDetectado: "falabella",
+    rawLine: line,
   };
 }
 
-function appendContinuationLine(rows: RawRow[], line: string) {
-  const lastRow = rows[rows.length - 1];
-  if (!lastRow) return false;
-  if (!("descripcion" in lastRow) || typeof lastRow.descripcion !== "string") return false;
-  if (looksLikeNoise(line)) return false;
-  if (/^\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?/.test(line)) return false;
+function dedupeRows(rows: RawRow[]) {
+  const seen = new Set<string>();
+  const result: RawRow[] = [];
 
-  lastRow.descripcion = normalizeWhitespace(`${lastRow.descripcion} ${line}`);
-  return true;
+  for (const row of rows) {
+    const key = [
+      String(row.fecha ?? ""),
+      String(row.descripcionBase ?? row.descripcion ?? ""),
+      String(row.cargo ?? row.monto ?? ""),
+      String(row.cuotaActual ?? ""),
+      String(row.cuotaTotal ?? ""),
+    ].join("|");
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(row);
+  }
+
+  return result;
+}
+
+async function extractPdfText(bytes: Uint8Array): Promise<string> {
+  let parserInstance:
+    | { getText: () => Promise<{ text?: string }>; destroy?: () => Promise<void> | void }
+    | null = null;
+
+  try {
+    const mod = eval("require")("pdf-parse");
+
+    const maybeFunction =
+      typeof mod === "function"
+        ? mod
+        : typeof mod?.default === "function"
+          ? mod.default
+          : null;
+
+    if (maybeFunction) {
+      const result = await maybeFunction(Buffer.from(bytes));
+      return typeof result?.text === "string" ? result.text : "";
+    }
+
+    const PDFParseCtor =
+      typeof mod?.PDFParse === "function"
+        ? mod.PDFParse
+        : typeof mod?.default?.PDFParse === "function"
+          ? mod.default.PDFParse
+          : null;
+
+    if (!PDFParseCtor) {
+      throw new Error("No se encontró una API compatible en pdf-parse");
+    }
+
+    parserInstance = new PDFParseCtor({
+      data: Buffer.from(bytes),
+    });
+
+    if (!parserInstance) {
+      throw new Error("No se pudo inicializar el parser de pdf-parse");
+    }
+
+    const result = await parserInstance.getText();
+    return typeof result?.text === "string" ? result.text : "";
+  } finally {
+    if (parserInstance?.destroy) {
+      try {
+        await parserInstance.destroy();
+      } catch {
+        // ignore
+      }
+    }
+  }
 }
 
 export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfImport> {
-  let parser: PDFParse | null = null;
-
   try {
-    console.log("parsePdfImportFile start", { bytesLength: bytes.length });
-    parser = new PDFParse({
-      data: Buffer.from(bytes)
-    });
-    const result = await parser.getText();
-    const rawText = result.text ?? "";
-    console.log("parsePdfImportFile extracted text", {
-      textLength: rawText.length
-    });
+    const rawText = await extractPdfText(bytes);
+
+    console.log("PDF TEXT LENGTH:", rawText.length);
 
     const lines = rawText
       .split(/\r?\n/)
       .map(normalizeLine)
       .filter(Boolean);
 
-    console.log("parsePdfImportFile normalized lines", {
-      lineCount: lines.length,
-      sample: lines.slice(0, 5).map((line) => line.slice(0, 120))
-    });
+    console.log("LINES:", lines.length);
 
-    if (lines.length === 0) {
-      console.warn("parsePdfImportFile no text lines detected");
-      return {
-        rows: [],
-        headers: [],
-        warnings: [
-          "No se detectó texto seleccionable dentro del PDF. Prueba con CSV/XLSX o un PDF exportado con texto."
-        ],
-        supported: false
-      };
+    if (!lines.length) {
+      return fallbackPlainTextParse(bytes, "PDF sin texto seleccionable");
     }
 
-    const falabellaCmr = tryParseFalabellaCmrPdf(lines);
-    if (falabellaCmr) {
-      console.log("parsePdfImportFile specialized parser matched", {
-        rows: falabellaCmr.rows.length,
-        warnings: falabellaCmr.warnings.length
-      });
+    const falabella = tryParseFalabellaCmrPdf(lines);
+    if (falabella && falabella.rows.length > 5) {
       return {
-        rows: falabellaCmr.rows,
-        // These "headers" are used for template detection (not for mapping).
+        rows: falabella.rows,
         headers: [
           "fecha",
           "descripcion",
           "cargo",
           "abono",
           "tarjeta",
-          ...falabellaCmr.headersForDetection
+          ...falabella.headersForDetection,
         ],
-        warnings: falabellaCmr.warnings,
-        supported: falabellaCmr.rows.length > 0,
+        warnings: falabella.warnings,
+        supported: true,
         meta: {
           kind: "falabella-cmr",
-          statement: falabellaCmr.meta
-        }
+          statement: falabella.meta,
+        },
       };
     }
 
-    const header = detectHeaderProfile(lines);
-    const rows: RawRow[] = [];
+    const parsedRows: RawRow[] = [];
 
     for (const line of lines) {
-      if (looksLikeNoise(line)) {
-        continue;
-      }
+      if (looksLikeNoise(line)) continue;
 
-      const movement = tokenizeMovementLine(line, header);
-      if (movement) {
-        rows.push(movement);
-        continue;
-      }
+      const parsed = parseFlexibleLine(line);
+      if (!parsed) continue;
 
-      appendContinuationLine(rows, line);
+      parsedRows.push(parsed);
     }
+
+    const rows = dedupeRows(parsedRows);
+
+    console.log("ROWS DETECTED:", rows.length);
 
     const warnings: string[] = [];
-
-    if (!header.raw) {
-      warnings.push(
-        "El PDF se interpretó con heurísticas chilenas genéricas porque no se detectó un encabezado claro."
-      );
-    }
-
-    if (rows.length === 0) {
-      warnings.push(
-        "No se pudieron detectar movimientos con suficiente precisión en este PDF. Si puedes, usa CSV/XLSX o revisa otro formato de exportación."
-      );
-      console.warn("parsePdfImportFile generic parser found zero rows");
-      return {
-        rows: [],
-        headers: [],
-        warnings,
-        supported: false
-      };
-    }
-
-    if (rows.length <= 3) {
-      warnings.push(
-        "Se detectaron pocos movimientos. Revisa la vista previa con atención porque la confianza del parseo PDF es baja."
-      );
-    }
-
-    if (rows.some((row) => typeof row.descripcion === "string" && row.descripcion.length > 90)) {
-      warnings.push(
-        "Algunas glosas venían partidas en varias líneas y se recompusieron automáticamente. Conviene revisarlas antes de guardar."
-      );
+    if (rows.length < 5) {
+      warnings.push("Se detectaron pocos movimientos. Revisa la vista previa.");
     }
 
     return {
       rows,
-      headers: ["fecha", "descripcion", "cargo", "abono", "monto", "saldo"],
+      headers: [
+        "fecha",
+        "descripcion",
+        "descripcionBase",
+        "cargo",
+        "abono",
+        "monto",
+        "cuotaActual",
+        "cuotaTotal",
+        "installments",
+        "installmentLabel",
+        "esEnCuotas",
+        "esCompraEnCuotas",
+        "montoCuota",
+        "montoTotalCompra",
+        "cuotasRestantes",
+        "categoriaSugerida",
+        "esSuscripcion",
+        "bancoDetectado",
+        "rawLine",
+      ],
       warnings,
-      supported: true
+      supported: rows.length > 0,
     };
   } catch (error) {
-    console.error("parsePdfImportFile failed", {
-      bytesLength: bytes.length,
-      error: error instanceof Error ? error.message : error
-    });
+    console.error("parsePdfImportFile failed", error);
+
     return {
       rows: [],
       headers: [],
       warnings: [
-        error instanceof Error
-          ? `No se pudo leer el PDF: ${error.message}`
-          : "No se pudo leer el PDF."
+        error instanceof Error ? `No se pudo leer el PDF: ${error.message}` : "Error leyendo PDF",
       ],
-      supported: false
+      supported: false,
     };
-  } finally {
-    if (parser) {
-      await parser.destroy().catch(() => undefined);
-    }
   }
 }
