@@ -1,3 +1,8 @@
+import DOMMatrix from "@thednp/dommatrix";
+
+// 🔥 polyfill real para pdfjs en Node (Vercel)
+(global as any).DOMMatrix = DOMMatrix;
+
 import { tryParseFalabellaCmrPdf, type FalabellaCmrStatementMeta } from "@/server/services/import/pdf-templates/falabella-cmr";
 
 export const runtime = "nodejs";
