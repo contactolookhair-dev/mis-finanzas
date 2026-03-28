@@ -1,167 +1,115 @@
-import "server-only";
+import { PdfReader } from "pdfreader";
 
-import PDFDocument from "pdfkit";
-import { getDebtsSnapshot } from "@/server/services/debts-service";
-import { formatCurrency } from "@/lib/formatters/currency";
+import {
+  tryParseFalabellaCmrPdf,
+  type FalabellaCmrStatementMeta,
+} from "@/server/services/import/pdf-templates/falabella-cmr";
 
-type DebtExportKind = "person" | "company";
+export const runtime = "nodejs";
 
-type DebtExportBundle = {
-  fileName: string;
-  contentType: string;
-  buffer: Buffer;
+type RawRow = Record<string, unknown>;
+
+type ParsedPdfImport = {
+  rows: RawRow[];
+  headers: string[];
+  warnings: string[];
+  supported: boolean;
+  meta?: {
+    kind: "falabella-cmr";
+    statement: FalabellaCmrStatementMeta;
+  };
 };
 
-const installmentFrequencyLabel: Record<string, string> = {
-  SEMANAL: "Semanal",
-  QUINCENAL: "Quincenal",
-  MENSUAL: "Mensual",
-  ANUAL: "Anual"
-};
-
-function createPdfBuffer(draw: (doc: PDFKit.PDFDocument) => void) {
-  return new Promise<Buffer>((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 40, size: "A4" });
-    const chunks: Buffer[] = [];
-
-    doc.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-
-    draw(doc);
-    doc.end();
-  });
+function normalizeLine(value: string) {
+  return value.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
 }
 
-function drawHeader(doc: PDFKit.PDFDocument, title: string, subtitle: string) {
-  doc.fontSize(22).fillColor("#111827").text(title);
-  doc.moveDown(0.3).fontSize(10).fillColor("#6b7280").text(subtitle);
-  doc.moveDown();
+function fallbackPlainTextParse(
+  _bytes: Uint8Array,
+  warning: string
+): ParsedPdfImport {
+  return {
+    rows: [],
+    headers: [],
+    warnings: [warning],
+    supported: false,
+  };
 }
 
-function drawSectionTitle(doc: PDFKit.PDFDocument, title: string) {
-  doc.moveDown(0.4).fontSize(13).fillColor("#0f172a").text(title);
-  doc.moveDown(0.2);
-}
+async function extractPdfText(bytes: Uint8Array): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new PdfReader();
+    let text = "";
 
-function drawBulletList(doc: PDFKit.PDFDocument, items: string[]) {
-  for (const item of items) {
-    doc.fontSize(10).fillColor("#334155").text(`• ${item}`, { indent: 8 });
-  }
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "Sin fecha";
-  return new Date(value).toLocaleDateString("es-CL");
-}
-
-export async function generateDebtPdfBundle(input: {
-  workspaceId: string;
-  debtId: string;
-  kind: DebtExportKind;
-}): Promise<DebtExportBundle> {
-  const snapshot = await getDebtsSnapshot(input.workspaceId);
-
-  if (input.kind === "person") {
-    const debt = snapshot.people.find((item) => item.id === input.debtId);
-    if (!debt) {
-      throw new Error("Deuda personal no encontrada.");
-    }
-
-    const buffer = await createPdfBuffer((doc) => {
-      drawHeader(doc, "Detalle de deuda", "Mis Finanzas · reporte limpio y sin IA");
-      drawSectionTitle(doc, "Resumen");
-      drawBulletList(doc, [
-        `Nombre: ${debt.name}`,
-        `Motivo: ${debt.reason}`,
-        `Monto total: ${formatCurrency(debt.totalAmount)}`,
-        `Abonado: ${formatCurrency(debt.paidAmount)}`,
-        `Saldo pendiente: ${formatCurrency(debt.pendingAmount)}`,
-        `Estado: ${debt.status}`,
-        `Inicio: ${formatDate(debt.startDate)}`,
-        `Estimado de pago: ${formatDate(debt.estimatedPayDate)}`
-      ]);
-
-      drawSectionTitle(doc, "Cuotas");
-      if (debt.isInstallmentDebt) {
-        drawBulletList(doc, [
-          `Modalidad: En cuotas`,
-          `Frecuencia: ${installmentFrequencyLabel[debt.installmentFrequency] ?? debt.installmentFrequency}`,
-          `Total de cuotas: ${debt.installmentCount}`,
-          `Valor por cuota: ${formatCurrency(debt.installmentValue)}`,
-          `Cuotas pagadas: ${debt.paidInstallments}`,
-          `Cuotas pendientes: ${debt.installmentsPending}`,
-          `Progreso: ${debt.paidInstallments}/${debt.installmentCount}`,
-          `Próxima cuota: ${formatDate(debt.nextInstallmentDate)}`
-        ]);
-      } else {
-        drawBulletList(doc, ["Modalidad: Pago único"]);
-      }
-
-      if (debt.notes) {
-        drawSectionTitle(doc, "Notas");
-        drawBulletList(doc, [debt.notes]);
-      }
-
-      drawSectionTitle(doc, "Historial de abonos");
-      if (debt.payments.length === 0) {
-        drawBulletList(doc, ["Todavía no hay abonos registrados."]);
-      } else {
-        drawBulletList(
-          doc,
-          debt.payments.map(
-            (payment) =>
-              `${formatDate(payment.paidAt)} · ${formatCurrency(payment.amount)}${
-                payment.notes ? ` · ${payment.notes}` : ""
-              }`
-          )
-        );
+    reader.parseBuffer(Buffer.from(bytes), (err, item) => {
+      if (err) {
+        reject(err);
+      } else if (!item) {
+        if (!text || text.length < 20) {
+          reject(new Error("EMPTY_TEXT"));
+        } else {
+          resolve(text);
+        }
+      } else if (item.text) {
+        text += item.text + "\n";
       }
     });
+  });
+}
 
-    return {
-      fileName: `deuda-${debt.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
-      contentType: "application/pdf",
-      buffer
-    };
-  }
+export async function parsePdfImportFile(
+  bytes: Uint8Array
+): Promise<ParsedPdfImport> {
+  try {
+    const rawText = await extractPdfText(bytes);
 
-  const debt = snapshot.companies.find((item) => item.id === input.debtId);
-  if (!debt) {
-    throw new Error("Deuda de empresa no encontrada.");
-  }
+    const lines = rawText
+      .split("\n")
+      .map(normalizeLine)
+      .filter(Boolean);
 
-  const buffer = await createPdfBuffer((doc) => {
-    drawHeader(doc, "Detalle de deuda empresarial", "Mis Finanzas · reembolsos y fondos personales");
-    drawSectionTitle(doc, "Resumen");
-    drawBulletList(doc, [
-      `Nombre: ${debt.name}`,
-      `Motivo: ${debt.reason}`,
-      `Monto total: ${formatCurrency(debt.totalAmount)}`,
-      `Abonado: ${formatCurrency(debt.paidAmount)}`,
-      `Saldo pendiente: ${formatCurrency(debt.pendingAmount)}`,
-      `Estado: ${debt.status}`
-    ]);
-
-    drawSectionTitle(doc, "Movimientos asociados");
-    if (debt.entries.length === 0) {
-      drawBulletList(doc, ["No hay movimientos asociados a esta unidad."]);
-    } else {
-      drawBulletList(
-        doc,
-        debt.entries.map(
-          (entry) =>
-            `${formatDate(entry.createdAt)} · ${formatCurrency(entry.amount)} · ${entry.status}${
-              entry.notes ? ` · ${entry.notes}` : ""
-            }`
-        )
+    if (!lines.length) {
+      return fallbackPlainTextParse(
+        bytes,
+        "PDF sin texto seleccionable"
       );
     }
-  });
 
-  return {
-    fileName: `deuda-empresa-${debt.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`,
-    contentType: "application/pdf",
-    buffer
-  };
+    const falabella = tryParseFalabellaCmrPdf(lines);
+
+    if (falabella && falabella.rows.length > 5) {
+      return {
+        rows: falabella.rows,
+        headers: ["fecha", "descripcion", "cargo", "abono"],
+        warnings: falabella.warnings,
+        supported: true,
+        meta: {
+          kind: "falabella-cmr",
+          statement: falabella.meta,
+        },
+      };
+    }
+
+    return {
+      rows: lines.map((line, i) => ({
+        id: i,
+        raw: line,
+        description: line,
+      })),
+      headers: ["raw"],
+      warnings: ["Modo fallback activo"],
+      supported: true,
+    };
+  } catch (error) {
+    return {
+      rows: [],
+      headers: [],
+      warnings: [
+        error instanceof Error
+          ? `No se pudo leer el PDF: ${error.message}`
+          : "Error leyendo PDF",
+      ],
+      supported: false,
+    };
+  }
 }
