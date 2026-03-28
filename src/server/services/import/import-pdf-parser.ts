@@ -1,6 +1,3 @@
-// 🔥 FIX VERCEL DOMMatrix
-(global as any).DOMMatrix = class { };
-
 import { tryParseFalabellaCmrPdf, type FalabellaCmrStatementMeta } from "@/server/services/import/pdf-templates/falabella-cmr";
 
 export const runtime = "nodejs";
@@ -31,28 +28,53 @@ function fallbackPlainTextParse(_bytes: Uint8Array, warning: string): ParsedPdfI
   };
 }
 
-/**
- * 🔥 extractor estable para Vercel
- */
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  const pdfParseModule = await import("pdf-parse");
-  const pdfParse = (pdfParseModule as any).default ?? pdfParseModule;
+  try {
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  const buffer = Buffer.from(bytes);
-  const result = await pdfParse(buffer);
+    const loadingTask = pdfjs.getDocument({
+      data: bytes,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
 
-  const text =
-    typeof result?.text === "string"
-      ? result.text.trim()
-      : "";
+    const pdf = await loadingTask.promise;
+    const pages: string[] = [];
 
-  if (!text || text.length < 20) {
-    throw new Error("EMPTY_TEXT");
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+
+      const strings = content.items
+        .map((item: any) => {
+          if (typeof item === "string") return item;
+          if (item?.str) return item.str;
+          return "";
+        })
+        .filter(Boolean);
+
+      pages.push(strings.join(" "));
+    }
+
+    const text = pages.join("\n").trim();
+
+    if (!text || text.length < 20) {
+      throw new Error("EMPTY_TEXT");
+    }
+
+    console.log("[PDF OK pdfjs] length:", text.length);
+
+    return text;
+  } catch (error) {
+    console.error("[PDF ERROR pdfjs]", error);
+
+    throw new Error(
+      `pdf_text_extraction_failed | ${error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
-
-  console.log("[PDF OK] length:", text.length);
-
-  return text;
 }
 
 export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfImport> {
@@ -68,7 +90,6 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       return fallbackPlainTextParse(bytes, "PDF sin texto seleccionable");
     }
 
-    // 🔥 parser Falabella (mantienes inteligencia)
     const falabella = tryParseFalabellaCmrPdf(lines);
 
     if (falabella && falabella.rows.length > 5) {
@@ -84,7 +105,6 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       };
     }
 
-    // fallback mínimo
     return {
       rows: lines.map((line, i) => ({
         id: i,
@@ -95,7 +115,6 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       warnings: ["Modo fallback activo"],
       supported: true,
     };
-
   } catch (error) {
     console.error("parsePdfImportFile failed", error);
 
