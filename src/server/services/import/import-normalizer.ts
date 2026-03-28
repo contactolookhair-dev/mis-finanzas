@@ -255,7 +255,19 @@ export function normalizeImportedRows(input: NormalizeInput): ImportPreviewRow[]
               ? (rawRow.__cmrDubiousReasons as unknown[]).filter((v): v is string => typeof v === "string")
               : undefined
           }
-        : undefined;
+        : typeof rawRow.__aiKind === "string"
+          ? {
+              kind: rawRow.__aiKind as string,
+              classifiedAs: typeof rawRow.__aiType === "string" ? (rawRow.__aiType as string) : undefined,
+              confidence:
+                typeof rawRow.__aiConfidence === "number" && Number.isFinite(rawRow.__aiConfidence)
+                  ? (rawRow.__aiConfidence as number)
+                  : undefined,
+              rawLine: typeof rawRow.__aiRaw === "string" ? (rawRow.__aiRaw as string) : undefined,
+              dubious: rawRow.__aiNeedsReview === true,
+              dubiousReasons: rawRow.__aiNeedsReview === true ? ["Marcado para revisión por IA"] : undefined
+            }
+          : undefined;
 
     const parsedDate = parseDateValue(
       getValueFromTemplateColumns(row, template?.columns.date ?? [], DATE_ALIASES),

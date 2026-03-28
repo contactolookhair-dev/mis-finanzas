@@ -2,7 +2,7 @@ import {
   tryParseFalabellaCmrPdf,
   type FalabellaCmrStatementMeta,
 } from "@/server/services/import/pdf-templates/falabella-cmr";
-import { createRequire } from "module";
+import { extractPdfTextFromBytes } from "@/server/services/import/pdf-text-extractor";
 
 export const runtime = "nodejs";
 
@@ -36,35 +36,11 @@ function fallbackPlainTextParse(
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  try {
-    // IMPORTANT: avoid `import("pdf-parse")` here, because under Next/Vercel it can
-    // resolve to the ESM/worker build which has caused runtime crashes in production.
-    // Loading the Node (CJS) entry keeps the execution server-only and stable.
-    const require = createRequire(import.meta.url);
-    const pdfParse: unknown = require("pdf-parse/node");
-
-    if (typeof pdfParse !== "function") throw new Error("PDF_PARSE_INVALID");
-
-    const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const result = await (pdfParse as (buffer: Buffer) => Promise<{ text?: unknown }>)(buffer);
-
-    const text = String(result?.text ?? "")
-      .replace(/\r/g, "")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-
-    if (!text || text.length < 20) {
-      throw new Error("EMPTY_TEXT");
-    }
-
-    return text;
-  } catch (error) {
-    throw new Error(
-      `pdf_text_extraction_failed | ${error instanceof Error ? error.message : String(error)
-      }`
-    );
+  const result = await extractPdfTextFromBytes(bytes);
+  if (!result.ok) {
+    throw new Error(`${result.error} | ${result.message}`);
   }
+  return result.text;
 }
 
 export async function parsePdfImportFile(

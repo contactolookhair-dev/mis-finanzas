@@ -215,6 +215,7 @@ export async function POST(request: Request) {
     });
     const rawPreview = await previewImportFile({
       workspaceId: context.workspaceId,
+      userKey: context.userKey,
       fileName: file.name,
       mimeType: file.type,
       bytes,

@@ -71,6 +71,7 @@ function markDuplicateStatuses(rows: ImportPreviewRow[], existingFingerprints: S
 
 export async function previewImportFile(input: {
   workspaceId: string;
+  userKey?: string;
   fileName: string;
   mimeType: string;
   bytes: Uint8Array;
@@ -99,36 +100,192 @@ export async function previewImportFile(input: {
     import("@/server/services/classification-service")
   ]);
 
-  let parseImportFile: (typeof import("@/server/services/import/import-parser"))["parseImportFile"];
+  const looksLikePdf =
+    input.fileName.toLowerCase().endsWith(".pdf") ||
+    input.mimeType.toLowerCase().includes("pdf") ||
+    (input.bytes.length >= 5 &&
+      input.bytes[0] === 0x25 &&
+      input.bytes[1] === 0x50 &&
+      input.bytes[2] === 0x44 &&
+      input.bytes[3] === 0x46 &&
+      input.bytes[4] === 0x2d);
 
-  try {
-    const parserModule = await import("@/server/services/import/import-parser");
-    parseImportFile = parserModule.parseImportFile;
-  } catch (error) {
-    console.error("previewImportFile parser module load failed", {
-      fileName: input.fileName,
-      mimeType: input.mimeType,
-      bytesLength: input.bytes.length,
-      error: error instanceof Error ? error.message : error
-    });
-    throw error;
+  let parsed:
+    | Awaited<ReturnType<(typeof import("@/server/services/import/import-parser"))["parseImportFile"]>>
+    | null = null;
+
+  if (looksLikePdf) {
+    const { extractPdfTextFromBytes } = await import("@/server/services/import/pdf-text-extractor");
+    const extraction = await extractPdfTextFromBytes(input.bytes);
+
+    if (!extraction.ok) {
+      parsed = {
+        parser: "pdf",
+        rows: [],
+        headers: [],
+        warnings: [extraction.message],
+        supported: false
+      };
+    } else {
+      const rawText = extraction.text;
+      const lines = rawText
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+
+      // Prefer AI structuring when configured. If not configured or it fails,
+      // fall back to deterministic templates + generic line fallback.
+      const canUseAI = Boolean(process.env.OPENAI_API_KEY && input.userKey);
+      if (canUseAI) {
+        const { structurePdfTextWithAI } = await import("@/server/services/import/import-ai-structurer");
+        const ai = await structurePdfTextWithAI({
+          workspaceId: input.workspaceId,
+          userKey: input.userKey!,
+          fileName: input.fileName,
+          rawText,
+          hintType: input.preferredImportType
+        });
+
+        if (ai.ok) {
+          const transactions = ai.preview.transactions ?? [];
+          const dubiousCount = transactions.filter((t) => t.needsReview).length;
+
+          const rows = transactions.map((tx, index) => {
+            const amount = Math.abs(tx.amount);
+            const isInstallment =
+              tx.installment?.isInstallment === true &&
+              typeof tx.installment.installmentTotal === "number" &&
+              tx.installment.installmentTotal > 1 &&
+              !(
+                tx.installment.installmentCurrent === 1 &&
+                tx.installment.installmentTotal === 1
+              );
+
+            return {
+              fecha: tx.date ?? null,
+              descripcion: tx.merchant,
+              descripcionBase: tx.merchant,
+              cargo: tx.direction === "debit" ? amount : undefined,
+              abono: tx.direction === "credit" ? amount : undefined,
+              esCompraEnCuotas: isInstallment,
+              cuotaActual: isInstallment ? tx.installment.installmentCurrent : null,
+              cuotaTotal: isInstallment ? tx.installment.installmentTotal : null,
+              montoCuota: isInstallment ? tx.installment.installmentAmount : null,
+              montoTotalCompra: isInstallment ? tx.installment.originalAmount : null,
+              cuotasRestantes: isInstallment ? tx.installment.installmentsRemaining : null,
+              __aiKind: "pdf-ai",
+              __aiType: tx.type,
+              __aiNeedsReview: tx.needsReview,
+              __aiRaw: tx.descriptionRaw,
+              __aiIndex: index + 1,
+              __aiConfidence: ai.confidence
+            } as Record<string, unknown>;
+          });
+
+          const missingFields: string[] = [];
+          if (!ai.preview.statementDate) missingFields.push("fecha de facturación/cierre");
+          if (!ai.preview.dueDate) missingFields.push("fecha de vencimiento/pago");
+          if (ai.preview.documentType === "credit_card_statement" && ai.preview.creditLimitTotal == null) {
+            missingFields.push("cupo total");
+          }
+
+          parsed = {
+            parser: "pdf",
+            rows,
+            headers: ["fecha", "descripcion", "cargo", "abono"],
+            warnings: ai.warnings,
+            supported: rows.length > 0,
+            meta: {
+              kind: "ai-pdf-import",
+              statement: {
+                institution: ai.preview.issuer ?? "Desconocido",
+                brand: ai.preview.issuer?.toLowerCase().includes("falabella") ? "CMR" : null,
+                cardLabel: ai.preview.accountName ?? "Tarjeta",
+                closingDate: ai.preview.statementDate,
+                paymentDate: ai.preview.dueDate,
+                totalBilled: ai.preview.billedTotal,
+                minimumDue: ai.preview.minimumPayment,
+                creditLimit: ai.preview.creditLimitTotal,
+                creditUsed: ai.preview.creditLimitUsed,
+                creditAvailable: ai.preview.creditLimitAvailable,
+                parserConfidence: ai.confidence,
+                parsedMovements: rows.length,
+                dubiousMovements: dubiousCount,
+                missingFields,
+                aiFallbackRecommended: ai.preview.summaryNeedsReview === true
+              }
+            }
+          };
+        } else {
+          console.warn("previewImportFile AI structuring failed; falling back", {
+            fileName: input.fileName,
+            error: ai.error,
+            message: ai.message
+          });
+        }
+      }
+
+      if (!parsed) {
+        const { tryParseFalabellaCmrPdf } = await import("@/server/services/import/pdf-templates/falabella-cmr");
+        const falabella = tryParseFalabellaCmrPdf(lines);
+        if (falabella && falabella.rows.length > 0) {
+          parsed = {
+            parser: "pdf",
+            rows: falabella.rows,
+            headers: ["fecha", "descripcion", "cargo", "abono"],
+            warnings: falabella.warnings,
+            supported: falabella.rows.length > 5,
+            meta: {
+              kind: "falabella-cmr",
+              statement: falabella.meta
+            }
+          };
+        } else {
+          parsed = {
+            parser: "pdf",
+            rows: lines.map((line, i) => ({ id: i, raw: line, description: line })),
+            headers: ["raw"],
+            warnings: [
+              "No se pudo estructurar automáticamente este PDF. Puedes revisar y editar manualmente los movimientos antes de guardar."
+            ],
+            supported: true
+          };
+        }
+      }
+    }
   }
 
-  let parsed: Awaited<ReturnType<typeof parseImportFile>>;
-  try {
-    parsed = await parseImportFile({
-      fileName: input.fileName,
-      mimeType: input.mimeType,
-      bytes: input.bytes
-    });
-  } catch (error) {
-    console.error("previewImportFile parse failed", {
-      fileName: input.fileName,
-      mimeType: input.mimeType,
-      bytesLength: input.bytes.length,
-      error: error instanceof Error ? error.message : error
-    });
-    throw error;
+  if (!parsed) {
+    let parseImportFile: (typeof import("@/server/services/import/import-parser"))["parseImportFile"];
+
+    try {
+      const parserModule = await import("@/server/services/import/import-parser");
+      parseImportFile = parserModule.parseImportFile;
+    } catch (error) {
+      console.error("previewImportFile parser module load failed", {
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        bytesLength: input.bytes.length,
+        error: error instanceof Error ? error.message : error
+      });
+      throw error;
+    }
+
+    try {
+      parsed = await parseImportFile({
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        bytes: input.bytes
+      });
+    } catch (error) {
+      console.error("previewImportFile parse failed", {
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        bytesLength: input.bytes.length,
+        error: error instanceof Error ? error.message : error
+      });
+      throw error;
+    }
   }
 
   console.log("previewImportFile parsed", {
@@ -243,8 +400,9 @@ export async function previewImportFile(input: {
     parsed.parser === "pdf" &&
       parsed.meta &&
       typeof parsed.meta === "object" &&
-      (parsed.meta as { kind?: unknown }).kind === "falabella-cmr"
-      ? (parsed.meta as { kind: "falabella-cmr"; statement: unknown }).statement
+      ((parsed.meta as { kind?: unknown }).kind === "falabella-cmr" ||
+        (parsed.meta as { kind?: unknown }).kind === "ai-pdf-import")
+      ? (parsed.meta as { kind: "falabella-cmr" | "ai-pdf-import"; statement: unknown }).statement
       : null;
 
   let pdfAccountSuggestion: null | {
