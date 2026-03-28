@@ -231,8 +231,8 @@ export async function POST(request: Request) {
         message,
         debug: buildDebugPayload({
           stage: "unsupported_pdf",
-          parser: previewResult.parser,
-          supported: previewResult.supported,
+          parser: typeof previewResult.parser === "string" ? previewResult.parser : undefined,
+          supported: typeof previewResult.supported === "boolean" ? previewResult.supported : undefined,
           looksLikePdf
         })
       });
@@ -261,8 +261,8 @@ export async function POST(request: Request) {
       buildDebugPayload({
         stage,
         errorMessage: error instanceof Error ? error.message : undefined,
-        parser: previewResult?.parser,
-        supported: previewResult?.supported,
+        parser: typeof previewResult?.parser === "string" ? previewResult.parser : undefined,
+        supported: typeof previewResult?.supported === "boolean" ? previewResult.supported : undefined,
         looksLikePdf
       })
     );
