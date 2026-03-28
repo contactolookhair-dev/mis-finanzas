@@ -8,7 +8,7 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { AlertCircle, BadgeCheck, CreditCard, FileWarning, Landmark, TriangleAlert } from "lucide-react";
@@ -75,12 +75,13 @@ function getHistoryStateMeta(item: ImportHistoryItem) {
   };
 }
 
-export function ImportacionesClient() {
-  const searchParams = useSearchParams();
+export function ImportacionesClient(props: {
+  batchId?: string;
+  importType?: string;
+  accountId?: string;
+}) {
+  const { batchId, importType, accountId } = props;
   const router = useRouter();
-  const batchId = searchParams.get("batchId");
-  const importType = searchParams.get("type");
-  const accountId = searchParams.get("accountId");
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<ImportHistoryItem[]>([]);
