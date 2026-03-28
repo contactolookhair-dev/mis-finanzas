@@ -15,22 +15,8 @@ type ParsedPdfImport = {
   };
 };
 
-const AMOUNT_TOKEN_REGEX = /\d{1,3}(?:\.\d{3})+/g;
-const FULL_DATE_REGEX = /\d{1,2}\/\d{1,2}\/\d{4}/;
-const INSTALLMENT_REGEX = /\b(\d{1,2})\/(\d{1,2})\b/;
-const MONTH_TEXT_REGEX = /\b[a-z]{3}-\d{4}\b/i;
-
 function normalizeLine(value: string) {
   return value.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
-}
-
-function normalizeText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\?/g, "n")
-    .toLowerCase()
-    .trim();
 }
 
 function fallbackPlainTextParse(_bytes: Uint8Array, warning: string): ParsedPdfImport {
@@ -42,414 +28,50 @@ function fallbackPlainTextParse(_bytes: Uint8Array, warning: string): ParsedPdfI
   };
 }
 
-function parseAmountToken(value: string) {
-  const numeric = Number(value.replace(/\./g, ""));
-  return Number.isFinite(numeric) ? numeric : null;
-}
-
-function looksLikeNoise(line: string) {
-  const normalized = normalizeText(line);
-  if (!normalized) return true;
-  if (normalized.length <= 2) return true;
-
-  return [
-    "estado de cuenta",
-    "cliente elite",
-    "nombre del titular",
-    "cupon de pago",
-    "cupon de pago n",
-    "resumen",
-    "de pago",
-    "monto total facturado",
-    "monto minimo a pagar",
-    "monto mínimo a pagar",
-    "cmr puntos",
-    "informacion general",
-    "información general",
-    "cupo total",
-    "cupo utilizado",
-    "cupo disponible",
-    "tasa interes vigente",
-    "tasa interés vigente",
-    "periodo facturado",
-    "período facturado",
-    "pagar hasta",
-    "detalle",
-    "periodo anterior",
-    "período anterior",
-    "periodo actual",
-    "período actual",
-    "total operaciones",
-    "saldo adeudado",
-    "monto facturado",
-    "monto pagado",
-    "www.",
-    "bancofalabella",
-    "pagina",
-    "página",
-    "rut ",
-    "cae ",
-    "desde hasta",
-    "saldo adeudado inicio",
-    "saldo adeudado final",
-    "monto facturado o a pagar",
-    "total cupo",
-    "cupo compras",
-    "cupo avance",
-    "super avance",
-    "súper avance",
-    "fecha facturacion",
-    "fecha facturación",
-    "n de contrato",
-  ].some((token) => normalized.includes(token));
-}
-
-function isLikelyGarbageDescription(description: string) {
-  const normalized = normalizeText(description);
-
-  if (!normalized) return true;
-  if (normalized.length < 3) return true;
-
-  return [
-    "falabella cost t",
-    "total",
-    "detalle",
-    "periodo",
-    "periodo actual",
-    "periodo anterior",
-    "resumen",
-    "pago",
-    "movimiento",
-  ].includes(normalized);
-}
-
-function titleCase(value: string) {
-  return value
-    .toLowerCase()
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function removeTrailingAmounts(text: string) {
-  return text.replace(/(?:\s+\d{1,3}(?:\.\d{3})+)+$/g, "").trim();
-}
-
-function cleanMerchantDescription(raw: string) {
-  let text = raw;
-
-  text = text
-    .replace(/\bS\/I\b/gi, " ")
-    .replace(/\bC\/I\b/gi, " ")
-    .replace(MONTH_TEXT_REGEX, " ")
-    .replace(/\bT\b/g, " ")
-    .replace(/\bNACION\b/gi, " ")
-    .replace(/\bINT\b/gi, " ")
-    .replace(/\bCUOTA\b/gi, " ")
-    .replace(/\bCUOTAS\b/gi, " ")
-    .replace(/\bCOMPRA EN CUOTAS\b/gi, " ")
-    .replace(/\bCOMPRA\b/gi, " ")
-    .replace(/\bPAGO\b/gi, " ")
-    .replace(/\bSEGURO\b/gi, " ")
-    .replace(/\bCOST\b/gi, " ")
-    .replace(/\bTOTAL\b/gi, " ")
-    .replace(/\bTRANSACCION\b/gi, " ")
-    .replace(/\bOPERACION\b/gi, " ")
-    .replace(/\bOPERACIONES\b/gi, " ");
-
-  text = text.replace(/\s+/g, " ").trim();
-  text = removeTrailingAmounts(text);
-
-  if (!text) return "Movimiento";
-
-  const normalized = normalizeText(text);
-
-  const merchantMap: Array<[string, string]> = [
-    ["fundacion america solidaria", "Fundación América Solidaria"],
-    ["fundacion solidaria", "Fundación Solidaria"],
-    ["homecenter", "Homecenter"],
-    ["homcenter", "Homecenter"],
-    ["sodimac", "Sodimac"],
-    ["falabella", "Falabella"],
-    ["tottus", "Tottus"],
-    ["uber", "Uber"],
-    ["mercado libre", "Mercado Libre"],
-    ["mercadolibre", "Mercado Libre"],
-    ["spotify", "Spotify"],
-    ["netflix", "Netflix"],
-    ["google", "Google"],
-    ["apple", "Apple"],
-    ["shell", "Shell"],
-    ["copec", "Copec"],
-    ["lipigas", "Lipigas"],
-    ["jumbo", "Jumbo"],
-    ["lider", "Lider"],
-    ["unimarc", "Unimarc"],
-    ["santa isabel", "Santa Isabel"],
-  ];
-
-  for (const [match, label] of merchantMap) {
-    if (normalized.includes(match)) return label;
-  }
-
-  return titleCase(text);
-}
-
-function classifyMerchant(description: string) {
-  const normalized = normalizeText(description);
-
-  if (normalized.includes("falabella")) return "retail";
-  if (normalized.includes("homecenter")) return "hogar";
-  if (normalized.includes("sodimac")) return "hogar";
-  if (normalized.includes("tottus")) return "supermercado";
-  if (normalized.includes("jumbo")) return "supermercado";
-  if (normalized.includes("lider")) return "supermercado";
-  if (normalized.includes("unimarc")) return "supermercado";
-  if (normalized.includes("santa isabel")) return "supermercado";
-  if (normalized.includes("uber")) return "transporte";
-  if (normalized.includes("shell")) return "combustible";
-  if (normalized.includes("copec")) return "combustible";
-  if (normalized.includes("mercado libre")) return "compras";
-  if (normalized.includes("spotify")) return "suscripciones";
-  if (normalized.includes("netflix")) return "suscripciones";
-  if (normalized.includes("google")) return "suscripciones";
-  if (normalized.includes("apple")) return "suscripciones";
-
-  return "sin_categoria";
-}
-
-function detectSubscription(description: string) {
-  const normalized = normalizeText(description);
-
-  return [
-    "spotify",
-    "netflix",
-    "google",
-    "apple",
-    "youtube",
-    "disney",
-    "prime video",
-    "amazon prime",
-    "chatgpt",
-    "openai",
-    "icloud",
-  ].some((token) => normalized.includes(token));
-}
-
-function inferInstallmentAmounts(
-  rawMiddle: string,
-  montoCuota: number,
-  cuotaActual?: number,
-  cuotaTotal?: number
-) {
-  const amounts = (rawMiddle.match(AMOUNT_TOKEN_REGEX) ?? [])
-    .map(parseAmountToken)
-    .filter((v): v is number => v !== null);
-
-  if (amounts.length === 0) {
-    return {
-      esCompraEnCuotas: false,
-      montoCuota,
-      montoTotalCompra: null as number | null,
-    };
-  }
-
-  const uniqueAmounts = Array.from(new Set(amounts));
-  const candidates = uniqueAmounts.filter((value) => value > montoCuota);
-
-  let montoTotalCompra: number | null = null;
-
-  if (candidates.length > 0) {
-    montoTotalCompra = Math.max(...candidates);
-  } else if (cuotaTotal && cuotaTotal > 1) {
-    montoTotalCompra = montoCuota * cuotaTotal;
-  }
-
-  const esCompraEnCuotas = Boolean(cuotaActual && cuotaTotal && cuotaTotal > 1);
-
-  return {
-    esCompraEnCuotas,
-    montoCuota,
-    montoTotalCompra,
-  };
-}
-
-function parseFlexibleLine(line: string) {
-  const dateMatch = line.match(FULL_DATE_REGEX);
-  if (!dateMatch) return null;
-
-  const fecha = dateMatch[0];
-
-  const amounts = line.match(AMOUNT_TOKEN_REGEX);
-  if (!amounts || amounts.length === 0) return null;
-
-  const montoRaw = amounts[amounts.length - 1];
-  const montoCuota = parseAmountToken(montoRaw);
-  if (montoCuota === null || montoCuota <= 0) return null;
-
-  const start = line.indexOf(fecha) + fecha.length;
-  const end = line.lastIndexOf(montoRaw);
-
-  if (end <= start) return null;
-
-  const rawMiddle = line.slice(start, end).trim();
-  if (!rawMiddle) return null;
-
-  const installmentMatch = rawMiddle.match(INSTALLMENT_REGEX);
-  const cuotaActual = installmentMatch ? Number(installmentMatch[1]) : undefined;
-  const cuotaTotal = installmentMatch ? Number(installmentMatch[2]) : undefined;
-
-  const descripcionBase = cleanMerchantDescription(rawMiddle);
-  if (isLikelyGarbageDescription(descripcionBase)) return null;
-
-  const categoriaSugerida = classifyMerchant(descripcionBase);
-  const esSuscripcion = detectSubscription(descripcionBase);
-  const descripcion = descripcionBase;
-
-  const installmentInfo = inferInstallmentAmounts(rawMiddle, montoCuota, cuotaActual, cuotaTotal);
-
-  return {
-    __isMovement: true,
-    fecha,
-    descripcion,
-    descripcionBase,
-    cargo: montoCuota,
-    abono: undefined,
-    monto: -montoCuota,
-    cuotaActual,
-    cuotaTotal,
-    installments: cuotaTotal,
-    installmentLabel: cuotaTotal ? `${cuotaTotal} cuotas` : undefined,
-    esEnCuotas: installmentInfo.esCompraEnCuotas,
-    esCompraEnCuotas: installmentInfo.esCompraEnCuotas,
-    montoCuota: installmentInfo.montoCuota,
-    montoTotalCompra: installmentInfo.montoTotalCompra,
-    cuotasRestantes:
-      cuotaActual && cuotaTotal && cuotaTotal >= cuotaActual ? cuotaTotal - cuotaActual : undefined,
-    categoriaSugerida,
-    esSuscripcion,
-    bancoDetectado: "falabella",
-    rawLine: line,
-  };
-}
-
-function dedupeRows(rows: RawRow[]) {
-  const seen = new Set<string>();
-  const result: RawRow[] = [];
-
-  for (const row of rows) {
-    const key = [
-      String(row.fecha ?? ""),
-      String(row.descripcionBase ?? row.descripcion ?? ""),
-      String(row.cargo ?? row.monto ?? ""),
-      String(row.cuotaActual ?? ""),
-      String(row.cuotaTotal ?? ""),
-    ].join("|");
-
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(row);
-  }
-
-  return result;
-}
-
-const DEBUG = process.env.DEBUG_IMPORT_PREVIEW === "true";
-
+/**
+ * 🔥 extractor estable para Vercel
+ */
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
-  try {
-    let pdfjsLib;
-    try {
-      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
-    } catch (firstError) {
-      console.warn("[imports/preview] pdfjs import failed, retrying with fallback", firstError);
-      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
-    }
-    const { getDocument } = pdfjsLib as any;
-    if (!getDocument) {
-      throw new Error("pdfjs_getDocument_not_available");
-    }
-    const parserLoaded = Boolean(getDocument);
-    if (DEBUG) {
-      console.log("[imports/preview] parserLoaded", { parserLoaded });
-      console.log("[imports/preview] pdf bytes", { length: bytes.length, useWorker: false });
-    }
+  const pdfParseModule = await import("pdf-parse");
+  const pdfParse = (pdfParseModule as any).default ?? pdfParseModule;
 
-    const uint8 = new Uint8Array(bytes);
-    const loadingTask = getDocument({
-      data: uint8,
-      useWorker: false
-    } as any);
-    const pdf = await loadingTask.promise;
-      if (DEBUG) {
-      console.log("[imports/preview] pdf loaded", { numPages: pdf.numPages });
-    }
-    const pageTexts: string[] = [];
+  const buffer = Buffer.from(bytes);
+  const result = await pdfParse(buffer);
 
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      if (DEBUG && pageNum === 1) {
-        console.log("[imports/preview] first page loaded", { pageNum });
-      }
-      const content = await page.getTextContent();
-      if (DEBUG && pageNum === 1) {
-        console.log("[imports/preview] first page content", { items: content.items.length });
-      }
-      const strings = content.items.map((item: any) => {
-        if (typeof item === "string") return item;
-        if ("str" in item && typeof item.str === "string") return item.str;
-        return "";
-      });
-      pageTexts.push(strings.join(" "));
-    }
+  const text =
+    typeof result?.text === "string"
+      ? result.text.trim()
+      : "";
 
-    const text = pageTexts.join("\n");
-    console.log("parsePdfImportFile extractedTextLength", { length: text.length });
-    return text;
-  } catch (error) {
-    if (DEBUG) {
-      console.warn("[imports/preview] pdf_text_extraction_failed", {
-        message: error instanceof Error ? error.message : undefined,
-        name: error instanceof Error ? error.name : undefined,
-        stack: error instanceof Error ? error.stack : undefined,
-        type: typeof error,
-        cause: error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined
-      });
-    }
-    throw new Error("pdf_text_extraction_failed");
+  if (!text || text.length < 20) {
+    throw new Error("EMPTY_TEXT");
   }
+
+  console.log("[PDF OK] length:", text.length);
+
+  return text;
 }
 
 export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfImport> {
   try {
     const rawText = await extractPdfText(bytes);
 
-    console.log("PDF TEXT LENGTH:", rawText.length);
-
     const lines = rawText
       .split(/\r?\n/)
       .map(normalizeLine)
       .filter(Boolean);
 
-    console.log("LINES:", lines.length);
-
     if (!lines.length) {
       return fallbackPlainTextParse(bytes, "PDF sin texto seleccionable");
     }
 
+    // 🔥 parser Falabella (mantienes inteligencia)
     const falabella = tryParseFalabellaCmrPdf(lines);
+
     if (falabella && falabella.rows.length > 5) {
       return {
         rows: falabella.rows,
-        headers: [
-          "fecha",
-          "descripcion",
-          "cargo",
-          "abono",
-          "tarjeta",
-          ...falabella.headersForDetection,
-        ],
+        headers: ["fecha", "descripcion", "cargo", "abono"],
         warnings: falabella.warnings,
         supported: true,
         meta: {
@@ -459,52 +81,18 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       };
     }
 
-    const parsedRows: RawRow[] = [];
-
-    for (const line of lines) {
-      if (looksLikeNoise(line)) continue;
-
-      const parsed = parseFlexibleLine(line);
-      if (!parsed) continue;
-
-      parsedRows.push(parsed);
-    }
-
-    const rows = dedupeRows(parsedRows);
-
-    console.log("ROWS DETECTED:", rows.length);
-
-    const warnings: string[] = [];
-    if (rows.length < 5) {
-      warnings.push("Se detectaron pocos movimientos. Revisa la vista previa.");
-    }
-
+    // fallback mínimo
     return {
-      rows,
-      headers: [
-        "fecha",
-        "descripcion",
-        "descripcionBase",
-        "cargo",
-        "abono",
-        "monto",
-        "cuotaActual",
-        "cuotaTotal",
-        "installments",
-        "installmentLabel",
-        "esEnCuotas",
-        "esCompraEnCuotas",
-        "montoCuota",
-        "montoTotalCompra",
-        "cuotasRestantes",
-        "categoriaSugerida",
-        "esSuscripcion",
-        "bancoDetectado",
-        "rawLine",
-      ],
-      warnings,
-      supported: rows.length > 0,
+      rows: lines.map((line, i) => ({
+        id: i,
+        raw: line,
+        description: line,
+      })),
+      headers: ["raw"],
+      warnings: ["Modo fallback activo"],
+      supported: true,
     };
+
   } catch (error) {
     console.error("parsePdfImportFile failed", error);
 
@@ -512,7 +100,9 @@ export async function parsePdfImportFile(bytes: Uint8Array): Promise<ParsedPdfIm
       rows: [],
       headers: [],
       warnings: [
-        error instanceof Error ? `No se pudo leer el PDF: ${error.message}` : "Error leyendo PDF",
+        error instanceof Error
+          ? `No se pudo leer el PDF: ${error.message}`
+          : "Error leyendo PDF",
       ],
       supported: false,
     };
