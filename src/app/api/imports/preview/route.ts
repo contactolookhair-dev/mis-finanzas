@@ -101,6 +101,7 @@ export async function POST(request: Request) {
   let stage = "init";
   let previewResult: Record<string, unknown> | null = null;
   let looksLikePdf = false;
+  let safeFile: File | null = null;
   const debugEntries: Array<{ stage: string; payload?: Record<string, unknown> }> = [];
 
   const recordStage = (name: string, payload?: Record<string, unknown>) => {
@@ -159,6 +160,9 @@ export async function POST(request: Request) {
     recordStage(stage);
       const formData = await request.formData();
     const file = formData.get("file");
+    if (file instanceof File) {
+      safeFile = file;
+    }
     const selectedTemplateId = formData.get("templateId");
     const importTypeRaw = normalizeOptionalString(formData.get("type"));
     const importType = normalizeImportType(importTypeRaw);
@@ -166,8 +170,8 @@ export async function POST(request: Request) {
 
     console.log("imports preview received", {
       workspaceId: context.workspaceId,
-      fileName: file instanceof File ? file.name : null,
-      mimeType: file instanceof File ? file.type : null,
+      fileName: safeFile ? safeFile.name : null,
+      mimeType: safeFile ? safeFile.type : null,
       importTypeRaw,
       importType,
       preferredAccountId,
@@ -206,7 +210,11 @@ export async function POST(request: Request) {
     });
 
     stage = "build_preview";
-    recordStage(stage, { fileName: file.name, fileType: file.type, fileSize: bytes.byteLength });
+    recordStage(stage, {
+      fileName: safeFile ? safeFile.name : null,
+      fileType: safeFile ? safeFile.type : null,
+      fileSize: bytes.byteLength
+    });
     const rawPreview = await previewImportFile({
       workspaceId: context.workspaceId,
       fileName: file.name,
@@ -254,7 +262,7 @@ export async function POST(request: Request) {
   } catch (error) {
       console.error("imports preview failed", {
         stage,
-        file: file instanceof File ? { name: file.name, type: file.type, size: file.size } : null,
+        file: safeFile ? { name: safeFile.name, type: safeFile.type, size: safeFile.size } : null,
         error,
         stack: error instanceof Error ? error.stack : null
       });
