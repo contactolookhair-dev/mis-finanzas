@@ -361,7 +361,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     | null = null;
 
   try {
-    const mod = await import("pdf-parse").catch((error) => {
+    const mod: unknown = await import("pdf-parse").catch((error) => {
       console.error("parsePdfImportFile failed to load pdf-parse", error);
       return null;
     });
@@ -373,24 +373,29 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
       throw new Error("No se pudo cargar la librería pdf-parse");
     }
 
-    const maybeFunction =
+    const parserFunction =
       typeof mod === "function"
         ? mod
-        : typeof mod?.default === "function"
-          ? mod.default
+        : mod && typeof (mod as { default?: unknown }).default === "function"
+          ? (mod as { default: (buffer: Buffer) => Promise<{ text?: string }> }).default
           : null;
 
-    if (maybeFunction) {
-      const result = await maybeFunction(Buffer.from(bytes));
+    if (parserFunction) {
+      const result = await parserFunction(Buffer.from(bytes));
       console.log("parsePdfImportFile extractedTextLength", { length: typeof result?.text === "string" ? result.text.length : 0 });
       return typeof result?.text === "string" ? result.text : "";
     }
 
+    const moduleRecord = mod as Record<string, unknown> | null;
     const PDFParseCtor =
-      typeof mod?.PDFParse === "function"
-        ? mod.PDFParse
-        : typeof mod?.default?.PDFParse === "function"
-          ? mod.default.PDFParse
+      moduleRecord && typeof moduleRecord.PDFParse === "function"
+        ? (moduleRecord.PDFParse as new (options: { data: Buffer }) => { getText: () => Promise<{ text?: string }>; })
+        : moduleRecord &&
+          moduleRecord.default &&
+          typeof (moduleRecord.default as Record<string, unknown>).PDFParse === "function"
+          ? ((moduleRecord.default as Record<string, unknown>).PDFParse as new (options: { data: Buffer }) => {
+              getText: () => Promise<{ text?: string }>;
+            })
           : null;
 
     if (!PDFParseCtor) {
