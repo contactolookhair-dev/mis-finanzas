@@ -361,10 +361,10 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
   try {
     let pdfjsLib;
     try {
-      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.js");
+      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
     } catch (firstError) {
       console.warn("[imports/preview] pdfjs import failed, retrying with fallback", firstError);
-      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.js");
+      pdfjsLib = await import("pdfjs-dist/legacy/build/pdf");
     }
     const { getDocument } = pdfjsLib as any;
     if (!getDocument) {
