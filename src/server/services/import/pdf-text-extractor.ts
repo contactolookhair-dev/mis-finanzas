@@ -13,8 +13,20 @@ function normalizeExtractedText(value: string) {
     .trim();
 }
 
-export async function extractPdfTextFromBytes(bytes: Uint8Array): Promise<PdfTextExtractionResult> {
+function ensurePdfJsGlobals() {
+  // Some pdfjs builds rely on these globals existing, even for text extraction.
+  // Provide minimal stubs so serverless runtimes don't crash.
+  const g = globalThis as any;
+  if (typeof g.DOMMatrix === "undefined") g.DOMMatrix = class DOMMatrix {};
+  if (typeof g.ImageData === "undefined") g.ImageData = class ImageData {};
+  if (typeof g.Path2D === "undefined") g.Path2D = class Path2D {};
+}
+
+export async function extractPdfText(buffer: Buffer): Promise<{ text: string; numPages: number }> {
   try {
+    ensurePdfJsGlobals();
+
+    // Force CommonJS resolution (no dynamic import, no ESM entry).
     const require = createRequire(import.meta.url);
     const pdfParseMod: unknown = require("pdf-parse");
     const PDFParseCtor =
@@ -23,19 +35,34 @@ export async function extractPdfTextFromBytes(bytes: Uint8Array): Promise<PdfTex
         : null;
 
     if (typeof PDFParseCtor !== "function") {
-      return {
-        ok: false,
-        error: "pdf_text_extraction_failed",
-        message: "No se pudo cargar el lector de PDF."
-      };
+      console.error("[pdf extractor] PDFParse ctor not available");
+      console.log("[pdf extractor]", { textLength: 0, numPages: 0 });
+      return { text: "", numPages: 0 };
     }
 
-    const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const parser = new (PDFParseCtor as any)({ data: buffer });
-    const result = await parser.getText();
+    const info = await parser.getInfo().catch(() => null);
+    const textResult = await parser.getText();
     await parser.destroy();
 
-    const normalized = normalizeExtractedText(String(result?.text ?? ""));
+    const normalized = normalizeExtractedText(String(textResult?.text ?? ""));
+    const numPages =
+      info && typeof info === "object" && typeof (info as any).total === "number" ? (info as any).total : 0;
+
+    console.log("[pdf extractor]", { textLength: normalized.length, numPages });
+    return { text: normalized, numPages };
+  } catch (err) {
+    console.error("PDF parse failed", err);
+    console.log("[pdf extractor]", { textLength: 0, numPages: 0 });
+    return { text: "", numPages: 0 };
+  }
+}
+
+export async function extractPdfTextFromBytes(bytes: Uint8Array): Promise<PdfTextExtractionResult> {
+  try {
+    const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const { text } = await extractPdfText(buffer);
+    const normalized = normalizeExtractedText(text);
     if (!normalized || normalized.length < 20) {
       return {
         ok: false,
