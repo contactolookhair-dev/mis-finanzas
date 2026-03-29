@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AlertCircle, FileSpreadsheet, FileUp, Loader2 } from "lucide-react";
 import type { AuthSessionResponse } from "@/shared/types/auth";
 import type {
@@ -242,6 +243,7 @@ export function ImportTransactionsPanel(props: {
   initialAccountId?: string | null;
 }) {
   const { initialLane = "account", initialAccountId = null } = props;
+  const router = useRouter();
   const [authLoading, setAuthLoading] = useState(true);
   const [authSession, setAuthSession] = useState<AuthSessionResponse | null>(null);
   const [importLane, setImportLane] = useState<"account" | "credit">(initialLane);
@@ -252,6 +254,13 @@ export function ImportTransactionsPanel(props: {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [committing, setCommitting] = useState(false);
   const [commitReviewOpen, setCommitReviewOpen] = useState(false);
+  const [lastCommitStrategy, setLastCommitStrategy] = useState<"all" | "safe" | null>(null);
+  const [lastCommitMetrics, setLastCommitMetrics] = useState<null | {
+    includedBefore: number;
+    safeIncludedBefore: number;
+    needsReviewBefore: number;
+    installmentsBefore: number;
+  }>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -700,9 +709,47 @@ export function ImportTransactionsPanel(props: {
     try {
       setCommitting(true);
       setCommitReviewOpen(false);
+      setLastCommitStrategy(strategy);
       setError(null);
       setSuccess(null);
       setCommitSummary(null);
+
+      const includedBefore = rows.filter((row) => row.include);
+      const needsReviewBefore = includedBefore.filter((row) => {
+        if (row.issues.length > 0) return true;
+        const description = typeof row.description === "string" ? row.description.trim() : "";
+        if (isPlaceholderDescription(description)) return true;
+        const meta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
+        const confidence = typeof meta?.confidence === "number" ? meta.confidence : null;
+        const isLow =
+          Boolean(meta?.dubious) ||
+          (confidence != null && Number.isFinite(confidence) && confidence < 0.5);
+        return isLow;
+      });
+      const safeIncludedBefore = includedBefore.filter((row) => {
+        if (row.issues.length > 0) return false;
+        const description = typeof row.description === "string" ? row.description.trim() : "";
+        if (isPlaceholderDescription(description)) return false;
+        const meta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
+        const confidence = typeof meta?.confidence === "number" ? meta.confidence : null;
+        const isLow =
+          Boolean(meta?.dubious) ||
+          (confidence != null && Number.isFinite(confidence) && confidence < 0.5);
+        return !isLow;
+      });
+      const installmentsBefore = includedBefore.filter((row) => {
+        const installment = getInstallmentPreview(row);
+        if (!installment.isInstallmentPurchase) return false;
+        if (typeof installment.totalInstallments === "number" && installment.totalInstallments <= 1) return false;
+        return true;
+      }).length;
+
+      setLastCommitMetrics({
+        includedBefore: includedBefore.length,
+        safeIncludedBefore: safeIncludedBefore.length,
+        needsReviewBefore: needsReviewBefore.length,
+        installmentsBefore
+      });
 
       const rowsToSend =
         strategy === "safe"
@@ -1200,12 +1247,75 @@ export function ImportTransactionsPanel(props: {
         ) : null}
 
         {commitSummary ? (
-          <div className="rounded-2xl border border-border bg-white/90 p-4 text-sm">
-            <p className="font-semibold">Resumen final</p>
-            <p className="mt-2">Importados: {commitSummary.imported}</p>
-            <p>Omitidos: {commitSummary.omitted}</p>
-            <p>Duplicados: {commitSummary.duplicates}</p>
-            <p>Errores: {commitSummary.errors.length}</p>
+          <div className="rounded-[24px] border border-slate-200 bg-white/85 p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  Importación completada
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {lastCommitStrategy === "safe" ? "Guardaste solo filas confiables" : "Guardaste todas las filas incluidas"}
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  {commitSummary.imported} guardadas · {commitSummary.duplicates} duplicadas · {commitSummary.errors.length} con error
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push("/movimientos")}
+                >
+                  Ver movimientos
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push("/pendientes")}
+                >
+                  Ver pendientes
+                </Button>
+                {lastCommitMetrics?.installmentsBefore ? (
+                  <Button
+                    variant="secondary"
+                    onClick={() => router.push("/cuentas")}
+                  >
+                    Revisar cuotas
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-2xl bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Guardadas</p>
+                <p className="mt-1 text-xl font-semibold">{commitSummary.imported}</p>
+              </div>
+              <div className="rounded-2xl bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Excluidas</p>
+                <p className="mt-1 text-xl font-semibold">
+                  {lastCommitMetrics
+                    ? Math.max(0, lastCommitMetrics.includedBefore - commitSummary.imported)
+                    : commitSummary.omitted}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Confiables</p>
+                <p className="mt-1 text-xl font-semibold">
+                  {lastCommitMetrics ? lastCommitMetrics.safeIncludedBefore : "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Para revisión</p>
+                <p className="mt-1 text-xl font-semibold">
+                  {lastCommitMetrics ? lastCommitMetrics.needsReviewBefore : "—"}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-white/80 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Cuotas detectadas</p>
+                <p className="mt-1 text-xl font-semibold">
+                  {lastCommitMetrics ? lastCommitMetrics.installmentsBefore : "—"}
+                </p>
+              </div>
+            </div>
           </div>
         ) : null}
       </SurfaceCard>
