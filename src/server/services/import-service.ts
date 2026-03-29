@@ -544,6 +544,15 @@ export async function previewImportFile(input: {
           const extractInstallmentFromText = (text: string) => {
             const normalized = text.toLowerCase();
 
+            // Explicitly ignore statements that say there's no installments.
+            if (
+              normalized.includes("sin cuotas") ||
+              normalized.includes("no cuotas") ||
+              normalized.includes("sin cuota")
+            ) {
+              return null;
+            }
+
             // IMPORTANT: this regex would also match the day/month inside a date like "10/12/2026".
             // Strip full dates first so we only detect true installment ratios.
             const withoutDates = text.replace(/\b\d{2}\/\d{2}\/\d{4}\b/g, " ");
@@ -563,7 +572,7 @@ export async function previewImportFile(input: {
                 return {
                   cuotaActual: current,
                   cuotaTotal: total,
-                  installmentLabel: `${String(current).padStart(2, "0")}/${String(total).padStart(2, "0")}`,
+                  installmentLabel: ratio[0],
                   installments: total
                 };
               }
@@ -577,10 +586,45 @@ export async function previewImportFile(input: {
                 return {
                   cuotaActual: current,
                   cuotaTotal: total,
-                  installmentLabel: `cuota ${current} de ${total}`,
+                  installmentLabel: cuotaDe[0],
                   installments: total
                 };
               }
+            }
+
+            // Support "3 de 12" when the text explicitly references cuotas.
+            if (normalized.includes("cuota") || normalized.includes("cuotas") || normalized.includes("en cuotas")) {
+              const deMatch = normalized.match(/\b(\d{1,2})\s+de\s+(\d{1,2})\b/);
+              if (deMatch) {
+                const current = Number(deMatch[1]);
+                const total = Number(deMatch[2]);
+                if (
+                  Number.isInteger(current) &&
+                  Number.isInteger(total) &&
+                  total > 1 &&
+                  total <= 48 &&
+                  current >= 1 &&
+                  current <= total
+                ) {
+                  return {
+                    cuotaActual: current,
+                    cuotaTotal: total,
+                    installmentLabel: deMatch[0],
+                    installments: total
+                  };
+                }
+              }
+            }
+
+            // Keyword-only fallback: mark as installment even if we can't infer n/m.
+            // This keeps the row visible under the "Cuotas" tab and shows a hint in the UI.
+            if (normalized.includes("en cuotas") || normalized.includes("compra en cuotas") || normalized.includes("compras en cuotas")) {
+              return {
+                cuotaActual: null,
+                cuotaTotal: null,
+                installmentLabel: "en cuotas",
+                installments: null
+              };
             }
 
             return null;
@@ -745,10 +789,16 @@ export async function previewImportFile(input: {
               }
 
               if (process.env.DEBUG_IMPORT_PREVIEW === "true" && installmentFromText) {
-                console.log("[cuotas detectadas]", {
-                  text: String(installmentProbeTexts[0] ?? "").slice(0, 160),
-                  cuotaActual: installmentFromText.cuotaActual,
-                  cuotaTotal: installmentFromText.cuotaTotal
+                console.log("[installments] detected", {
+                  sourceText: String(installmentProbeTexts[0] ?? "").slice(0, 180),
+                  installmentLabelRaw: installmentFromText.installmentLabel ?? null,
+                  cuotaActual: installmentFromText.cuotaActual ?? null,
+                  cuotaTotal: installmentFromText.cuotaTotal ?? null,
+                  cuotasRestantes:
+                    typeof installmentFromText.cuotaActual === "number" &&
+                    typeof installmentFromText.cuotaTotal === "number"
+                      ? Math.max(0, installmentFromText.cuotaTotal - installmentFromText.cuotaActual)
+                      : null
                 });
               }
               const isInstallmentFromAI =

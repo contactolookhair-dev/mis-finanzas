@@ -92,6 +92,8 @@ type InstallmentPreviewFields = {
   montoCuota?: number | null;
   montoTotalCompra?: number | null;
   cuotasRestantes?: number | null;
+  installmentLabel?: string | null;
+  installments?: number | null;
   descriptionBase?: string;
   isInstallmentPurchase?: boolean;
   currentInstallment?: number | null;
@@ -193,6 +195,11 @@ function getInstallmentPreview(row: ImportPreviewRow) {
         ? data.remainingInstallments
         : null;
 
+  const installmentLabel =
+    typeof data.installmentLabel === "string" && data.installmentLabel.trim().length > 0
+      ? data.installmentLabel.trim()
+      : null;
+
   return {
     descriptionBase,
     isInstallmentPurchase,
@@ -200,7 +207,8 @@ function getInstallmentPreview(row: ImportPreviewRow) {
     totalInstallments,
     installmentAmount,
     totalPurchaseAmount,
-    remainingInstallments
+    remainingInstallments,
+    installmentLabel
   };
 }
 
@@ -1559,8 +1567,9 @@ export function ImportTransactionsPanel(props: {
                       ) : null}
 
                       {installmentPreview.isInstallmentPurchase &&
-                      typeof installmentPreview.totalInstallments === "number" &&
-                      installmentPreview.totalInstallments > 1 ? (
+                      ((typeof installmentPreview.totalInstallments === "number" &&
+                        installmentPreview.totalInstallments > 1) ||
+                        Boolean(installmentPreview.installmentLabel)) ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
                           <div className="font-medium text-slate-900">
                             {installmentPreview.currentInstallment != null &&
@@ -1570,6 +1579,9 @@ export function ImportTransactionsPanel(props: {
                           </div>
 
                           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                            {installmentPreview.installmentLabel ? (
+                              <span className="text-slate-600">Detectado: {installmentPreview.installmentLabel}</span>
+                            ) : null}
                             {typeof installmentPreview.currentInstallment === "number" ? (
                               <span>Pagadas: {installmentPreview.currentInstallment}</span>
                             ) : null}

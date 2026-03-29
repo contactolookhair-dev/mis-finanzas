@@ -371,6 +371,8 @@ export function normalizeImportedRows(input: NormalizeInput): ImportPreviewRow[]
       cuotasRestantes: typeof rawRow.cuotasRestantes === "number" ? rawRow.cuotasRestantes : undefined,
       descripcionBase: typeof rawRow.descripcionBase === "string" ? rawRow.descripcionBase : undefined,
       esCompraEnCuotas: rawRow.esCompraEnCuotas === true,
+      installments: typeof rawRow.installments === "number" ? rawRow.installments : undefined,
+      installmentLabel: typeof rawRow.installmentLabel === "string" ? rawRow.installmentLabel : undefined,
       currentInstallment: typeof rawRow.currentInstallment === "number" ? rawRow.currentInstallment : undefined,
       totalInstallments: typeof rawRow.totalInstallments === "number" ? rawRow.totalInstallments : undefined,
       installmentAmount: typeof rawRow.installmentAmount === "number" ? rawRow.installmentAmount : undefined,
