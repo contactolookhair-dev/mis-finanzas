@@ -136,6 +136,11 @@ function formatCurrencyCLP(value?: number | null) {
   return `$${value.toLocaleString("es-CL")}`;
 }
 
+function isPlaceholderDescription(value: string) {
+  const normalized = value.replace(/\s+/g, " ").trim().toLowerCase();
+  return normalized === "movimiento";
+}
+
 function getInstallmentPreview(row: ImportPreviewRow) {
   const data = row as ImportPreviewRow & InstallmentPreviewFields;
 
@@ -246,6 +251,7 @@ export function ImportTransactionsPanel(props: {
   const [rows, setRows] = useState<ImportPreviewRow[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [commitReviewOpen, setCommitReviewOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -311,6 +317,51 @@ export function ImportTransactionsPanel(props: {
     [normalizedRows]
   );
 
+  const commitQuality = useMemo(() => {
+    const included = normalizedRows.filter((row) => row.include);
+    let placeholder = 0;
+    let lowConfidence = 0;
+    let hasIssues = 0;
+    let needsReview = 0;
+    let safe = 0;
+
+    for (const row of included) {
+      const description = typeof row.description === "string" ? row.description.trim() : "";
+      const isPlaceholder = Boolean(description) && isPlaceholderDescription(description);
+
+      const meta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
+      const confidence = typeof meta?.confidence === "number" ? meta.confidence : null;
+      const isLow =
+        Boolean(meta?.dubious) ||
+        (confidence != null && Number.isFinite(confidence) && confidence < 0.5);
+
+      const rowHasIssues = row.issues.length > 0;
+
+      if (isPlaceholder) placeholder += 1;
+      if (isLow) lowConfidence += 1;
+      if (rowHasIssues) hasIssues += 1;
+
+      const shouldReview = rowHasIssues || isPlaceholder || isLow;
+      if (shouldReview) needsReview += 1;
+
+      if (!shouldReview && row.issues.length === 0) safe += 1;
+    }
+
+    const includedCount = included.length;
+    const needsWarning =
+      includedCount >= 6 &&
+      needsReview >= Math.max(3, Math.ceil(includedCount * 0.2));
+
+    return {
+      includedCount,
+      safeCount: safe,
+      placeholderCount: placeholder,
+      lowConfidenceCount: lowConfidence,
+      needsReviewCount: needsReview,
+      needsWarning
+    };
+  }, [normalizedRows]);
+
   const accountById = useMemo(() => {
     if (!preview) return new Map<string, ReferenceOption>();
     return new Map(preview.references.accounts.map((account) => [account.id, account]));
@@ -326,6 +377,59 @@ export function ImportTransactionsPanel(props: {
 
   const pdfSuggestion = preview?.pdfAccountSuggestion ?? null;
   const [isMobile, setIsMobile] = useState(false);
+
+  const previewRowMetrics = useMemo(() => {
+    let withRealDescription = 0;
+    let withPlaceholderDescription = 0;
+    let withEmptyDescription = 0;
+    let lowConfidence = 0;
+
+    for (const row of normalizedRows) {
+      const description = typeof row.description === "string" ? row.description.trim() : "";
+      if (!description) withEmptyDescription += 1;
+      else if (isPlaceholderDescription(description)) withPlaceholderDescription += 1;
+      else withRealDescription += 1;
+
+      const meta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
+      const confidence = typeof meta?.confidence === "number" ? meta.confidence : null;
+      const isLow =
+        Boolean(meta?.dubious) ||
+        (confidence != null && Number.isFinite(confidence) && confidence < 0.5);
+      if (isLow) lowConfidence += 1;
+    }
+
+    return {
+      withRealDescription,
+      withPlaceholderDescription,
+      withEmptyDescription,
+      lowConfidence
+    };
+  }, [normalizedRows]);
+
+  const detectorInstitutionLabel = useMemo(() => {
+    const institution =
+      pdfMeta && typeof pdfMeta.institution === "string" ? pdfMeta.institution.trim() : "";
+    if (!institution) return "Desconocido";
+    if (institution.toLowerCase() === "desconocido") return "Desconocido";
+    return institution;
+  }, [pdfMeta]);
+
+  const appliedTemplateTrust = useMemo(() => {
+    const template = preview?.appliedTemplate ?? null;
+    if (!template) return { status: "generic" as const, reason: "Sin plantilla" };
+    if (template.mode === "manual")
+      return { status: "manual" as const, reason: "Seleccionada manualmente" };
+
+    if (detectorInstitutionLabel === "Desconocido") {
+      return { status: "unconfirmed" as const, reason: "Banco no identificado con certeza" };
+    }
+
+    const sameInstitution =
+      template.institution.trim().toLowerCase() === detectorInstitutionLabel.trim().toLowerCase();
+    if (sameInstitution) return { status: "confirmed" as const, reason: "Coincide con el detector" };
+
+    return { status: "mismatch" as const, reason: "No coincide con el detector" };
+  }, [preview?.appliedTemplate, detectorInstitutionLabel]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
@@ -581,14 +685,40 @@ export function ImportTransactionsPanel(props: {
     setRows((current) => (Array.isArray(current) ? current : []).map((row) => ({ ...row, accountId })));
   }
 
-  async function handleCommit() {
+  function requestCommit() {
+    if (committing) return;
+    if (commitQuality.needsWarning) {
+      setCommitReviewOpen(true);
+      return;
+    }
+    void handleCommit("all");
+  }
+
+  async function handleCommit(strategy: "all" | "safe" = "all") {
     if (!preview) return;
 
     try {
       setCommitting(true);
+      setCommitReviewOpen(false);
       setError(null);
       setSuccess(null);
       setCommitSummary(null);
+
+      const rowsToSend =
+        strategy === "safe"
+          ? rows.filter((row) => {
+              if (!row.include) return false;
+              const description = typeof row.description === "string" ? row.description.trim() : "";
+              if (isPlaceholderDescription(description)) return false;
+              const meta = (row as ImportPreviewRow & { parserMeta?: ImportParserMeta }).parserMeta;
+              const confidence = typeof meta?.confidence === "number" ? meta.confidence : null;
+              const isLow =
+                Boolean(meta?.dubious) ||
+                (confidence != null && Number.isFinite(confidence) && confidence < 0.5);
+              if (isLow) return false;
+              return row.issues.length === 0;
+            })
+          : rows;
 
       const payload = {
         parser: preview.parser,
@@ -596,7 +726,7 @@ export function ImportTransactionsPanel(props: {
         appliedTemplateId: preview.appliedTemplate?.id ?? undefined,
         pdfMeta: preview.pdfMeta ?? undefined,
         pdfWarnings: preview.warnings ?? undefined,
-        rows: rows.map<ImportCommitRow>((row) => ({
+        rows: rowsToSend.map<ImportCommitRow>((row) => ({
           id: row.id,
           rowNumber: row.rowNumber,
           date: row.date ?? "",
@@ -804,7 +934,7 @@ export function ImportTransactionsPanel(props: {
               <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Plantilla aplicada</p>
               <p className="mt-1 text-sm font-semibold">
                 {preview.appliedTemplate
-                  ? `${preview.appliedTemplate.sourceType === "workspace" ? "Workspace" : "Sistema"} · ${preview.appliedTemplate.institution} · ${preview.appliedTemplate.name}`
+                  ? `${appliedTemplateTrust.status === "mismatch" || appliedTemplateTrust.status === "unconfirmed" ? "Por confirmar · " : ""}${preview.appliedTemplate.sourceType === "workspace" ? "Workspace" : "Sistema"} · ${preview.appliedTemplate.institution} · ${preview.appliedTemplate.name}`
                   : "Modo genérico"}
               </p>
             </div>
@@ -817,7 +947,7 @@ export function ImportTransactionsPanel(props: {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">PDF detectado</p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {typeof pdfMeta.institution === "string" ? pdfMeta.institution : "Estado de cuenta"}
+                  {detectorInstitutionLabel}
                   {typeof pdfMeta.brand === "string" ? ` · ${pdfMeta.brand}` : null}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -842,6 +972,37 @@ export function ImportTransactionsPanel(props: {
                     ? `· Período ${pdfMeta.billingPeriodStart} → ${pdfMeta.billingPeriodEnd}`
                     : null}
                 </p>
+                <div className="mt-2 rounded-2xl border border-slate-200 bg-white/70 px-3 py-2 text-xs text-slate-700">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-medium text-slate-900">Plantilla:</span>
+                    {preview.appliedTemplate ? (
+                      <>
+                        <span className="font-medium">
+                          {preview.appliedTemplate.institution} · {preview.appliedTemplate.name}
+                        </span>
+                        <span className="text-slate-500">
+                          (
+                          {appliedTemplateTrust.status === "confirmed"
+                            ? "confirmada"
+                            : appliedTemplateTrust.status === "manual"
+                              ? "manual"
+                              : appliedTemplateTrust.status === "generic"
+                                ? "genérica"
+                                : "por confirmar"}
+                          )
+                        </span>
+                      </>
+                    ) : (
+                      <span className="font-medium">Genérica</span>
+                    )}
+                  </div>
+                  {appliedTemplateTrust.status === "mismatch" ||
+                  appliedTemplateTrust.status === "unconfirmed" ? (
+                    <p className="mt-1 text-amber-800">
+                      {appliedTemplateTrust.reason}. Si las filas no se ven bien, cambia la plantilla y reinterpreta.
+                    </p>
+                  ) : null}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
                   {typeof pdfMeta.closingDate === "string" ? (
                     <span>Cierre: {pdfMeta.closingDate}</span>
@@ -884,6 +1045,19 @@ export function ImportTransactionsPanel(props: {
                   {pdfMeta.aiFallbackRecommended === true ? (
                     <span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700">
                       Revisión recomendada
+                    </span>
+                  ) : null}
+                  <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                    Descripciones: {previewRowMetrics.withRealDescription}/{normalizedRows.length}
+                  </span>
+                  {previewRowMetrics.withPlaceholderDescription > 0 ? (
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800">
+                      Placeholder: {previewRowMetrics.withPlaceholderDescription}
+                    </span>
+                  ) : null}
+                  {previewRowMetrics.lowConfidence > 0 ? (
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-800">
+                      Low confidence: {previewRowMetrics.lowConfidence}
                     </span>
                   ) : null}
                 </div>
@@ -952,7 +1126,14 @@ export function ImportTransactionsPanel(props: {
         {preview?.appliedTemplate ? (
           <div className="rounded-2xl border border-border bg-white/90 px-4 py-3 text-sm">
             <p className="font-medium">
-              Plantilla aplicada: {preview.appliedTemplate.institution} · {preview.appliedTemplate.name}
+              {appliedTemplateTrust.status === "confirmed"
+                ? "Plantilla aplicada"
+                : appliedTemplateTrust.status === "manual"
+                  ? "Plantilla seleccionada"
+                  : appliedTemplateTrust.status === "generic"
+                    ? "Plantilla genérica"
+                    : "Plantilla por confirmar"}
+              : {preview.appliedTemplate.institution} · {preview.appliedTemplate.name}
             </p>
             <p className="mt-1 text-neutral-500">
               Modo:{" "}
@@ -964,6 +1145,10 @@ export function ImportTransactionsPanel(props: {
               {" · "}
               confianza {Math.round(preview.appliedTemplate.confidence * 100)}%
             </p>
+            {appliedTemplateTrust.status === "mismatch" ||
+            appliedTemplateTrust.status === "unconfirmed" ? (
+              <p className="mt-2 text-xs text-amber-700">{appliedTemplateTrust.reason}.</p>
+            ) : null}
           </div>
         ) : null}
 
@@ -1034,7 +1219,7 @@ export function ImportTransactionsPanel(props: {
                 Corrige y clasifica antes de confirmar la importacion.
               </p>
             </div>
-            <Button onClick={handleCommit} disabled={committing || readyToImportCount === 0}>
+            <Button onClick={requestCommit} disabled={committing || readyToImportCount === 0}>
               {committing ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1045,6 +1230,51 @@ export function ImportTransactionsPanel(props: {
               )}
             </Button>
           </div>
+
+          {commitReviewOpen ? (
+            <SurfaceCard
+              variant="soft"
+              padding="sm"
+              className="border-amber-200 bg-amber-50/80 text-sm text-amber-800"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-900">
+                Revisión rápida antes de guardar
+              </p>
+              <p className="mt-1">
+                Estás por guardar <span className="font-semibold">{commitQuality.includedCount}</span>{" "}
+                filas incluidas, pero hay señales de baja calidad.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <span className="inline-flex rounded-full border border-amber-200 bg-white px-2.5 py-1 font-medium">
+                  Placeholder: {commitQuality.placeholderCount}
+                </span>
+                <span className="inline-flex rounded-full border border-amber-200 bg-white px-2.5 py-1 font-medium">
+                  Low confidence: {commitQuality.lowConfidenceCount}
+                </span>
+                <span className="inline-flex rounded-full border border-amber-200 bg-white px-2.5 py-1 font-medium">
+                  Para revisar: {commitQuality.needsReviewCount}
+                </span>
+                <span className="inline-flex rounded-full border border-amber-200 bg-white px-2.5 py-1 font-medium">
+                  Confiables: {commitQuality.safeCount}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button variant="secondary" onClick={() => setCommitReviewOpen(false)} disabled={committing}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleCommit("safe")}
+                  disabled={committing || commitQuality.safeCount === 0}
+                >
+                  Guardar solo confiables ({commitQuality.safeCount})
+                </Button>
+                <Button onClick={() => void handleCommit("all")} disabled={committing}>
+                  Guardar todo igual
+                </Button>
+              </div>
+            </SurfaceCard>
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
             {(["all", "normal", "installments"] as const).map((value) => (
@@ -1179,6 +1409,13 @@ export function ImportTransactionsPanel(props: {
                           updateRow(row.id, { description: event.target.value })
                         }
                       />
+                      {!installmentPreview.descriptionBase &&
+                      typeof row.description === "string" &&
+                      isPlaceholderDescription(row.description) ? (
+                        <p className="text-xs text-amber-700">
+                          Descripción faltante: este valor es un placeholder. Revísalo antes de guardar.
+                        </p>
+                      ) : null}
 
                       {installmentPreview.isInstallmentPurchase ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
