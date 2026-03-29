@@ -131,7 +131,51 @@ export async function previewImportFile(input: {
       const lines = rawText
         .split(/\r?\n/)
         .map((line) => line.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim())
-        .filter(Boolean);
+        .filter((line) => line.length > 0);
+
+      // Always build a fallback row list from text so the UI can show something editable
+      // even when IA/template parsing fails.
+      const extractDate = (value: string) => {
+        const match = value.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+        return match?.[1] ?? null;
+      };
+
+      const parseChileanAmountToken = (token: string) => {
+        const trimmed = token.trim();
+        if (!trimmed) return null;
+        const negative = trimmed.includes("(") || trimmed.startsWith("-");
+        const sanitized = trimmed.replace(/[$()\s-]/g, "");
+        const normalized = sanitized.includes(",")
+          ? sanitized.replace(/\./g, "").replace(",", ".")
+          : sanitized.replace(/\./g, "");
+        const parsed = Number(normalized);
+        if (!Number.isFinite(parsed)) return null;
+        return negative ? -Math.abs(parsed) : parsed;
+      };
+
+      const extractAmount = (value: string) => {
+        // Matches: 30.000, 5.140.163, (18.990), -1.200, $ 12.345, 1.234,56
+        const match = value.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?/);
+        return match ? parseChileanAmountToken(match[0]) : null;
+      };
+
+      const cleanedLines = lines.map((l) => l.trim()).filter(Boolean);
+      const meaningfulLines = cleanedLines.filter((l) => l.length > 5);
+      const fallbackLines = meaningfulLines.length > 0 ? meaningfulLines : cleanedLines;
+      const ensuredLines =
+        fallbackLines.length > 0
+          ? fallbackLines
+          : rawText.trim().length > 0
+            ? [rawText.trim().slice(0, 400)]
+            : [];
+
+      const rowsFallback = ensuredLines.map((line, index) => ({
+        rowNumber: index + 1,
+        description: line,
+        amount: extractAmount(line),
+        date: extractDate(line),
+        needsReview: true
+      })) as Array<Record<string, unknown>>;
 
       const pdfDebug: {
         aiUsed: boolean;
@@ -213,10 +257,10 @@ export async function previewImportFile(input: {
 
           parsed = {
             parser: "pdf",
-            rows,
+            rows: rows.length === 0 ? rowsFallback : rows,
             headers: ["fecha", "descripcion", "cargo", "abono"],
             warnings: ai.warnings,
-            supported: rows.length > 0,
+            supported: (rows.length === 0 ? rowsFallback : rows).length > 0,
             meta: {
               kind: "ai-pdf-import",
               statement: {
@@ -231,7 +275,7 @@ export async function previewImportFile(input: {
                 creditUsed: ai.preview.creditLimitUsed,
                 creditAvailable: ai.preview.creditLimitAvailable,
                 parserConfidence: ai.confidence,
-                parsedMovements: rows.length,
+                parsedMovements: (rows.length === 0 ? rowsFallback : rows).length,
                 dubiousMovements: dubiousCount,
                 missingFields,
                 aiFallbackRecommended: ai.preview.summaryNeedsReview === true
@@ -277,16 +321,23 @@ export async function previewImportFile(input: {
         } else {
           parsed = {
             parser: "pdf",
-            rows: lines.map((line, i) => ({ id: i, raw: line, description: line })),
-            headers: ["raw"],
+            rows: rowsFallback.length > 0 ? rowsFallback : lines.map((line, i) => ({ rowNumber: i + 1, description: line, needsReview: true })),
+            headers: ["date", "description", "amount"],
             warnings: [
               aiStatusWarning,
               "No se pudo estructurar automáticamente este PDF. Puedes revisar y editar manualmente los movimientos antes de guardar."
             ].filter((v): v is string => typeof v === "string" && v.trim().length > 0),
-            supported: true
+            supported: (rowsFallback.length > 0 ? rowsFallback : lines).length > 0
           };
           (parsed as unknown as Record<string, unknown>).debug = pdfDebug;
         }
+      }
+
+      // Final backstop: never return a PDF preview with zero rows if we had text.
+      if (parsed && parsed.parser === "pdf" && Array.isArray(parsed.rows) && parsed.rows.length === 0) {
+        parsed.rows = rowsFallback;
+        parsed.headers = ["date", "description", "amount"];
+        parsed.supported = rowsFallback.length > 0;
       }
     }
   }
