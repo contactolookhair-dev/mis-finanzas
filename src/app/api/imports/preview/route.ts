@@ -116,6 +116,9 @@ function resolveFunctionalPreviewMessage(params: { stage: string; errorMessage?:
   return getFriendlyPreviewError(errorMessage);
 }
 
+// Ensure this route is always treated as dynamic in Next.js App Router.
+// This avoids accidental static optimization and guarantees request body parsing is available.
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
@@ -173,6 +176,7 @@ export async function POST(request: Request) {
     // even if auth/workspace context is missing.
     stage = "read_form_data";
     recordStage(stage);
+    console.log("[imports/preview] about to read formData");
     formData = await request.formData();
     const keys = Array.from(formData.keys()).slice(0, 50);
     const rawFile = formData.get("file");
