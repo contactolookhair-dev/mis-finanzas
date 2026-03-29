@@ -108,6 +108,12 @@ export type AiStructurePdfResult =
         geminiStatus: number | null;
         geminiError: string | null;
         geminiBody?: string;
+        modelDiscovery?: {
+          chosenApiVersion: "v1" | "v1beta" | null;
+          chosenCount: number;
+          v1?: { ok: boolean; status: number | null; count: number; error?: string };
+          v1beta?: { ok: boolean; status: number | null; count: number; error?: string };
+        };
       };
     }
   | {
@@ -121,6 +127,12 @@ export type AiStructurePdfResult =
         geminiStatus: number | null;
         geminiError: string | null;
         geminiBody?: string;
+        modelDiscovery?: {
+          chosenApiVersion: "v1" | "v1beta" | null;
+          chosenCount: number;
+          v1?: { ok: boolean; status: number | null; count: number; error?: string };
+          v1beta?: { ok: boolean; status: number | null; count: number; error?: string };
+        };
       };
     };
 
@@ -155,10 +167,14 @@ type GeminiApiVersion = "v1" | "v1beta";
 const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
 const modelCache: Partial<Record<GeminiApiVersion, { fetchedAt: number; models: string[] }>> = {};
 
-async function listGeminiModels(params: { apiKey: string; apiVersion: GeminiApiVersion }): Promise<string[] | null> {
+type ListModelsResult =
+  | { ok: true; apiVersion: GeminiApiVersion; models: string[]; status: number }
+  | { ok: false; apiVersion: GeminiApiVersion; models: []; status: number | null; error: string };
+
+async function listGeminiModels(params: { apiKey: string; apiVersion: GeminiApiVersion }): Promise<ListModelsResult> {
   const cached = modelCache[params.apiVersion];
   if (cached && Date.now() - cached.fetchedAt < MODEL_CACHE_TTL_MS) {
-    return cached.models;
+    return { ok: true, apiVersion: params.apiVersion, models: cached.models, status: 200 };
   }
 
   const url = `https://generativelanguage.googleapis.com/${params.apiVersion}/models?key=${encodeURIComponent(
@@ -176,7 +192,13 @@ async function listGeminiModels(params: { apiKey: string; apiVersion: GeminiApiV
     if (!res.ok) {
       const bodyText = await res.text().catch(() => "");
       console.warn("[imports/ai] listModels failed", { api: params.apiVersion, status: res.status, body: bodyText });
-      return null;
+      return {
+        ok: false,
+        apiVersion: params.apiVersion,
+        models: [],
+        status: res.status,
+        error: (bodyText || `HTTP_${res.status}`).slice(0, 1600)
+      };
     }
 
     const payload = (await res.json()) as {
@@ -196,16 +218,28 @@ async function listGeminiModels(params: { apiKey: string; apiVersion: GeminiApiV
 
     if (models.length > 0) {
       modelCache[params.apiVersion] = { fetchedAt: Date.now(), models };
-      return models;
+      return { ok: true, apiVersion: params.apiVersion, models, status: res.status };
     }
 
-    return null;
+    return {
+      ok: false,
+      apiVersion: params.apiVersion,
+      models: [],
+      status: res.status,
+      error: "empty_models"
+    };
   } catch (error) {
     console.warn("[imports/ai] listModels exception", {
       api: params.apiVersion,
       message: error instanceof Error ? error.message : String(error)
     });
-    return null;
+    return {
+      ok: false,
+      apiVersion: params.apiVersion,
+      models: [],
+      status: null,
+      error: error instanceof Error ? error.message : String(error)
+    };
   }
 }
 
@@ -242,17 +276,33 @@ export async function structurePdfTextWithAI(input: {
   // Prefer flash variants for cost/perf.
   let discoveredApiVersion: GeminiApiVersion | null = null;
   let discoveredModels: string[] = [];
-  const discoveredV1 = await listGeminiModels({ apiKey, apiVersion: "v1" });
-  if (discoveredV1 && discoveredV1.length > 0) {
+  const listV1 = await listGeminiModels({ apiKey, apiVersion: "v1" });
+  const listV1beta = await listGeminiModels({ apiKey, apiVersion: "v1beta" });
+
+  if (listV1.ok && listV1.models.length > 0) {
     discoveredApiVersion = "v1";
-    discoveredModels = discoveredV1;
-  } else {
-    const discoveredV1beta = await listGeminiModels({ apiKey, apiVersion: "v1beta" });
-    if (discoveredV1beta && discoveredV1beta.length > 0) {
-      discoveredApiVersion = "v1beta";
-      discoveredModels = discoveredV1beta;
-    }
+    discoveredModels = listV1.models;
+  } else if (listV1beta.ok && listV1beta.models.length > 0) {
+    discoveredApiVersion = "v1beta";
+    discoveredModels = listV1beta.models;
   }
+
+  const modelDiscoveryDebug = {
+    chosenApiVersion: discoveredApiVersion,
+    chosenCount: discoveredModels.length,
+    v1: {
+      ok: listV1.ok,
+      status: listV1.status,
+      count: listV1.ok ? listV1.models.length : 0,
+      ...(listV1.ok ? {} : { error: listV1.error })
+    },
+    v1beta: {
+      ok: listV1beta.ok,
+      status: listV1beta.status,
+      count: listV1beta.ok ? listV1beta.models.length : 0,
+      ...(listV1beta.ok ? {} : { error: listV1beta.error })
+    }
+  } as const;
 
   const preferFlash = (m: string) => m.toLowerCase().includes("flash");
   const discoveredSorted = discoveredModels.length
@@ -366,7 +416,7 @@ export async function structurePdfTextWithAI(input: {
         lastHttpStatus = res.status;
         console.log("[imports/ai] gemini status:", res.status, "model:", candidateModel, "api:", apiVersion);
 
-        if (!res.ok) {
+      if (!res.ok) {
           const bodyText = await res.text().catch(() => "");
           lastHttpBodyText = bodyText;
           lastErrorBody = bodyText || `HTTP_${res.status}`;
@@ -396,7 +446,8 @@ export async function structurePdfTextWithAI(input: {
               geminiApiVersion: apiVersion,
               geminiStatus: res.status,
               geminiError: bodyText ? bodyText.slice(0, 1200) : `HTTP_${res.status}`,
-              geminiBody: includeDevBody ? bodyText : undefined
+              geminiBody: includeDevBody ? bodyText : undefined,
+              modelDiscovery: modelDiscoveryDebug
             }
           };
         }
@@ -419,7 +470,8 @@ export async function structurePdfTextWithAI(input: {
             geminiModel: candidateModel,
             geminiApiVersion: lastApiVersionTried,
             geminiStatus: lastHttpStatus,
-            geminiError: (lastHttpBodyText || lastErrorBody || "unknown_error").slice(0, 1200)
+            geminiError: (lastHttpBodyText || lastErrorBody || "unknown_error").slice(0, 1200),
+            modelDiscovery: modelDiscoveryDebug
           }
         };
       }
@@ -440,7 +492,8 @@ export async function structurePdfTextWithAI(input: {
             geminiApiVersion,
             geminiStatus,
             geminiError: "invalid_json",
-            geminiBody: includeDevBody ? geminiBody : undefined
+            geminiBody: includeDevBody ? geminiBody : undefined,
+            modelDiscovery: modelDiscoveryDebug
           }
         };
       }
@@ -468,7 +521,8 @@ export async function structurePdfTextWithAI(input: {
           geminiApiVersion,
           geminiStatus,
           geminiError: null,
-          geminiBody: includeDevBody ? geminiBody : undefined
+          geminiBody: includeDevBody ? geminiBody : undefined,
+          modelDiscovery: modelDiscoveryDebug
         }
       };
     }
@@ -483,7 +537,8 @@ export async function structurePdfTextWithAI(input: {
         geminiModel,
         geminiApiVersion,
         geminiStatus: lastStatus,
-        geminiError: (lastErrorBody ?? "unknown_error").slice(0, 1200)
+        geminiError: (lastErrorBody ?? "unknown_error").slice(0, 1200),
+        modelDiscovery: modelDiscoveryDebug
       }
     };
 
@@ -504,7 +559,8 @@ export async function structurePdfTextWithAI(input: {
         geminiApiVersion,
         geminiStatus,
         geminiError: errMessage,
-        geminiBody: includeDevBody ? geminiBody : undefined
+        geminiBody: includeDevBody ? geminiBody : undefined,
+        modelDiscovery: modelDiscoveryDebug
       }
     };
   }
