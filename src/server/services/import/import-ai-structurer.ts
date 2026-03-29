@@ -60,11 +60,87 @@ function parseChileanMoneyLike(input: string) {
   return negative ? -Math.abs(parsed) : parsed;
 }
 
-const numberLikeSchema = z.preprocess((value) => {
+const moneyLikeNullableSchema = z.preprocess((value) => {
   if (typeof value === "number") return value;
   if (typeof value === "string") return parseChileanMoneyLike(value);
-  return value;
-}, z.number());
+  // Make schema tolerant to missing/unknown values; we normalize later.
+  return null;
+}, z.number().nullable());
+
+const moneyLikeOptionalSchema = moneyLikeNullableSchema.nullable().optional().default(null);
+
+function extractMoneyFromText(value: string) {
+  // Pick the largest absolute CL-style token (statements often repeat the same amount).
+  const tokenRe = /-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/g;
+  const tokens = Array.from(value.matchAll(tokenRe)).map((m) => m[0]).filter(Boolean);
+  let best: number | null = null;
+  for (const token of tokens) {
+    const parsed = parseChileanMoneyLike(token);
+    if (typeof parsed !== "number" || !Number.isFinite(parsed)) continue;
+    if (best == null || Math.abs(parsed) > Math.abs(best)) best = parsed;
+  }
+  return best;
+}
+
+const aiTransactionSchema = z
+  .object({
+    date: z.string().nullable().optional().default(null),
+    merchant: z.string().default(""),
+    // Gemini may return different field names for the amount; we normalize post-parse.
+    amount: moneyLikeOptionalSchema,
+    postedAmount: moneyLikeOptionalSchema,
+    chargeAmount: moneyLikeOptionalSchema,
+    installmentAmount: moneyLikeOptionalSchema,
+    totalAmount: moneyLikeOptionalSchema,
+    value: moneyLikeOptionalSchema,
+    monto: moneyLikeOptionalSchema,
+    direction: directionSchema.optional().default("debit"),
+    type: txTypeSchema.optional().default("other"),
+    categorySuggestion: z.string().nullable().optional().default(null),
+    descriptionRaw: z.string().nullable().optional().default(null),
+    installment: z
+      .object({
+        isInstallment: z.boolean().optional().default(false),
+        installmentCurrent: z.number().int().nullable(),
+        installmentTotal: z.number().int().nullable(),
+        installmentsRemaining: z.number().int().nullable(),
+        installmentAmount: moneyLikeOptionalSchema,
+        originalAmount: moneyLikeOptionalSchema
+      })
+      .default({
+        isInstallment: false,
+        installmentCurrent: null,
+        installmentTotal: null,
+        installmentsRemaining: null,
+        installmentAmount: null,
+        originalAmount: null
+      }),
+    needsReview: z.boolean().optional().default(true)
+  })
+  .default({
+    date: null,
+    merchant: "",
+    amount: null,
+    postedAmount: null,
+    chargeAmount: null,
+    installmentAmount: null,
+    totalAmount: null,
+    value: null,
+    monto: null,
+    direction: "debit",
+    type: "other",
+    categorySuggestion: null,
+    descriptionRaw: null,
+    installment: {
+      isInstallment: false,
+      installmentCurrent: null,
+      installmentTotal: null,
+      installmentsRemaining: null,
+      installmentAmount: null,
+      originalAmount: null
+    },
+    needsReview: true
+  });
 
 const aiImportPreviewSchema = z.object({
   documentType: documentTypeSchema.default("unknown"),
@@ -72,44 +148,14 @@ const aiImportPreviewSchema = z.object({
   accountName: z.string().nullable().optional().default(null),
   statementDate: z.string().nullable().optional().default(null),
   dueDate: z.string().nullable().optional().default(null),
-  billedTotal: numberLikeSchema.nullable().optional().default(null),
-  minimumPayment: numberLikeSchema.nullable().optional().default(null),
-  creditLimitTotal: numberLikeSchema.nullable().optional().default(null),
-  creditLimitUsed: numberLikeSchema.nullable().optional().default(null),
-  creditLimitAvailable: numberLikeSchema.nullable().optional().default(null),
+  billedTotal: moneyLikeOptionalSchema,
+  minimumPayment: moneyLikeOptionalSchema,
+  creditLimitTotal: moneyLikeOptionalSchema,
+  creditLimitUsed: moneyLikeOptionalSchema,
+  creditLimitAvailable: moneyLikeOptionalSchema,
   currency: currencySchema.default("UNKNOWN"),
   summaryNeedsReview: z.boolean().optional().default(true),
-  transactions: z
-    .array(
-      z.object({
-        date: z.string().nullable().optional().default(null),
-        merchant: z.string().default(""),
-        amount: numberLikeSchema,
-        direction: directionSchema.optional().default("debit"),
-        type: txTypeSchema.optional().default("other"),
-        categorySuggestion: z.string().nullable().optional().default(null),
-        descriptionRaw: z.string().nullable().optional().default(null),
-        installment: z
-          .object({
-            isInstallment: z.boolean().optional().default(false),
-            installmentCurrent: z.number().int().nullable(),
-            installmentTotal: z.number().int().nullable(),
-            installmentsRemaining: z.number().int().nullable(),
-            installmentAmount: numberLikeSchema.nullable(),
-            originalAmount: numberLikeSchema.nullable()
-          })
-          .default({
-            isInstallment: false,
-            installmentCurrent: null,
-            installmentTotal: null,
-            installmentsRemaining: null,
-            installmentAmount: null,
-            originalAmount: null
-          }),
-        needsReview: z.boolean().optional().default(true)
-      })
-    )
-    .default([])
+  transactions: z.array(aiTransactionSchema).default([])
 });
 
 export type AiImportPreview = z.infer<typeof aiImportPreviewSchema>;
@@ -274,6 +320,57 @@ async function listGeminiModels(params: { apiKey: string; apiVersion: GeminiApiV
       error: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+function normalizeAiPreview(preview: AiImportPreview) {
+  const debug = process.env.DEBUG_IMPORT_PREVIEW === "true";
+
+  const normalizedTransactions = preview.transactions.map((tx, idx) => {
+    const candidates: Array<{ key: string; value: number | null }> = [
+      { key: "amount", value: typeof tx.amount === "number" ? tx.amount : null },
+      { key: "postedAmount", value: typeof tx.postedAmount === "number" ? tx.postedAmount : null },
+      { key: "chargeAmount", value: typeof tx.chargeAmount === "number" ? tx.chargeAmount : null },
+      { key: "installmentAmount", value: typeof tx.installmentAmount === "number" ? tx.installmentAmount : null },
+      { key: "totalAmount", value: typeof tx.totalAmount === "number" ? tx.totalAmount : null },
+      { key: "value", value: typeof tx.value === "number" ? tx.value : null },
+      { key: "monto", value: typeof tx.monto === "number" ? tx.monto : null }
+    ];
+
+    const fromField = candidates.find((c) => typeof c.value === "number" && Number.isFinite(c.value)) ?? null;
+    let amount: number | null = fromField?.value ?? null;
+    let amountSource: string | null = fromField?.key ?? null;
+
+    if (amount == null) {
+      const text = [
+        typeof tx.descriptionRaw === "string" ? tx.descriptionRaw : "",
+        typeof tx.merchant === "string" ? tx.merchant : ""
+      ]
+        .join(" ")
+        .trim();
+      const fromText = text ? extractMoneyFromText(text) : null;
+      if (typeof fromText === "number" && Number.isFinite(fromText)) {
+        amount = fromText;
+        amountSource = "text";
+      }
+    }
+
+    const merchantTrimmed = typeof tx.merchant === "string" ? tx.merchant.trim() : "";
+    const needsReview = tx.needsReview === true || amount == null || merchantTrimmed.length === 0;
+
+    if (debug && idx < 10) {
+      console.log("[imports/ai] tx normalize", {
+        index: idx + 1,
+        amountSource,
+        amount,
+        merchant: merchantTrimmed ? merchantTrimmed.slice(0, 80) : null,
+        descriptionRaw: typeof tx.descriptionRaw === "string" ? tx.descriptionRaw.slice(0, 120) : null
+      });
+    }
+
+    return { ...tx, amount, needsReview };
+  });
+
+  return { ...preview, transactions: normalizedTransactions };
 }
 
 export async function structurePdfTextWithAI(input: {
@@ -547,7 +644,29 @@ export async function structurePdfTextWithAI(input: {
         };
       }
 
-      const preview = aiImportPreviewSchema.parse(parsedJson);
+      const parsed = aiImportPreviewSchema.safeParse(parsedJson);
+      if (!parsed.success) {
+        const issues = parsed.error.issues
+          .slice(0, 10)
+          .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
+        return {
+          ok: false,
+          error: "ai_invalid_response",
+          message: "La IA devolvió JSON, pero no pasó validación.",
+          debug: {
+            geminiKeyPresent,
+            geminiModel: candidateModel,
+            geminiApiVersion,
+            geminiStatus,
+            geminiError: `zod_validation_failed: ${issues.join(" | ")}`.slice(0, 1200),
+            geminiBody: includeDevBody ? geminiBody : undefined,
+            modelDiscovery: modelDiscoveryDebug,
+            geminiAttempts: attempts.slice(0, 20)
+          }
+        };
+      }
+
+      const preview = normalizeAiPreview(parsed.data);
 
       const warnings: string[] = [];
       if (preview.summaryNeedsReview) warnings.push("La IA marcó el resumen como 'requiere revisión'.");

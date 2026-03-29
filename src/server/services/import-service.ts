@@ -677,8 +677,16 @@ export async function previewImportFile(input: {
               const cleanedText = cleanMerchantForPreview(stripLeadingCity(bestLineFromRaw));
               let merchant = cleanedText.length > 0 ? cleanedText : "Movimiento";
 
-              if (merchant === "Movimiento" && normalizedDate && typeof tx.amount === "number") {
-                const key = `${normalizedDate}|${Math.round(Math.abs(tx.amount))}`;
+              const amountFromAi =
+                typeof tx.amount === "number" && Number.isFinite(tx.amount) ? tx.amount : null;
+              const amountFromText = extractAmount(bestLineFromRaw);
+              const amountRaw =
+                amountFromAi ??
+                (typeof amountFromText === "number" && Number.isFinite(amountFromText) ? amountFromText : null);
+              const amountSource = amountFromAi != null ? "ai.amount" : amountRaw != null ? "text" : null;
+
+              if (merchant === "Movimiento" && normalizedDate && typeof amountRaw === "number") {
+                const key = `${normalizedDate}|${Math.round(Math.abs(amountRaw))}`;
                 const matchedLine = lineIndex.get(key) ?? null;
                 if (matchedLine) {
                   const lineClean = normalizeSpace(matchedLine);
@@ -728,13 +736,15 @@ export async function previewImportFile(input: {
                     }
                   : null;
 
-              const amount = Math.abs(tx.amount);
+              const amount = typeof amountRaw === "number" ? Math.abs(amountRaw) : 0;
               const inferredDirection: "debit" | "credit" =
                 tx.direction ??
-                (() => {
-                  const inferredKind = classifyCreditCardKind(merchant, "debit");
-                  return inferredKind === "payment" || inferredKind === "refund" ? "credit" : "debit";
-                })();
+                (typeof amountRaw === "number" && amountRaw < 0
+                  ? "credit"
+                  : (() => {
+                      const inferredKind = classifyCreditCardKind(merchant, "debit");
+                      return inferredKind === "payment" || inferredKind === "refund" ? "credit" : "debit";
+                    })());
 
               const kind = classifyCreditCardKind(merchant, inferredDirection);
               const kindWithInstallment = isInstallment && kind === "purchase" ? "installment_purchase" : kind;
@@ -755,6 +765,7 @@ export async function previewImportFile(input: {
                 tx.needsReview === true ||
                 confidence.level === "low" ||
                 merchant === "Movimiento" ||
+                amount === 0 ||
                 kindWithInstallment === "purchase" && merchant.length < 4;
 
               const cuotaActual = isInstallment ? (effectiveInstallment?.cuotaActual ?? null) : null;
@@ -772,6 +783,8 @@ export async function previewImportFile(input: {
                   dateRaw: typeof tx.date === "string" ? tx.date : null,
                   dateNormalized: normalizedDate,
                   merchantRaw: typeof tx.merchant === "string" ? tx.merchant : null,
+                  amountRaw: typeof amountRaw === "number" ? amountRaw : null,
+                  amountSource,
                   descriptionRaw: typeof tx.descriptionRaw === "string" ? tx.descriptionRaw.slice(0, 120) : null,
                   merchantFinal: merchant,
                   installmentLabelRaw:
@@ -789,8 +802,8 @@ export async function previewImportFile(input: {
                 fecha: normalizedDate ?? tx.date ?? null,
                 descripcion: merchant,
                 descripcionBase: merchant,
-                cargo: inferredDirection === "debit" ? amount : undefined,
-                abono: inferredDirection === "credit" ? amount : undefined,
+                cargo: inferredDirection === "debit" && amount > 0 ? amount : undefined,
+                abono: inferredDirection === "credit" && amount > 0 ? amount : undefined,
                 esCompraEnCuotas: isInstallment,
                 cuotaActual,
                 cuotaTotal,
