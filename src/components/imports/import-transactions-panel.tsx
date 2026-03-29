@@ -153,7 +153,10 @@ function getInstallmentPreview(row: ImportPreviewRow) {
         : null;
 
   const isInstallmentPurchase =
-    data.esCompraEnCuotas === true || data.isInstallmentPurchase === true;
+    data.esCompraEnCuotas === true ||
+    data.isInstallmentPurchase === true ||
+    (typeof data.cuotaTotal === "number" && data.cuotaTotal > 1) ||
+    (typeof data.totalInstallments === "number" && data.totalInstallments > 1);
 
   const currentInstallment =
     typeof data.cuotaActual === "number"

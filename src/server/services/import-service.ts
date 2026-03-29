@@ -723,7 +723,16 @@ export async function previewImportFile(input: {
 
               // IMPORTANT: installment ratios like "03/06" usually live in the raw line;
               // our merchant cleaning removes them, so extract from the raw best line.
-              const installmentFromText = extractInstallmentFromText(bestLineFromRaw);
+              // If Gemini didn't include the ratio in descriptionRaw, try to recover it from the
+              // original PDF line using our date+amount index.
+              let installmentFromText = extractInstallmentFromText(bestLineFromRaw);
+              if (!installmentFromText && normalizedDate && typeof amountRaw === "number") {
+                const key = `${normalizedDate}|${Math.round(Math.abs(amountRaw))}`;
+                const matchedLine = lineIndex.get(key) ?? null;
+                if (matchedLine) {
+                  installmentFromText = extractInstallmentFromText(matchedLine);
+                }
+              }
               const isInstallmentFromAI =
                 tx.installment?.isInstallment === true &&
                 typeof tx.installment.installmentTotal === "number" &&
