@@ -294,12 +294,14 @@ export async function structurePdfTextWithAI(input: {
       ok: listV1.ok,
       status: listV1.status,
       count: listV1.ok ? listV1.models.length : 0,
+      ...(listV1.ok ? { sample: listV1.models.slice(0, 12) } : {}),
       ...(listV1.ok ? {} : { error: listV1.error })
     },
     v1beta: {
       ok: listV1beta.ok,
       status: listV1beta.status,
       count: listV1beta.ok ? listV1beta.models.length : 0,
+      ...(listV1beta.ok ? { sample: listV1beta.models.slice(0, 12) } : {}),
       ...(listV1beta.ok ? {} : { error: listV1beta.error })
     }
   } as const;
