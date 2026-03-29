@@ -130,12 +130,8 @@ async function parseMultipartUpload(request: Request): Promise<{
   if (!contentType.toLowerCase().includes("multipart/form-data")) {
     throw new Error(`invalid_content_type:${contentType || "missing"}`);
   }
-  if (!request.body) {
-    throw new Error("missing_request_body");
-  }
 
   const { default: Busboy } = await import("busboy");
-  const { Readable, Transform } = await import("node:stream");
 
   const bb = Busboy({
     headers: {
@@ -161,14 +157,8 @@ async function parseMultipartUpload(request: Request): Promise<{
     });
   });
 
-  const raw = Readable.fromWeb(request.body as any);
-  let rawBodySize = 0;
-  const counter = new Transform({
-    transform(chunk, _enc, cb) {
-      rawBodySize += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
-      cb(null, chunk);
-    }
-  });
+  const arrayBuffer = await request.arrayBuffer();
+  const rawBodySize = arrayBuffer.byteLength;
 
   const done = new Promise<{
     rawBodySize: number;
@@ -195,7 +185,7 @@ async function parseMultipartUpload(request: Request): Promise<{
     });
   });
 
-  raw.pipe(counter).pipe(bb);
+  bb.end(Buffer.from(arrayBuffer));
   return done;
 }
 
