@@ -7,6 +7,7 @@ export type InicioWidgetId =
   | "creditAttention"
   | "coach"
   | "priorities"
+  | "categoryBreakdown"
   | "debtors"
   | "upcomingInstallments"
   | "upcomingPayables"
@@ -117,6 +118,21 @@ export const inicioWidgetDefinitions: InicioWidgetDefinitionBase[] = [
     },
     priority: 40,
     mobileBehavior: "compact-list",
+    placement: "modular"
+  },
+  {
+    widgetId: "categoryBreakdown",
+    title: "Categorías del mes",
+    description: "Top categorías del mes y cómo cambiaron vs el mes anterior.",
+    category: "Planeacion",
+    enabledByDefault: true,
+    supportedSizes: ["standard", "featured"],
+    emptyState: {
+      title: "Sin gasto por categorías",
+      description: "Cuando clasifiques movimientos, verás aquí el análisis mensual."
+    },
+    priority: 45,
+    mobileBehavior: "stack",
     placement: "modular"
   },
   {

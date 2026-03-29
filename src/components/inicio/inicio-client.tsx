@@ -36,6 +36,7 @@ import { OverduePendingsWidget } from "@/components/inicio/widgets/overdue-pendi
 import { RecentMovementsWidget } from "@/components/inicio/widgets/recent-movements-widget";
 import { MonthFlowWidget } from "@/components/inicio/widgets/month-flow-widget";
 import { FinancialHealthWidget } from "@/components/inicio/widgets/financial-health-widget";
+import { CategoryBreakdownWidget } from "@/components/inicio/widgets/category-breakdown-widget";
 import {
   buildInicioWidgetRegistry,
   defaultInicioVisibleWidgets,
@@ -147,6 +148,7 @@ export function InicioClient() {
     creditAttention: "standard",
     coach: "standard",
     priorities: "standard",
+    categoryBreakdown: "standard",
     debtors: "standard",
     upcomingInstallments: "standard",
     upcomingPayables: "standard",
@@ -994,6 +996,7 @@ export function InicioClient() {
             </div>
           </SurfaceCard>
         ),
+        categoryBreakdown: (size) => <CategoryBreakdownWidget size={size} />,
         debtors: (size) => (
           <DebtorsWidget
             data={debtsSnapshot}
