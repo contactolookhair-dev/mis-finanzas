@@ -477,6 +477,8 @@ export function ImportTransactionsPanel(props: {
 
       const response = await fetch("/api/imports/preview", {
         method: "POST",
+        // Be explicit: the preview route is workspace/auth protected and needs cookies in production.
+        credentials: "include",
         headers: {
           Accept: "application/json"
         },
