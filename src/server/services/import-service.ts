@@ -564,11 +564,30 @@ export async function previewImportFile(input: {
           for (const line of lines) {
             const dmy = extractDate(line);
             const ymd = dmy ? toYmdFromDmy(dmy) : null;
-            const amt = extractAmount(line);
-            const absAmt = typeof amt === "number" ? Math.abs(amt) : null;
-            if (!ymd || absAmt == null) continue;
-            const key = `${ymd}|${Math.round(absAmt)}`;
-            if (!lineIndex.has(key)) lineIndex.set(key, line);
+            if (!ymd) continue;
+
+            // Index by all money-looking tokens on the line, not just the largest one.
+            // CMR lines often repeat amounts and include additional figures (e.g., cuota/total).
+            const moneyLike = /-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/g;
+            const tokens = Array.from(line.matchAll(moneyLike)).map((m) => m[0]);
+            const amounts: number[] = [];
+            for (const token of tokens) {
+              const parsed = parseChileanAmountToken(token);
+              if (typeof parsed === "number" && Number.isFinite(parsed)) {
+                amounts.push(Math.round(Math.abs(parsed)));
+              }
+            }
+
+            // Also include the legacy "best amount" as a backstop.
+            const best = extractAmount(line);
+            if (typeof best === "number" && Number.isFinite(best)) {
+              amounts.push(Math.round(Math.abs(best)));
+            }
+
+            for (const absAmt of Array.from(new Set(amounts))) {
+              const key = `${ymd}|${absAmt}`;
+              if (!lineIndex.has(key)) lineIndex.set(key, line);
+            }
           }
 
           const rows = transactions
