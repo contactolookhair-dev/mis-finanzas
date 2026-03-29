@@ -750,6 +750,110 @@ function AccountDetailModal({
     };
   }, [selectedStatement]);
 
+  const previousStatementBreakdown = useMemo(() => {
+    if (!previousStatement) return null;
+
+    const totals = previousStatement.totals ?? ({} as StatementItem["totals"]);
+    const purchasesInstallments =
+      typeof totals.purchasesInstallments === "number" ? totals.purchasesInstallments : 0;
+    const purchasesNormal =
+      typeof totals.purchasesNormal === "number"
+        ? totals.purchasesNormal
+        : Math.max(0, (totals.purchases ?? 0) - purchasesInstallments);
+
+    const paymentsOnly =
+      typeof totals.paymentsOnly === "number" ? totals.paymentsOnly : totals.payments ?? 0;
+    const refunds = typeof totals.refunds === "number" ? totals.refunds : 0;
+
+    const interest = totals.interest ?? 0;
+    const fees = totals.fees ?? 0;
+    const cashAdvances = totals.cashAdvances ?? 0;
+    const insurance = totals.insurance ?? 0;
+
+    const spent = purchasesNormal + purchasesInstallments + cashAdvances;
+    const billed =
+      previousStatement.summary.totalBilled === null || previousStatement.summary.totalBilled === undefined
+        ? spent + interest + fees + insurance
+        : previousStatement.summary.totalBilled;
+    const remaining = Math.max(0, billed - paymentsOnly);
+
+    return {
+      purchasesNormal,
+      purchasesInstallments,
+      cashAdvances,
+      interest,
+      fees,
+      insurance,
+      paymentsOnly,
+      refunds,
+      spent,
+      billed,
+      remaining
+    };
+  }, [previousStatement]);
+
+  const statementComparison = useMemo(() => {
+    if (!selectedStatementBreakdown || !previousStatementBreakdown) return null;
+
+    const spendDelta = formatDelta(selectedStatementBreakdown.spent, previousStatementBreakdown.spent);
+    const installmentsDelta = formatDelta(
+      selectedStatementBreakdown.purchasesInstallments,
+      previousStatementBreakdown.purchasesInstallments
+    );
+    const interestFeesDelta = formatDelta(
+      selectedStatementBreakdown.interest + selectedStatementBreakdown.fees,
+      previousStatementBreakdown.interest + previousStatementBreakdown.fees
+    );
+    const paymentsDelta = formatDelta(
+      selectedStatementBreakdown.paymentsOnly,
+      previousStatementBreakdown.paymentsOnly
+    );
+
+    const messages: Array<{ tone: "attention" | "positive" | "info"; text: string }> = [];
+
+    if (spendDelta && spendDelta.delta !== 0) {
+      messages.push({
+        tone: spendDelta.delta > 0 ? "attention" : "positive",
+        text: spendDelta.delta > 0 ? "Gastaste más que el ciclo anterior." : "Gastaste menos que el ciclo anterior."
+      });
+    }
+
+    if (installmentsDelta && installmentsDelta.delta !== 0) {
+      messages.push({
+        tone: installmentsDelta.delta > 0 ? "attention" : "positive",
+        text:
+          installmentsDelta.delta > 0
+            ? "Subieron tus compras en cuotas."
+            : "Bajaron tus compras en cuotas."
+      });
+    }
+
+    if (interestFeesDelta && interestFeesDelta.delta !== 0) {
+      messages.push({
+        tone: interestFeesDelta.delta > 0 ? "attention" : "positive",
+        text:
+          interestFeesDelta.delta > 0
+            ? "Subieron tus intereses/comisiones."
+            : "Bajaron tus intereses/comisiones."
+      });
+    }
+
+    if (paymentsDelta && paymentsDelta.delta !== 0) {
+      messages.push({
+        tone: paymentsDelta.delta > 0 ? "positive" : "info",
+        text: paymentsDelta.delta > 0 ? "Pagaste más que el ciclo anterior." : "Pagaste menos que el ciclo anterior."
+      });
+    }
+
+    return {
+      spendDelta,
+      installmentsDelta,
+      interestFeesDelta,
+      paymentsDelta,
+      messages: messages.slice(0, 3)
+    };
+  }, [selectedStatementBreakdown, previousStatementBreakdown]);
+
   const cycleInfo = useMemo(() => {
     if (!account || account.type !== "CREDITO") return null;
 
@@ -1417,6 +1521,122 @@ function AccountDetailModal({
                               );
                             })}
                           </div>
+                        </div>
+                      ) : null}
+
+                      {statementComparison ? (
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Comparación vs ciclo anterior
+                          </p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {(() => {
+                              const d = statementComparison.spendDelta;
+                              const sign = d && d.delta > 0 ? "+" : d && d.delta < 0 ? "−" : "";
+                              const pct = d?.pct === null || d?.pct === undefined ? "" : ` (${sign}${Math.round(Math.abs(d.pct) * 100)}%)`;
+                              const tone =
+                                !d || d.delta === 0
+                                  ? "border-slate-200 bg-white/90 text-slate-700"
+                                  : d.delta > 0
+                                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-900";
+                              return (
+                                <div className={`rounded-2xl border px-3 py-2 ${tone}`}>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-80">
+                                    Gasto total
+                                  </p>
+                                  <p className="mt-1 text-sm font-semibold">
+                                    {d ? `${sign}${formatCurrency(Math.abs(d.delta))}${pct}` : "—"}
+                                  </p>
+                                </div>
+                              );
+                            })()}
+
+                            {(() => {
+                              const d = statementComparison.installmentsDelta;
+                              const sign = d && d.delta > 0 ? "+" : d && d.delta < 0 ? "−" : "";
+                              const pct = d?.pct === null || d?.pct === undefined ? "" : ` (${sign}${Math.round(Math.abs(d.pct) * 100)}%)`;
+                              const tone =
+                                !d || d.delta === 0
+                                  ? "border-slate-200 bg-white/90 text-slate-700"
+                                  : d.delta > 0
+                                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-900";
+                              return (
+                                <div className={`rounded-2xl border px-3 py-2 ${tone}`}>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-80">
+                                    Cuotas
+                                  </p>
+                                  <p className="mt-1 text-sm font-semibold">
+                                    {d ? `${sign}${formatCurrency(Math.abs(d.delta))}${pct}` : "—"}
+                                  </p>
+                                </div>
+                              );
+                            })()}
+
+                            {(() => {
+                              const d = statementComparison.interestFeesDelta;
+                              const sign = d && d.delta > 0 ? "+" : d && d.delta < 0 ? "−" : "";
+                              const pct = d?.pct === null || d?.pct === undefined ? "" : ` (${sign}${Math.round(Math.abs(d.pct) * 100)}%)`;
+                              const tone =
+                                !d || d.delta === 0
+                                  ? "border-slate-200 bg-white/90 text-slate-700"
+                                  : d.delta > 0
+                                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                                    : "border-emerald-200 bg-emerald-50 text-emerald-900";
+                              return (
+                                <div className={`rounded-2xl border px-3 py-2 ${tone}`}>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-80">
+                                    Interés + com.
+                                  </p>
+                                  <p className="mt-1 text-sm font-semibold">
+                                    {d ? `${sign}${formatCurrency(Math.abs(d.delta))}${pct}` : "—"}
+                                  </p>
+                                </div>
+                              );
+                            })()}
+
+                            {(() => {
+                              const d = statementComparison.paymentsDelta;
+                              const sign = d && d.delta > 0 ? "+" : d && d.delta < 0 ? "−" : "";
+                              const pct = d?.pct === null || d?.pct === undefined ? "" : ` (${sign}${Math.round(Math.abs(d.pct) * 100)}%)`;
+                              const tone =
+                                !d || d.delta === 0
+                                  ? "border-slate-200 bg-white/90 text-slate-700"
+                                  : d.delta > 0
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                                    : "border-slate-200 bg-slate-50 text-slate-800";
+                              return (
+                                <div className={`rounded-2xl border px-3 py-2 ${tone}`}>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-80">
+                                    Pagos
+                                  </p>
+                                  <p className="mt-1 text-sm font-semibold">
+                                    {d ? `${sign}${formatCurrency(Math.abs(d.delta))}${pct}` : "—"}
+                                  </p>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {statementComparison.messages.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {statementComparison.messages.map((m) => (
+                                <span
+                                  key={`${m.tone}-${m.text}`}
+                                  className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                    m.tone === "attention"
+                                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                                      : m.tone === "positive"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                                        : "border-slate-200 bg-slate-50 text-slate-800"
+                                  }`}
+                                >
+                                  {m.text}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
 
