@@ -407,74 +407,196 @@ export function InicioClient() {
   }, [snapshot, creditHealth]);
 
   const priorities = useMemo(() => {
-    const items: Array<{ tone: "alert" | "attention" | "positive" | "info"; text: string }> = [];
+    type Tone = "alert" | "attention" | "positive" | "info";
+    type PriorityItem = { tone: Tone; text: string; href?: string; score: number };
+    const items: PriorityItem[] = [];
 
-    if (topCreditAttention) {
-      const sev = getCreditAttentionSeverity(topCreditAttention);
-      if (sev.level === "critical") {
-        if ((topCreditAttention.utilizationPct ?? 0) >= 90) {
-          items.push({
-            tone: "alert",
-            text: `Pagar tarjeta ${topCreditAttention.name} (cupo ${topCreditAttention.utilizationPct}%).`
-          });
-        } else if (topCreditAttention.totals.cashAdvances > 0) {
-          items.push({ tone: "alert", text: `Ojo: hay avances en ${topCreditAttention.name}.` });
-        } else {
-          items.push({ tone: "alert", text: `Prioridad: revisar ${topCreditAttention.name}.` });
-        }
-      } else if (sev.level === "attention") {
-        if (topCreditAttention.totals.interest > 0) {
+    const hasBadge = (item: CreditHealthItem, key: string) => item.badges?.some((b) => b.key === key);
+
+    // Cards: overdue / due soon / minimum missing
+    const overdueCards = sortedCreditAttention.filter((i) => hasBadge(i, "overdue"));
+    const minMissingCards = sortedCreditAttention.filter((i) => hasBadge(i, "min-missing"));
+    const dueSoonCards = sortedCreditAttention.filter((i) => hasBadge(i, "due-soon"));
+    const installmentsUpCards = sortedCreditAttention.filter((i) => hasBadge(i, "inst-up"));
+    const reviewCards = sortedCreditAttention.filter((i) => hasBadge(i, "review"));
+
+    if (overdueCards.length > 0) {
+      const card = overdueCards[0]!;
+      items.push({
+        tone: "alert",
+        text: `Tarjeta vencida: ${card.name}.`,
+        href: `/cuentas?card=${encodeURIComponent(card.accountId)}`,
+        score: 100
+      });
+    }
+    if (minMissingCards.length > 0) {
+      const card = minMissingCards[0]!;
+      items.push({
+        tone: "alert",
+        text: `Falta pago mínimo en ${card.name}.`,
+        href: `/cuentas?card=${encodeURIComponent(card.accountId)}`,
+        score: 95
+      });
+    }
+    if (dueSoonCards.length > 0) {
+      const card = dueSoonCards[0]!;
+      items.push({
+        tone: "attention",
+        text: `Tarjeta por vencer: ${card.name}.`,
+        href: `/cuentas?card=${encodeURIComponent(card.accountId)}`,
+        score: 80
+      });
+    }
+
+    // High utilization
+    const veryHighUtil = sortedCreditAttention.find((i) => (i.utilizationPct ?? 0) >= 90) ?? null;
+    const highUtil = sortedCreditAttention.find((i) => (i.utilizationPct ?? 0) >= 70) ?? null;
+    if (veryHighUtil) {
+      items.push({
+        tone: "alert",
+        text: `Cupo muy alto en ${veryHighUtil.name} (${veryHighUtil.utilizationPct}%).`,
+        href: `/cuentas?card=${encodeURIComponent(veryHighUtil.accountId)}`,
+        score: 75
+      });
+    } else if (highUtil) {
+      items.push({
+        tone: "attention",
+        text: `Cupo alto en ${highUtil.name} (${highUtil.utilizationPct}%).`,
+        href: `/cuentas?card=${encodeURIComponent(highUtil.accountId)}`,
+        score: 60
+      });
+    }
+
+    // Interest/fees high (executive)
+    if (creditExecutiveSummary.counts.interestFeesHigh > 0) {
+      items.push({
+        tone: "info",
+        text: `Intereses/comisiones altos en ${creditExecutiveSummary.counts.interestFeesHigh} tarjeta(s).`,
+        href: "/cuentas",
+        score: 55
+      });
+    }
+
+    // Installments rising
+    if (installmentsUpCards.length > 0) {
+      items.push({
+        tone: "attention",
+        text: `Cuotas subiendo en ${installmentsUpCards.length} tarjeta(s).`,
+        href: "/cuentas",
+        score: 50
+      });
+    }
+
+    // Import review (dubious)
+    const dubiousTotal = sortedCreditAttention.reduce((sum, i) => sum + (i.totals.dubiousCount ?? 0), 0);
+    if (reviewCards.length > 0 && dubiousTotal > 0) {
+      const first = reviewCards[0]!;
+      items.push({
+        tone: "info",
+        text: `${dubiousTotal} movimiento(s) dudoso(s) en importaciones de tarjeta.`,
+        href: `/importaciones?batchId=${encodeURIComponent(first.importBatchId)}`,
+        score: 40
+      });
+    }
+
+    // Payables: overdue first, then upcoming in <= 3 days
+    if (payablesOverdueCount > 0) {
+      items.push({
+        tone: "alert",
+        text: `Tienes ${payablesOverdueCount} pago(s) vencido(s) en Pendientes.`,
+        href: "/pendientes",
+        score: 90
+      });
+    } else {
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const upcoming = (payablesSnapshot?.items ?? [])
+        .filter((p) => !p.paidAt)
+        .slice()
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
+      if (upcoming) {
+        const dueISO = upcoming.dueDate.slice(0, 10);
+        const daysTo = Math.ceil((new Date(`${dueISO}T12:00:00`).getTime() - new Date(`${todayISO}T12:00:00`).getTime()) / (1000 * 60 * 60 * 24));
+        if (daysTo >= 0 && daysTo <= 3) {
           items.push({
             tone: "attention",
-            text: `En ${topCreditAttention.name} hubo intereses: paga más que el mínimo si podís.`
+            text: `Pago próximo en Pendientes (${daysTo} día(s)): ${formatCurrency(Math.abs(upcoming.amount))}.`,
+            href: "/pendientes",
+            score: 70
           });
-        } else if (topCreditAttention.totals.fees > 0) {
-          items.push({ tone: "attention", text: `Revisar comisiones en ${topCreditAttention.name}.` });
         }
-      } else if (sev.level === "info" && topCreditAttention.totals.dubiousCount > 0) {
-        items.push({
-          tone: "info",
-          text: `Revisar importación: ${topCreditAttention.totals.dubiousCount} movimientos dudosos.`
-        });
-      } else if (sev.level === "positive") {
-        items.push({ tone: "positive", text: "Bien ahí: se ven mejoras en tus tarjetas este período." });
       }
     }
 
-    if (payablesOverdueCount > 0) {
-      items.push({ tone: "alert", text: `Tienes ${payablesOverdueCount} pago(s) vencido(s) en Pendientes.` });
-    } else if (payablesPendingTotal > 0) {
-      items.push({ tone: "attention", text: "Revisa tus pagos próximos en Pendientes para no atrasarte." });
-    }
-
+    // Debts commitments: overdue/upcoming
     if ((debtsSnapshot?.commitments.overdueCount ?? 0) > 0) {
-      items.push({ tone: "attention", text: "Tienes cobros atrasados: vale la pena perseguirlos esta semana." });
+      items.push({
+        tone: "attention",
+        text: "Tienes cobros atrasados: vale la pena perseguirlos hoy.",
+        href: "/deudores",
+        score: 45
+      });
     } else if ((debtsSnapshot?.commitments.upcomingCount ?? 0) > 0) {
-      items.push({ tone: "info", text: "Se vienen cobros próximos: deja listo a quién le vas a cobrar." });
+      items.push({
+        tone: "info",
+        text: "Se vienen cobros próximos: deja listo a quién le vas a cobrar.",
+        href: "/deudores",
+        score: 30
+      });
     }
 
+    // Low/ciritical balance (non-credit)
+    const liquidAccounts = accounts.filter((a) => a.type !== "CREDITO");
+    const lowest = liquidAccounts.slice().sort((a, b) => a.balance - b.balance)[0] ?? null;
+    if (availableTotal < 0) {
+      items.push({
+        tone: "alert",
+        text: "Tu disponible real está negativo. Revisa gastos y pendientes.",
+        href: "/inicio",
+        score: 85
+      });
+    } else if (lowest && lowest.balance < 5000) {
+      items.push({
+        tone: "attention",
+        text: `Saldo bajo en ${lowest.name}: ${formatCurrency(lowest.balance)}.`,
+        href: "/cuentas",
+        score: 35
+      });
+    }
+
+    // Financial health headline (fallback)
     const principalAlert =
       financialHealth?.alerts?.[0]?.title ??
       (financialHealth?.status === "critico" || financialHealth?.status === "atencion"
         ? financialHealth.headline
         : null);
     if (principalAlert) {
-      const tone =
+      const tone: Tone =
         financialHealth?.status === "critico"
           ? "alert"
           : financialHealth?.status === "atencion"
             ? "attention"
             : "info";
-      items.push({ tone, text: principalAlert });
+      items.push({ tone, text: principalAlert, href: "/inicio", score: 10 });
     }
 
-    return items.slice(0, 4);
+    // Sort, dedupe by text, and cap.
+    items.sort((a, b) => b.score - a.score);
+    const seen = new Set<string>();
+    const deduped = items.filter((item) => {
+      if (seen.has(item.text)) return false;
+      seen.add(item.text);
+      return true;
+    });
+    return deduped.slice(0, 5);
   }, [
+    accounts,
+    availableTotal,
+    creditExecutiveSummary,
     debtsSnapshot,
     financialHealth,
     payablesOverdueCount,
-    payablesPendingTotal,
-    topCreditAttention
+    payablesSnapshot?.items,
+    sortedCreditAttention
   ]);
 
   const globalAlerts = useMemo(() => {
@@ -807,10 +929,12 @@ export function InicioClient() {
           <SurfaceCard variant="soft" padding="sm" className="animate-fade-up space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Prioridades del mes</p>
-                <p className="mt-1 text-base font-semibold text-slate-900">Qué mirar primero</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Prioridades de hoy</p>
+                <p className="mt-1 text-base font-semibold text-slate-900">Lo urgente, en una sola lista</p>
                 {size !== "compact" ? (
-                  <p className="mt-1 hidden text-sm text-slate-600 sm:block">Checklist corto para ordenar el mes.</p>
+                  <p className="mt-1 hidden text-sm text-slate-600 sm:block">
+                    Tarjetas, vencimientos y señales clave con acceso rápido.
+                  </p>
                 ) : null}
               </div>
             </div>
@@ -818,10 +942,10 @@ export function InicioClient() {
               {priorities.length === 0 ? (
                 <p className="text-sm font-semibold text-slate-700">Todo tranquilo por ahora. Mantén el registro al día.</p>
               ) : (
-                (size === "compact" ? priorities.slice(0, 2) : priorities).map((item) => (
+                (size === "compact" ? priorities.slice(0, 3) : priorities).map((item) => (
                   <div
                     key={item.text}
-                    className={`flex items-start gap-3 rounded-2xl border bg-white/80 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${
+                    className={`flex items-start justify-between gap-3 rounded-2xl border bg-white/80 px-3.5 py-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)] ${
                       item.tone === "alert"
                         ? "border-rose-100"
                         : item.tone === "attention"
@@ -831,20 +955,39 @@ export function InicioClient() {
                             : "border-slate-100"
                     }`}
                   >
-                    <span
-                      className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-[11px] font-bold ${
-                        item.tone === "alert"
-                          ? "border-rose-200 bg-rose-50 text-rose-700"
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span
+                        className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold ${
+                          item.tone === "alert"
+                            ? "border-rose-200 bg-rose-50 text-rose-700"
+                            : item.tone === "attention"
+                              ? "border-amber-200 bg-amber-50 text-amber-800"
+                              : item.tone === "positive"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border-slate-200 bg-slate-50 text-slate-700"
+                        }`}
+                      >
+                        {item.tone === "alert"
+                          ? "!"
                           : item.tone === "attention"
-                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            ? "•"
                             : item.tone === "positive"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                              : "border-slate-200 bg-slate-50 text-slate-700"
-                      }`}
-                    >
-                      {item.tone === "alert" ? "!" : item.tone === "attention" ? "•" : item.tone === "positive" ? "✓" : "i"}
-                    </span>
-                    <p className="text-sm font-semibold leading-snug text-slate-900">{item.text}</p>
+                              ? "✓"
+                              : "i"}
+                      </span>
+                      <p className="min-w-0 text-sm font-semibold leading-snug text-slate-900">
+                        {item.text}
+                      </p>
+                    </div>
+                    {item.href ? (
+                      <button
+                        type="button"
+                        className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                        onClick={() => (window.location.href = item.href!)}
+                      >
+                        Ver
+                      </button>
+                    ) : null}
                   </div>
                 ))
               )}

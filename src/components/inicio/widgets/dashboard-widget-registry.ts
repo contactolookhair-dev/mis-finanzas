@@ -106,14 +106,14 @@ export const inicioWidgetDefinitions: InicioWidgetDefinitionBase[] = [
   },
   {
     widgetId: "priorities",
-    title: "Prioridades del mes",
-    description: "Checklist corto para saber que mirar primero.",
+    title: "Prioridades de hoy",
+    description: "Acciones urgentes del día en una sola vista.",
     category: "Alertas",
     enabledByDefault: true,
     supportedSizes: ["compact", "standard", "featured"],
     emptyState: {
       title: "Sin prioridades urgentes",
-      description: "Cuando haya algo importante por hacer, este bloque lo resumira."
+      description: "Cuando haya algo importante por hacer, este bloque lo resumirá."
     },
     priority: 40,
     mobileBehavior: "compact-list",
