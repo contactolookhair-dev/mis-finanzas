@@ -542,10 +542,13 @@ export async function previewImportFile(input: {
             kind: string;
             hasInstallment: boolean;
           }) => {
+            if (!params.description || params.description === "Movimiento") {
+              return { level: "low" as const, confidence: 0.35 };
+            }
             let score = 0;
             if (params.date) score += 1;
             if (Number.isFinite(params.amount) && params.amount !== 0) score += 1;
-            if (params.description && params.description !== "Movimiento") score += 1;
+            if (params.description) score += 1;
             if (params.kind && params.kind !== "other") score += 1;
             if (params.hasInstallment) score += 1;
             if (score >= 4) return { level: "high" as const, confidence: 0.9 };
