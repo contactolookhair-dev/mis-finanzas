@@ -444,6 +444,53 @@ export async function previewImportFile(input: {
             return trimmed;
           };
 
+          const cleanMerchantForPreview = (value: string) => {
+            const normalized = normalizeSpace(value);
+            if (!normalized) return "";
+
+            // If statement-style lines include " T " as a separator, prefer the left side.
+            const tSplit = normalized.split(/\s+T\s+/i);
+            const candidate = (tSplit[0] ?? normalized).trim();
+
+            const cleaned = candidate
+              .replace(/\b\d{2}\/\d{2}\/\d{4}\b/g, " ")
+              .replace(/\b\d{1,2}\s*\/\s*\d{1,2}\b/g, " ") // installments "03/12"
+              .replace(/\b(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)-\d{4}\b/gi, " ")
+              .replace(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/g, " ")
+              .replace(/\s+/g, " ")
+              .trim();
+
+            return cleaned.length >= 2 ? cleaned : "";
+          };
+
+          const detectFalabellaEvidence = (text: string) => {
+            const normalized = normalizeLookupKey(text);
+            const signals = [
+              "banco falabella",
+              "cmr",
+              "pago tarjeta cmr",
+              "compras nacionales",
+              "compras internacionales",
+              "monto total facturado",
+              "monto minimo a pagar",
+              "monto mínimo a pagar",
+              "pagos y abonos",
+              "compra en cuotas",
+              "compras en cuotas",
+              "cupo total",
+              "cupo disponible",
+              "cupo utilizado"
+            ];
+            const hits = signals.filter((s) => normalized.includes(normalizeLookupKey(s)));
+            return {
+              score: hits.length,
+              hits,
+              isFalabellaCmr: hits.length >= 2
+            };
+          };
+
+          const falabellaEvidence = detectFalabellaEvidence(rawText);
+
           const isNonTransactional = (text: string, date: string | null, amount: number) => {
             if (date) return false;
             const lower = text.toLowerCase();
@@ -601,7 +648,7 @@ export async function previewImportFile(input: {
                   (typeof tx.descriptionRaw === "string" && tx.descriptionRaw) ||
                   ""
               );
-              const cleanedText = stripLeadingCity(baseText);
+              const cleanedText = cleanMerchantForPreview(stripLeadingCity(baseText));
               let merchant = cleanedText.length > 0 ? cleanedText : "Movimiento";
 
               if (merchant === "Movimiento" && typeof tx.date === "string" && typeof tx.amount === "number") {
@@ -613,14 +660,15 @@ export async function previewImportFile(input: {
                   const afterDate = dmy ? lineClean.split(dmy).slice(1).join(dmy).trim() : lineClean;
                   if (afterDate.includes(" T ")) {
                     const between = afterDate.split(" T ")[0]?.trim() ?? "";
-                    merchant = stripLeadingCity(between) || merchant;
+                    merchant = cleanMerchantForPreview(stripLeadingCity(between)) || merchant;
                   } else {
                     // Fallback: take everything before first amount-like token.
                     const amountToken = lineClean.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?/);
                     if (amountToken?.index != null && amountToken.index > 0) {
                       const beforeAmt = lineClean.slice(0, amountToken.index).trim();
                       const withoutCity = stripLeadingCity(beforeAmt);
-                      merchant = dmy ? withoutCity.replace(dmy, "").trim() || merchant : withoutCity || merchant;
+                      const cleaned = cleanMerchantForPreview(dmy ? withoutCity.replace(dmy, "").trim() : withoutCity);
+                      merchant = cleaned || merchant;
                     }
                   }
                 }
@@ -702,7 +750,11 @@ export async function previewImportFile(input: {
                 __aiNeedsReview: needsReview,
                 __aiRaw: tx.descriptionRaw,
                 __aiIndex: index + 1,
-                __aiConfidence: confidence.confidence
+                __aiConfidence: confidence.confidence,
+                __aiCategorySuggestion:
+                  typeof tx.categorySuggestion === "string" && tx.categorySuggestion.trim().length > 0
+                    ? tx.categorySuggestion.trim()
+                    : null
               } as Record<string, unknown>;
             })
             .filter((row): row is Record<string, unknown> => Boolean(row));
@@ -723,9 +775,19 @@ export async function previewImportFile(input: {
             meta: {
               kind: "ai-pdf-import",
               statement: {
-                institution: ai.preview.issuer ?? "Desconocido",
-                brand: ai.preview.issuer?.toLowerCase().includes("falabella") ? "CMR" : null,
-                cardLabel: ai.preview.accountName ?? "Tarjeta",
+                institution:
+                  (typeof ai.preview.issuer === "string" && ai.preview.issuer.trim()) ||
+                  (falabellaEvidence.isFalabellaCmr ? "Banco Falabella" : "Desconocido"),
+                brand:
+                  (typeof ai.preview.issuer === "string" &&
+                    ai.preview.issuer.toLowerCase().includes("falabella"))
+                    ? "CMR"
+                    : falabellaEvidence.isFalabellaCmr
+                      ? "CMR"
+                      : null,
+                cardLabel:
+                  (typeof ai.preview.accountName === "string" && ai.preview.accountName.trim()) ||
+                  (falabellaEvidence.isFalabellaCmr ? "Tarjeta CMR Falabella" : "Tarjeta"),
                 closingDate: ai.preview.statementDate,
                 paymentDate: ai.preview.dueDate,
                 totalBilled: ai.preview.billedTotal,
@@ -974,10 +1036,112 @@ export async function previewImportFile(input: {
     template: templateDetection.detectedTemplate
   });
 
-  let suggestedRows = normalizedRows;
+  const normalizeCategoryKey = (value: string) => normalizeLookupKey(value);
+  const categoryNameIndex = new Map<string, { id: string; name: string }>();
+  for (const category of references.categories) {
+    if (!category?.id || !category?.name) continue;
+    const key = normalizeCategoryKey(category.name);
+    if (key && !categoryNameIndex.has(key)) {
+      categoryNameIndex.set(key, { id: category.id, name: category.name });
+    }
+  }
+
+  const findCategoryByLooseName = (raw: string) => {
+    const needle = normalizeCategoryKey(raw);
+    if (!needle) return null;
+    const exact = categoryNameIndex.get(needle);
+    if (exact) return exact;
+    for (const [key, value] of categoryNameIndex.entries()) {
+      if (key.includes(needle) || needle.includes(key)) return value;
+    }
+    return null;
+  };
+
+  const inferCategoryKeyFromRow = (row: ImportPreviewRow) => {
+    const raw = row.rawValues as Record<string, unknown> | undefined;
+    const fromAi =
+      raw && typeof raw.__aiCategorySuggestion === "string" ? raw.__aiCategorySuggestion.trim() : "";
+    const description = typeof row.description === "string" ? row.description : "";
+    const normalizedDescription = normalizeLookupKey(description);
+    const classifiedAs =
+      typeof row.parserMeta?.classifiedAs === "string" ? row.parserMeta.classifiedAs.toLowerCase() : "";
+
+    // Prefer explicit AI suggestion first.
+    if (fromAi) {
+      return { key: fromAi, source: "detected" as const, confidence: 0.78, labelPrefix: "IA" as const };
+    }
+
+    // Credit card statement semantics.
+    const isInstallment =
+      raw?.esCompraEnCuotas === true ||
+      (typeof raw?.cuotaTotal === "number" && Number.isFinite(raw.cuotaTotal) && raw.cuotaTotal > 1) ||
+      (typeof raw?.installments === "number" && Number.isFinite(raw.installments) && raw.installments > 1) ||
+      (typeof raw?.totalInstallments === "number" && Number.isFinite(raw.totalInstallments) && raw.totalInstallments > 1);
+
+    if (isInstallment) {
+      return { key: "cuotas", source: "detected" as const, confidence: 0.8, labelPrefix: "Auto" as const };
+    }
+
+    if (classifiedAs.includes("payment") || normalizedDescription.includes("pago") || normalizedDescription.includes("abono")) {
+      return { key: "pagos/abonos", source: "detected" as const, confidence: 0.82, labelPrefix: "Auto" as const };
+    }
+    if (classifiedAs.includes("interest") || classifiedAs.includes("fee") || normalizedDescription.includes("comision") || normalizedDescription.includes("interes")) {
+      return { key: "comisiones/intereses", source: "detected" as const, confidence: 0.8, labelPrefix: "Auto" as const };
+    }
+    if (classifiedAs.includes("cash_advance") || normalizedDescription.includes("avance") || normalizedDescription.includes("giro")) {
+      return { key: "avance", source: "detected" as const, confidence: 0.78, labelPrefix: "Auto" as const };
+    }
+
+    const keywordGroups: Array<{ key: string; keywords: string[]; confidence: number }> = [
+      { key: "transporte", keywords: ["uber", "cabify", "didi", "metro", "bip", "transporte"], confidence: 0.76 },
+      { key: "combustible", keywords: ["copec", "aramco", "shell", "combustible"], confidence: 0.8 },
+      { key: "supermercado", keywords: ["lider", "jumbo", "tottus", "santa isabel", "unimarc", "ok market", "supermerc"], confidence: 0.76 },
+      { key: "comida", keywords: ["restaurant", "restaurante", "doggis", "tommy", "beans", "buffalo", "delivery", "rappi", "pedidosya"], confidence: 0.74 },
+      { key: "salud", keywords: ["farmacia", "cruz verde", "salcobrand", "ahumada", "clinica", "isapre", "fonasa"], confidence: 0.74 },
+      { key: "servicios", keywords: ["luz", "agua", "gas", "internet", "movistar", "entel", "vtr", "wom", "claro"], confidence: 0.72 },
+      { key: "suscripciones", keywords: ["netflix", "spotify", "disney", "hbo", "prime", "suscripcion", "suscripción"], confidence: 0.74 },
+      { key: "software/apps", keywords: ["adobe", "openai", "capcut", "apple com", "google", "microsoft", "github", "notion", "slack", "zoom", "elevenlabs", "agendapro"], confidence: 0.82 },
+      { key: "publicidad/marketing", keywords: ["facebook", "facebk", "meta", "fbmeads", "google ads", "adwords"], confidence: 0.82 },
+      { key: "hogar", keywords: ["sodimac", "homecenter", "easy", "ikea"], confidence: 0.72 },
+    ];
+
+    for (const group of keywordGroups) {
+      if (group.keywords.some((kw) => normalizedDescription.includes(normalizeLookupKey(kw)))) {
+        return { key: group.key, source: "detected" as const, confidence: group.confidence, labelPrefix: "Auto" as const };
+      }
+    }
+
+    return null;
+  };
+
+  const withCategoryHints = normalizedRows.map((row) => {
+    if (row.categoryId) return row;
+
+    const inferred = inferCategoryKeyFromRow(row);
+    if (!inferred) return row;
+
+    const match = findCategoryByLooseName(inferred.key);
+    const reviewSuffix = inferred.confidence < 0.75 ? " · revisar" : "";
+    const nextSuggestion = {
+      source: inferred.source,
+      label: `${inferred.labelPrefix}: ${match?.name ?? inferred.key}${reviewSuffix}`,
+      confidence: inferred.confidence
+    };
+
+    return {
+      ...row,
+      categoryId: match && inferred.confidence >= 0.72 ? match.id : row.categoryId,
+      suggestionMeta: {
+        ...row.suggestionMeta,
+        categoryId: nextSuggestion
+      }
+    };
+  });
+
+  let suggestedRows = withCategoryHints;
   try {
     const classificationContext = await getClassificationEngineContext(input.workspaceId);
-    suggestedRows = applyClassificationSuggestions(normalizedRows, classificationContext);
+    suggestedRows = applyClassificationSuggestions(withCategoryHints, classificationContext);
   } catch (error) {
     console.error("previewImportFile classification suggestions failed; continuing", {
       workspaceId: input.workspaceId,

@@ -206,6 +206,12 @@ export function applyClassificationSuggestions(
 ) {
   return rows.map((row) => {
     const suggestion = suggestClassificationForRow(row, context);
+    // Preserve any upstream suggestions (e.g. AI/import heuristics) while letting
+    // engine suggestions (rules/history) override the same field when present.
+    const mergedSuggestionMeta = {
+      ...(row.suggestionMeta ?? {}),
+      ...(suggestion.suggestionMeta ?? {})
+    };
     return {
       ...row,
       categoryId: suggestion.categoryId ?? row.categoryId,
@@ -218,8 +224,7 @@ export function applyClassificationSuggestions(
         typeof suggestion.isBusinessPaidPersonally === "boolean"
           ? suggestion.isBusinessPaidPersonally
           : row.isBusinessPaidPersonally,
-      suggestionMeta: suggestion.suggestionMeta
+      suggestionMeta: mergedSuggestionMeta
     };
   });
 }
-
