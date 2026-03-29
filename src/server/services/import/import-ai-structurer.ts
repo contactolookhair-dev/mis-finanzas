@@ -500,21 +500,8 @@ export async function structurePdfTextWithAI(input: {
       }
 
       if (!payload) {
-        return {
-          ok: false,
-          error: "ai_failed",
-          message: `Gemini respondió error (${lastHttpStatus ?? "unknown"}).`,
-          debug: {
-            geminiKeyPresent,
-            geminiModel: candidateModel,
-            geminiApiVersion: lastApiVersionTried,
-            geminiStatus: lastHttpStatus,
-            geminiError: (lastHttpBodyText || lastErrorBody || "unknown_error").slice(0, 1200),
-            modelDiscovery: modelDiscoveryDebug
-            ,
-            geminiAttempts: attempts.slice(0, 20)
-          }
-        };
+        // This model didn't work on any API version. Try the next model.
+        continue;
       }
 
       const content = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ?? "";
