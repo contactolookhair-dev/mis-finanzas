@@ -114,6 +114,13 @@ export type AiStructurePdfResult =
           v1?: { ok: boolean; status: number | null; count: number; error?: string };
           v1beta?: { ok: boolean; status: number | null; count: number; error?: string };
         };
+        geminiAttempts?: Array<{
+          model: string;
+          apiVersion: "v1" | "v1beta";
+          status: number;
+          ok: boolean;
+          errorSnippet?: string;
+        }>;
       };
     }
   | {
@@ -133,6 +140,13 @@ export type AiStructurePdfResult =
           v1?: { ok: boolean; status: number | null; count: number; error?: string };
           v1beta?: { ok: boolean; status: number | null; count: number; error?: string };
         };
+        geminiAttempts?: Array<{
+          model: string;
+          apiVersion: "v1" | "v1beta";
+          status: number;
+          ok: boolean;
+          errorSnippet?: string;
+        }>;
       };
     };
 
@@ -349,6 +363,13 @@ export async function structurePdfTextWithAI(input: {
   let geminiBody: string | undefined;
   let geminiModel: string | null = null;
   let geminiApiVersion: GeminiApiVersion | null = null;
+  const attempts: Array<{
+    model: string;
+    apiVersion: GeminiApiVersion;
+    status: number;
+    ok: boolean;
+    errorSnippet?: string;
+  }> = [];
   try {
     let lastErrorBody: string | null = null;
     let lastStatus: number | null = null;
@@ -418,8 +439,15 @@ export async function structurePdfTextWithAI(input: {
         lastHttpStatus = res.status;
         console.log("[imports/ai] gemini status:", res.status, "model:", candidateModel, "api:", apiVersion);
 
-      if (!res.ok) {
+        if (!res.ok) {
           const bodyText = await res.text().catch(() => "");
+          attempts.push({
+            model: candidateModel,
+            apiVersion,
+            status: res.status,
+            ok: false,
+            errorSnippet: bodyText ? bodyText.slice(0, 400) : undefined
+          });
           lastHttpBodyText = bodyText;
           lastErrorBody = bodyText || `HTTP_${res.status}`;
           if (includeDevBody) {
@@ -450,9 +478,18 @@ export async function structurePdfTextWithAI(input: {
               geminiError: bodyText ? bodyText.slice(0, 1200) : `HTTP_${res.status}`,
               geminiBody: includeDevBody ? bodyText : undefined,
               modelDiscovery: modelDiscoveryDebug
+              ,
+              geminiAttempts: attempts.slice(0, 20)
             }
           };
         }
+
+        attempts.push({
+          model: candidateModel,
+          apiVersion,
+          status: res.status,
+          ok: true
+        });
 
         payload = (await res.json()) as {
           candidates?: Array<{
@@ -474,6 +511,8 @@ export async function structurePdfTextWithAI(input: {
             geminiStatus: lastHttpStatus,
             geminiError: (lastHttpBodyText || lastErrorBody || "unknown_error").slice(0, 1200),
             modelDiscovery: modelDiscoveryDebug
+            ,
+            geminiAttempts: attempts.slice(0, 20)
           }
         };
       }
@@ -496,6 +535,8 @@ export async function structurePdfTextWithAI(input: {
             geminiError: "invalid_json",
             geminiBody: includeDevBody ? geminiBody : undefined,
             modelDiscovery: modelDiscoveryDebug
+            ,
+            geminiAttempts: attempts.slice(0, 20)
           }
         };
       }
@@ -525,6 +566,8 @@ export async function structurePdfTextWithAI(input: {
           geminiError: null,
           geminiBody: includeDevBody ? geminiBody : undefined,
           modelDiscovery: modelDiscoveryDebug
+          ,
+          geminiAttempts: attempts.slice(0, 20)
         }
       };
     }
@@ -541,6 +584,8 @@ export async function structurePdfTextWithAI(input: {
         geminiStatus: lastStatus,
         geminiError: (lastErrorBody ?? "unknown_error").slice(0, 1200),
         modelDiscovery: modelDiscoveryDebug
+        ,
+        geminiAttempts: attempts.slice(0, 20)
       }
     };
 
@@ -563,6 +608,8 @@ export async function structurePdfTextWithAI(input: {
         geminiError: errMessage,
         geminiBody: includeDevBody ? geminiBody : undefined,
         modelDiscovery: modelDiscoveryDebug
+        ,
+        geminiAttempts: attempts.slice(0, 20)
       }
     };
   }

@@ -365,6 +365,7 @@ export async function previewImportFile(input: {
         geminiStatus: number | null;
         geminiError: string | null;
         geminiModelDiscovery?: unknown;
+        geminiAttempts?: unknown;
         textLength: number;
         geminiBody?: string;
         extractorUsed?: string | null;
@@ -404,6 +405,7 @@ export async function previewImportFile(input: {
           pdfDebug.geminiStatus = ai.debug.geminiStatus;
           pdfDebug.geminiError = ai.debug.geminiError;
           pdfDebug.geminiModelDiscovery = ai.debug.modelDiscovery;
+          pdfDebug.geminiAttempts = ai.debug.geminiAttempts;
           if (ai.debug.geminiBody) pdfDebug.geminiBody = ai.debug.geminiBody;
 
           const transactions = ai.preview.transactions ?? [];
@@ -486,6 +488,7 @@ export async function previewImportFile(input: {
           pdfDebug.geminiError =
             ai.debug.geminiError ?? `${ai.error}: ${ai.message}`;
           pdfDebug.geminiModelDiscovery = ai.debug.modelDiscovery;
+          pdfDebug.geminiAttempts = ai.debug.geminiAttempts;
           if (ai.debug.geminiBody) pdfDebug.geminiBody = ai.debug.geminiBody;
 
           console.warn("previewImportFile AI structuring failed; falling back", {
