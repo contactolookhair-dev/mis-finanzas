@@ -16,9 +16,13 @@ function normalizeExtractedText(value: string) {
 export async function extractPdfTextFromBytes(bytes: Uint8Array): Promise<PdfTextExtractionResult> {
   try {
     const require = createRequire(import.meta.url);
-    // `pdf-parse/node` is exported and resolves to the stable CJS build for Node runtimes.
-    const pdfParse: unknown = require("pdf-parse/node");
-    if (typeof pdfParse !== "function") {
+    const pdfParseMod: unknown = require("pdf-parse");
+    const PDFParseCtor =
+      pdfParseMod && typeof pdfParseMod === "object" && "PDFParse" in (pdfParseMod as Record<string, unknown>)
+        ? (pdfParseMod as Record<string, unknown>).PDFParse
+        : null;
+
+    if (typeof PDFParseCtor !== "function") {
       return {
         ok: false,
         error: "pdf_text_extraction_failed",
@@ -27,7 +31,9 @@ export async function extractPdfTextFromBytes(bytes: Uint8Array): Promise<PdfTex
     }
 
     const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const result = await (pdfParse as (buffer: Buffer) => Promise<{ text?: unknown }>)(buffer);
+    const parser = new (PDFParseCtor as any)({ data: buffer });
+    const result = await parser.getText();
+    await parser.destroy();
 
     const normalized = normalizeExtractedText(String(result?.text ?? ""));
     if (!normalized || normalized.length < 20) {
@@ -47,4 +53,3 @@ export async function extractPdfTextFromBytes(bytes: Uint8Array): Promise<PdfTex
     };
   }
 }
-

@@ -242,6 +242,7 @@ export function ImportTransactionsPanel(props: {
   const [importLane, setImportLane] = useState<"account" | "credit">(initialLane);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [previewDebug, setPreviewDebug] = useState<PreviewResponse["debug"] | null>(null);
   const [rows, setRows] = useState<ImportPreviewRow[]>([]);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [committing, setCommitting] = useState(false);
@@ -451,6 +452,7 @@ export function ImportTransactionsPanel(props: {
       setError(null);
       setSuccess(null);
       setCommitSummary(null);
+      setPreviewDebug(null);
 
       const formData = new FormData();
       formData.append("file", selectedFile);
@@ -500,6 +502,7 @@ export function ImportTransactionsPanel(props: {
 
       const payloadRows = Array.isArray(payload?.rows) ? payload.rows : [];
       const hasRows = payloadRows.length > 0;
+      if (payload?.debug) setPreviewDebug(payload.debug);
 
       // If we have rows, always allow the user to review/edit, even if AI failed.
       if (!payload || !response.ok || (payload.success === false && !hasRows)) {
@@ -967,14 +970,19 @@ export function ImportTransactionsPanel(props: {
           </SurfaceCard>
         ) : null}
 
-        {preview?.debug ? (
+        {preview?.debug || previewDebug ? (
           <SurfaceCard variant="soft" padding="sm" className="border-slate-200 bg-white/80 text-sm text-slate-700">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Debug (preview)</p>
+            {preview?.debug && previewDebug && preview.debug !== previewDebug ? (
+              <p className="mt-1 text-xs text-slate-500">
+                (Mostrando debug desde respuesta aunque el preview no se haya montado completamente)
+              </p>
+            ) : null}
             <div className="mt-2 grid gap-1 text-xs">
-              <div>aiUsed: <span className="font-mono">{String(preview.debug.aiUsed ?? "—")}</span></div>
-              <div>geminiStatus: <span className="font-mono">{String(preview.debug.geminiStatus ?? "—")}</span></div>
-              <div>geminiError: <span className="font-mono">{String(preview.debug.geminiError ?? "—")}</span></div>
-              <div>textLength: <span className="font-mono">{String(preview.debug.textLength ?? "—")}</span></div>
+              <div>aiUsed: <span className="font-mono">{String((preview?.debug ?? previewDebug)?.aiUsed ?? "—")}</span></div>
+              <div>geminiStatus: <span className="font-mono">{String((preview?.debug ?? previewDebug)?.geminiStatus ?? "—")}</span></div>
+              <div>geminiError: <span className="font-mono">{String((preview?.debug ?? previewDebug)?.geminiError ?? "—")}</span></div>
+              <div>textLength: <span className="font-mono">{String((preview?.debug ?? previewDebug)?.textLength ?? "—")}</span></div>
             </div>
           </SurfaceCard>
         ) : null}

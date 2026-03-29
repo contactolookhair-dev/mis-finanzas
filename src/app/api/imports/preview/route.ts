@@ -47,10 +47,28 @@ function jsonPreviewError(message?: string, debug?: Record<string, unknown>) {
     error: "preview_failed",
     message: getFriendlyPreviewError(message)
   };
-  if (DEBUG_IMPORT_PREVIEW && debug && typeof debug === "object") {
+  if (debug && typeof debug === "object") {
     payload.debug = debug;
   }
   return safeJsonResponse(payload);
+}
+
+function buildStageLog(params: {
+  stage: string;
+  fileName?: string | null;
+  mimeType?: string | null;
+  textLength?: number | null;
+  rowsCount?: number | null;
+  errorMessage?: string | null;
+}) {
+  return {
+    stage: params.stage,
+    fileName: params.fileName ?? null,
+    mimeType: params.mimeType ?? null,
+    textLength: typeof params.textLength === "number" ? params.textLength : null,
+    rowsCount: typeof params.rowsCount === "number" ? params.rowsCount : null,
+    errorMessage: params.errorMessage ?? null
+  };
 }
 
 function buildDebugPayload(params: {
@@ -59,15 +77,18 @@ function buildDebugPayload(params: {
   parser?: string;
   supported?: boolean;
   looksLikePdf?: boolean;
+  textLength?: number;
+  rowsCount?: number;
 }) {
-  if (!DEBUG_IMPORT_PREVIEW) return undefined;
-  const { stage, errorMessage, parser, supported, looksLikePdf } = params;
+  const { stage, errorMessage, parser, supported, looksLikePdf, textLength, rowsCount } = params;
   return {
     stage,
-    errorMessage: errorMessage ?? null,
+    errorMessage: DEBUG_IMPORT_PREVIEW ? ((errorMessage ?? null) && String(errorMessage).slice(0, 500)) : null,
     parser: parser ?? null,
     supported: supported ?? null,
-    fileAppearsPdf: looksLikePdf ?? null
+    fileAppearsPdf: looksLikePdf ?? null,
+    textLength: typeof textLength === "number" ? textLength : null,
+    rowsCount: typeof rowsCount === "number" ? rowsCount : null
   };
 }
 
@@ -102,6 +123,9 @@ export async function POST(request: Request) {
   let previewResult: Record<string, unknown> | null = null;
   let looksLikePdf = false;
   let safeFile: File | null = null;
+  let safeBytes: Uint8Array | null = null;
+  let safeTextLength = 0;
+  let safeRowsCount = 0;
   const debugEntries: Array<{ stage: string; payload?: Record<string, unknown> }> = [];
 
   const recordStage = (name: string, payload?: Record<string, unknown>) => {
@@ -111,16 +135,102 @@ export async function POST(request: Request) {
     }
   };
 
+  const logStage = (name: string, params?: { errorMessage?: string | null }) => {
+    if (!DEBUG_IMPORT_PREVIEW) return;
+    console.log(
+      "[imports/preview]",
+      JSON.stringify(
+        buildStageLog({
+          stage: name,
+          fileName: safeFile ? safeFile.name : null,
+          mimeType: safeFile ? safeFile.type : null,
+          textLength: safeTextLength,
+          rowsCount: safeRowsCount,
+          errorMessage: params?.errorMessage ?? null
+        })
+      )
+    );
+  };
+
   const isPlainObject = (value: unknown): value is Record<string, unknown> =>
     Boolean(value && typeof value === "object" && !Array.isArray(value));
 
   const safePreviewResult = () => (isPlainObject(previewResult) ? previewResult : {});
+
+  logStage("request_received");
 
   if (process.env.DEBUG_IMPORT_PREVIEW_ISOLATE === "true") {
     console.warn("imports preview isolation mode active");
     return safeJsonResponse({ success: true, isolated: true });
   }
   try {
+    // Local-only bypass to allow debugging the endpoint without auth/session.
+    // Do NOT enable this in production.
+    if (process.env.DEBUG_IMPORT_PREVIEW_BYPASS_AUTH === "true" && process.env.NODE_ENV !== "production") {
+      stage = "read_form_data";
+      recordStage(stage);
+      const formData = await request.formData();
+      const file = formData.get("file");
+      if (file instanceof File) safeFile = file;
+      if (!(file instanceof File)) {
+        logStage("preview_failed", { errorMessage: "missing_file" });
+        return safeJsonResponse({
+          success: false,
+          error: "preview_failed",
+          message: "Falta el archivo PDF.",
+          debug: buildDebugPayload({ stage: "missing_file" })
+        });
+      }
+
+      logStage("file_parsed");
+
+      stage = "read_file_bytes";
+      recordStage(stage);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      safeBytes = bytes;
+      looksLikePdf =
+        bytes.length >= 5 &&
+        bytes[0] === 0x25 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x44 &&
+        bytes[3] === 0x46 &&
+        bytes[4] === 0x2d;
+
+      stage = "build_preview";
+      recordStage(stage);
+      const { previewImportFile } = await import("@/server/services/import-service");
+      const rawPreview = await previewImportFile({
+        workspaceId: "debug",
+        fileName: file.name,
+        mimeType: file.type,
+        bytes,
+        preferredImportType: normalizeImportType(normalizeOptionalString(formData.get("type"))),
+        preferredAccountId: normalizeOptionalString(formData.get("accountId")),
+        selectedTemplateId: normalizeOptionalString(formData.get("templateId"))
+      });
+
+      previewResult = isPlainObject(rawPreview) ? rawPreview : {};
+      safeRowsCount = Array.isArray(previewResult?.rows) ? previewResult.rows.length : 0;
+      const debugFromService =
+        previewResult && typeof previewResult === "object" && "debug" in previewResult
+          ? (previewResult as any).debug
+          : null;
+      if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.textLength === "number") {
+        safeTextLength = debugFromService.textLength;
+        logStage("text_extracted");
+      }
+
+      logStage("rows_built");
+      logStage("preview_response_sent");
+      return safeJsonResponse(
+        JSON.parse(JSON.stringify({
+          success: true,
+          ...safePreviewResult(),
+          supported: true
+        }))
+      );
+    }
+
     stage = "load_dependencies:tenant:start";
     recordStage(stage);
     const tenantModule = await import("@/server/tenant/workspace-context");
@@ -179,8 +289,11 @@ export async function POST(request: Request) {
     });
 
     if (!(file instanceof File)) {
+      logStage("preview_failed", { errorMessage: "missing_file" });
       return jsonPreviewError();
     }
+
+    logStage("file_parsed");
 
     if (importTypeRaw && !importType) {
       console.warn("imports preview unknown type", { importTypeRaw });
@@ -193,6 +306,7 @@ export async function POST(request: Request) {
     stage = "read_file_bytes";
     recordStage(stage);
     const bytes = new Uint8Array(await file.arrayBuffer());
+    safeBytes = bytes;
     looksLikePdf =
       bytes.length >= 5 &&
       bytes[0] === 0x25 &&
@@ -224,12 +338,38 @@ export async function POST(request: Request) {
       preferredImportType: importType
     });
     previewResult = isPlainObject(rawPreview) ? rawPreview : {};
+    safeRowsCount = Array.isArray(previewResult?.rows) ? previewResult.rows.length : 0;
+    const debugFromService =
+      previewResult && typeof previewResult === "object" && "debug" in previewResult
+        ? (previewResult as any).debug
+        : null;
+    if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.textLength === "number") {
+      safeTextLength = debugFromService.textLength;
+      logStage("text_extracted");
+    }
+    if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.aiUsed === "boolean") {
+      logStage("ai_attempted", { errorMessage: debugFromService.aiUsed ? null : "ai_not_used" });
+    }
     recordStage("preview_built", {
       parser: previewResult.parser,
       rows: Array.isArray(previewResult.rows) ? previewResult.rows.length : 0
     });
+    logStage("rows_built");
 
     if (previewResult?.parser === "pdf" && !previewResult.supported) {
+      // Temporary rule: never block the user if we extracted text or produced rows.
+      // If there are rows, return success:true so the UI renders the editable preview.
+      if (safeRowsCount > 0 || safeTextLength > 0) {
+        logStage("preview_response_sent");
+        return safeJsonResponse(
+          JSON.parse(JSON.stringify({
+            success: true,
+            ...safePreviewResult(),
+            supported: true
+          }))
+        );
+      }
+
       const message = resolveFunctionalPreviewMessage({
         stage: "unsupported_pdf",
         warnings: Array.isArray(previewResult?.warnings)
@@ -237,6 +377,7 @@ export async function POST(request: Request) {
           : undefined
       });
       recordStage("unsupported_response", { parser: previewResult.parser });
+      logStage("preview_failed", { errorMessage: message });
       return safeJsonResponse({
         success: false,
         error: "preview_not_supported",
@@ -245,13 +386,16 @@ export async function POST(request: Request) {
           stage: "unsupported_pdf",
           parser: typeof previewResult.parser === "string" ? previewResult.parser : undefined,
           supported: typeof previewResult.supported === "boolean" ? previewResult.supported : undefined,
-          looksLikePdf
+          looksLikePdf,
+          textLength: safeTextLength,
+          rowsCount: safeRowsCount
         })
       });
     }
 
     stage = "build_response";
     recordStage(stage, { success: true });
+    logStage("preview_response_sent");
     return safeJsonResponse(
       JSON.parse(JSON.stringify({
         success: true,
@@ -269,15 +413,122 @@ export async function POST(request: Request) {
       stage,
       errorMessage: error instanceof Error ? error.message : undefined
     });
-    return jsonPreviewError(
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // If we already know there's text (or we can extract it here), do not block the preview.
+    // Return a minimal editable fallback instead of success:false.
+    if (looksLikePdf && safeBytes) {
+      try {
+        const { extractPdfTextFromBytes } = await import("@/server/services/import/pdf-text-extractor");
+        const extraction = await extractPdfTextFromBytes(safeBytes);
+          if (extraction.ok) {
+            const rawText = extraction.text;
+            safeTextLength = rawText.length;
+            logStage("text_extracted");
+            const lines = rawText
+              .split(/\r?\n/)
+              .map((l) => l.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim())
+              .filter(Boolean);
+
+          const extractDate = (value: string) => {
+            const match = value.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+            return match?.[1] ?? null;
+          };
+          const extractAmount = (value: string) => {
+            const match = value.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?/);
+            if (!match) return null;
+            const token = match[0].trim();
+            const negative = token.includes("(") || token.startsWith("-");
+            const sanitized = token.replace(/[$()\s-]/g, "");
+            const normalized = sanitized.includes(",")
+              ? sanitized.replace(/\./g, "").replace(",", ".")
+              : sanitized.replace(/\./g, "");
+            const parsed = Number(normalized);
+            if (!Number.isFinite(parsed)) return null;
+            return negative ? -Math.abs(parsed) : parsed;
+          };
+
+          const cleanedLines = lines.map((l) => l.trim()).filter(Boolean);
+          const meaningfulLines = cleanedLines.filter((l) => l.length > 5);
+          const ensuredLines = (meaningfulLines.length > 0 ? meaningfulLines : cleanedLines).length > 0
+            ? (meaningfulLines.length > 0 ? meaningfulLines : cleanedLines)
+            : rawText.trim().length > 0
+              ? [rawText.trim().slice(0, 400)]
+              : [];
+
+          const rowsFallback = ensuredLines.map((line, index) => ({
+            id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(index + 1),
+            rowNumber: index + 1,
+            date: extractDate(line) ?? undefined,
+            description: line,
+            amount: (() => {
+              const amount = extractAmount(line);
+              return typeof amount === "number" ? Math.abs(amount) : undefined;
+            })(),
+            rawValues: { raw: line, needsReview: true },
+            issues: [],
+            include: true,
+            financialOrigin: "PERSONAL",
+            isReimbursable: false,
+            isBusinessPaidPersonally: false,
+            duplicateStatus: "none",
+            suggestionMeta: {}
+          }));
+
+          safeRowsCount = rowsFallback.length;
+          logStage("preview_response_sent", { errorMessage: "fallback_rows_from_catch" });
+
+          return safeJsonResponse({
+            success: true,
+            parser: "pdf",
+            supported: true,
+            warnings: [
+              "Tuvimos un problema preparando la vista previa completa, pero igual puedes revisar y editar los movimientos detectados antes de guardar."
+            ],
+            debug: buildDebugPayload({
+              stage,
+              errorMessage,
+              parser: "pdf",
+              supported: true,
+              looksLikePdf: true,
+              textLength: safeTextLength,
+              rowsCount: safeRowsCount
+            }),
+            rows: rowsFallback,
+            summary: {
+              totalRows: rowsFallback.length,
+              readyToImport: rowsFallback.length,
+              duplicates: 0,
+              invalid: 0
+            },
+            references: { categories: [], businessUnits: [], accounts: [] },
+            availableTemplates: [],
+            appliedTemplate: null,
+            pdfMeta: null,
+            pdfAccountSuggestion: null
+          });
+        }
+      } catch (fallbackError) {
+        console.error("imports preview fallback failed", fallbackError);
+      }
+    }
+
+    logStage("preview_failed", { errorMessage });
+
+    // Final rule: only return success:false when we truly have no text to show/edit.
+    return safeJsonResponse({
+      success: false,
+      error: "preview_failed",
       message,
-      buildDebugPayload({
+      debug: buildDebugPayload({
         stage,
-        errorMessage: error instanceof Error ? error.message : undefined,
+        errorMessage,
         parser: typeof previewResult?.parser === "string" ? previewResult.parser : undefined,
         supported: typeof previewResult?.supported === "boolean" ? previewResult.supported : undefined,
-        looksLikePdf
+        looksLikePdf,
+        textLength: safeTextLength,
+        rowsCount: safeRowsCount
       })
-    );
+    });
   }
 }
