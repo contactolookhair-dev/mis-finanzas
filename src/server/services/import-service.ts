@@ -544,7 +544,10 @@ export async function previewImportFile(input: {
           const extractInstallmentFromText = (text: string) => {
             const normalized = text.toLowerCase();
 
-            const ratio = text.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
+            // IMPORTANT: this regex would also match the day/month inside a date like "10/12/2026".
+            // Strip full dates first so we only detect true installment ratios.
+            const withoutDates = text.replace(/\b\d{2}\/\d{2}\/\d{4}\b/g, " ");
+            const ratio = withoutDates.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
             if (ratio) {
               const current = Number(ratio[1]);
               const total = Number(ratio[2]);
@@ -725,13 +728,28 @@ export async function previewImportFile(input: {
               // our merchant cleaning removes them, so extract from the raw best line.
               // If Gemini didn't include the ratio in descriptionRaw, try to recover it from the
               // original PDF line using our date+amount index.
-              let installmentFromText = extractInstallmentFromText(bestLineFromRaw);
+              const installmentProbeTexts: string[] = [];
+              if (bestLineFromRaw) installmentProbeTexts.push(bestLineFromRaw);
+              if (typeof tx.descriptionRaw === "string" && tx.descriptionRaw.trim().length > 0) {
+                installmentProbeTexts.push(tx.descriptionRaw);
+              }
+
+              let installmentFromText =
+                installmentProbeTexts.map((t) => extractInstallmentFromText(t)).find(Boolean) ?? null;
               if (!installmentFromText && normalizedDate && typeof amountRaw === "number") {
                 const key = `${normalizedDate}|${Math.round(Math.abs(amountRaw))}`;
                 const matchedLine = lineIndex.get(key) ?? null;
                 if (matchedLine) {
                   installmentFromText = extractInstallmentFromText(matchedLine);
                 }
+              }
+
+              if (process.env.DEBUG_IMPORT_PREVIEW === "true" && installmentFromText) {
+                console.log("[cuotas detectadas]", {
+                  text: String(installmentProbeTexts[0] ?? "").slice(0, 160),
+                  cuotaActual: installmentFromText.cuotaActual,
+                  cuotaTotal: installmentFromText.cuotaTotal
+                });
               }
               const isInstallmentFromAI =
                 tx.installment?.isInstallment === true &&
