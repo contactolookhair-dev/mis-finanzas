@@ -411,44 +411,232 @@ export async function previewImportFile(input: {
           const transactions = ai.preview.transactions ?? [];
           const dubiousCount = transactions.filter((t) => t.needsReview).length;
 
-          const rows = transactions.map((tx, index) => {
-            const merchant =
-              (typeof tx.merchant === "string" && tx.merchant.trim().length > 0
-                ? tx.merchant.trim()
-                : typeof tx.descriptionRaw === "string" && tx.descriptionRaw.trim().length > 0
-                  ? tx.descriptionRaw.trim()
-                  : "Movimiento");
+          const normalizeSpace = (value: string) =>
+            value.replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
 
-            const amount = Math.abs(tx.amount);
-            const isInstallment =
-              tx.installment?.isInstallment === true &&
-              typeof tx.installment.installmentTotal === "number" &&
-              tx.installment.installmentTotal > 1 &&
-              !(
-                tx.installment.installmentCurrent === 1 &&
-                tx.installment.installmentTotal === 1
+          const stripLeadingCity = (value: string) => {
+            // Remove common city prefixes that often appear in CMR lines (keeps the merchant readable).
+            const trimmed = value.trim();
+            const cities = [
+              "santiago",
+              "las condes",
+              "providencia",
+              "vitacura",
+              "nunoa",
+              "ñuñoa",
+              "maipu",
+              "maipú",
+              "puente alto",
+              "la florida",
+              "valparaiso",
+              "valparaíso",
+              "vina del mar",
+              "viña del mar",
+              "concepcion",
+              "concepción"
+            ];
+            const lower = trimmed.toLowerCase();
+            for (const city of cities) {
+              if (lower.startsWith(`${city} `)) {
+                return trimmed.slice(city.length).trim();
+              }
+            }
+            return trimmed;
+          };
+
+          const isNonTransactional = (text: string, date: string | null, amount: number) => {
+            if (date) return false;
+            const lower = text.toLowerCase();
+            // Summary / header lines in statements
+            const hints = [
+              "estado de cuenta",
+              "resumen",
+              "totales",
+              "total",
+              "pago minimo",
+              "pago mínimo",
+              "cupo",
+              "disponible",
+              "usado",
+              "utilizado",
+              "tasa",
+              "interes",
+              "interés",
+              "comision",
+              "comisión",
+              "fecha de pago",
+              "fecha de cierre",
+              "periodo",
+              "período",
+              "cliente",
+              "rut",
+              "direccion",
+              "dirección"
+            ];
+            if (hints.some((h) => lower.includes(h))) return true;
+            // Also drop lines that look like pure section labels.
+            if (text.length <= 24 && /^[A-Z0-9\s.:-]+$/.test(text)) return true;
+            // If amount is tiny/zero with no date, it's likely informational.
+            if (!Number.isFinite(amount) || amount === 0) return true;
+            return false;
+          };
+
+          const extractInstallmentFromText = (text: string) => {
+            const normalized = text.toLowerCase();
+
+            const ratio = text.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
+            if (ratio) {
+              const current = Number(ratio[1]);
+              const total = Number(ratio[2]);
+              if (
+                Number.isInteger(current) &&
+                Number.isInteger(total) &&
+                total > 1 &&
+                total <= 48 &&
+                current >= 1 &&
+                current <= total &&
+                !(current === 1 && total === 1)
+              ) {
+                return {
+                  cuotaActual: current,
+                  cuotaTotal: total,
+                  installmentLabel: `${String(current).padStart(2, "0")}/${String(total).padStart(2, "0")}`,
+                  installments: total
+                };
+              }
+            }
+
+            const cuotaDe = normalized.match(/\bcuota\s+(\d{1,2})\s+(?:de|\/)\s+(\d{1,2})\b/);
+            if (cuotaDe) {
+              const current = Number(cuotaDe[1]);
+              const total = Number(cuotaDe[2]);
+              if (total > 1 && total <= 48 && current >= 1 && current <= total) {
+                return {
+                  cuotaActual: current,
+                  cuotaTotal: total,
+                  installmentLabel: `cuota ${current} de ${total}`,
+                  installments: total
+                };
+              }
+            }
+
+            return null;
+          };
+
+          const classifyCreditCardKind = (text: string, direction: "debit" | "credit") => {
+            const lower = text.toLowerCase();
+            if (lower.includes("avance")) return "cash_advance";
+            if (lower.includes("interes") || lower.includes("interés")) return "interest";
+            if (lower.includes("comision") || lower.includes("comisión")) return "fee";
+            if (lower.includes("seguro")) return "insurance";
+            if (lower.includes("devol") || lower.includes("revers")) return "refund";
+            if (direction === "credit" && (lower.includes("pago") || lower.includes("abono"))) return "payment";
+            if (direction === "credit") return "payment";
+            return "purchase";
+          };
+
+          const scoreRowConfidence = (params: {
+            date: string | null;
+            description: string;
+            amount: number;
+            kind: string;
+            hasInstallment: boolean;
+          }) => {
+            let score = 0;
+            if (params.date) score += 1;
+            if (Number.isFinite(params.amount) && params.amount !== 0) score += 1;
+            if (params.description && params.description !== "Movimiento") score += 1;
+            if (params.kind && params.kind !== "other") score += 1;
+            if (params.hasInstallment) score += 1;
+            if (score >= 4) return { level: "high" as const, confidence: 0.9 };
+            if (score === 3) return { level: "medium" as const, confidence: 0.65 };
+            return { level: "low" as const, confidence: 0.35 };
+          };
+
+          const rows = transactions
+            .map((tx, index) => {
+              const baseText = normalizeSpace(
+                (typeof tx.merchant === "string" && tx.merchant) ||
+                  (typeof tx.descriptionRaw === "string" && tx.descriptionRaw) ||
+                  ""
               );
+              const cleanedText = stripLeadingCity(baseText);
+              const merchant = cleanedText.length > 0 ? cleanedText : "Movimiento";
 
-            return {
-              fecha: tx.date ?? null,
-              descripcion: merchant,
-              descripcionBase: merchant,
-              cargo: tx.direction === "debit" ? amount : undefined,
-              abono: tx.direction === "credit" ? amount : undefined,
-              esCompraEnCuotas: isInstallment,
-              cuotaActual: isInstallment ? tx.installment.installmentCurrent : null,
-              cuotaTotal: isInstallment ? tx.installment.installmentTotal : null,
-              montoCuota: isInstallment ? tx.installment.installmentAmount : null,
-              montoTotalCompra: isInstallment ? tx.installment.originalAmount : null,
-              cuotasRestantes: isInstallment ? tx.installment.installmentsRemaining : null,
-              __aiKind: "pdf-ai",
-              __aiType: tx.type,
-              __aiNeedsReview: tx.needsReview || merchant === "Movimiento",
-              __aiRaw: tx.descriptionRaw,
-              __aiIndex: index + 1,
-              __aiConfidence: ai.confidence
-            } as Record<string, unknown>;
-          });
+              const installmentFromText = extractInstallmentFromText(merchant);
+              const isInstallmentFromAI =
+                tx.installment?.isInstallment === true &&
+                typeof tx.installment.installmentTotal === "number" &&
+                tx.installment.installmentTotal > 1 &&
+                !(
+                  tx.installment.installmentCurrent === 1 &&
+                  tx.installment.installmentTotal === 1
+                );
+
+              const isInstallment = Boolean(isInstallmentFromAI || installmentFromText);
+              const effectiveInstallment = installmentFromText
+                ? installmentFromText
+                : isInstallmentFromAI
+                  ? {
+                      cuotaActual: tx.installment.installmentCurrent ?? null,
+                      cuotaTotal: tx.installment.installmentTotal ?? null,
+                      installmentLabel:
+                        typeof tx.installment.installmentCurrent === "number" &&
+                        typeof tx.installment.installmentTotal === "number"
+                          ? `${String(tx.installment.installmentCurrent).padStart(2, "0")}/${String(
+                              tx.installment.installmentTotal
+                            ).padStart(2, "0")}`
+                          : null,
+                      installments: tx.installment.installmentTotal ?? null
+                    }
+                  : null;
+
+              const amount = Math.abs(tx.amount);
+              const direction = tx.direction ?? (tx.amount < 0 ? "debit" : "debit");
+              const kind = classifyCreditCardKind(merchant, direction);
+              const kindWithInstallment = isInstallment && kind === "purchase" ? "installment_purchase" : kind;
+
+              // Drop non-transactional summary/header lines.
+              if (isNonTransactional(merchant, tx.date ?? null, amount)) {
+                return null;
+              }
+
+              const confidence = scoreRowConfidence({
+                date: tx.date ?? null,
+                description: merchant,
+                amount,
+                kind: kindWithInstallment,
+                hasInstallment: isInstallment
+              });
+              const needsReview =
+                tx.needsReview === true ||
+                confidence.level === "low" ||
+                merchant === "Movimiento" ||
+                kindWithInstallment === "purchase" && merchant.length < 4;
+
+              return {
+                fecha: tx.date ?? null,
+                descripcion: merchant,
+                descripcionBase: merchant,
+                cargo: direction === "debit" ? amount : undefined,
+                abono: direction === "credit" ? amount : undefined,
+                esCompraEnCuotas: isInstallment,
+                cuotaActual: isInstallment ? (effectiveInstallment?.cuotaActual ?? null) : null,
+                cuotaTotal: isInstallment ? (effectiveInstallment?.cuotaTotal ?? null) : null,
+                installments: isInstallment ? (effectiveInstallment?.installments ?? null) : null,
+                installmentLabel: isInstallment ? (effectiveInstallment?.installmentLabel ?? null) : null,
+                montoCuota: isInstallment ? tx.installment.installmentAmount : null,
+                montoTotalCompra: isInstallment ? tx.installment.originalAmount : null,
+                cuotasRestantes: isInstallment ? tx.installment.installmentsRemaining : null,
+                __aiKind: "pdf-ai",
+                __aiType: kindWithInstallment,
+                __aiNeedsReview: needsReview,
+                __aiRaw: tx.descriptionRaw,
+                __aiIndex: index + 1,
+                __aiConfidence: confidence.confidence
+              } as Record<string, unknown>;
+            })
+            .filter((row): row is Record<string, unknown> => Boolean(row));
 
           const missingFields: string[] = [];
           if (!ai.preview.statementDate) missingFields.push("fecha de facturación/cierre");
