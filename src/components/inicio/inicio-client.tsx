@@ -359,6 +359,46 @@ export function InicioClient() {
     });
   }, [creditHealth]);
 
+  const creditExecutiveSummary = useMemo(() => {
+    const interestFees = (item: CreditHealthItem) => (item.totals.interest ?? 0) + (item.totals.fees ?? 0);
+    const hasBadge = (item: CreditHealthItem, key: string) => item.badges?.some((b) => b.key === key);
+
+    const overdueItems = creditHealth.filter((i) => hasBadge(i, "overdue"));
+    const dueSoonItems = creditHealth.filter((i) => hasBadge(i, "due-soon"));
+    const minMissingItems = creditHealth.filter((i) => hasBadge(i, "min-missing"));
+    const highUtilItems = creditHealth.filter((i) => (i.utilizationPct ?? 0) >= 70);
+    const veryHighUtilItems = creditHealth.filter((i) => (i.utilizationPct ?? 0) >= 90);
+    const interestFeesHighItems = creditHealth.filter((i) => interestFees(i) >= 10000);
+    const installmentsUpItems = creditHealth.filter((i) => hasBadge(i, "inst-up"));
+
+    const interestFeesHighTotal = interestFeesHighItems.reduce((sum, i) => sum + interestFees(i), 0);
+
+    const topUrgent =
+      overdueItems[0]?.accountId ??
+      minMissingItems[0]?.accountId ??
+      dueSoonItems[0]?.accountId ??
+      veryHighUtilItems[0]?.accountId ??
+      highUtilItems[0]?.accountId ??
+      interestFeesHighItems[0]?.accountId ??
+      null;
+
+    return {
+      counts: {
+        overdue: overdueItems.length,
+        dueSoon: dueSoonItems.length,
+        minMissing: minMissingItems.length,
+        highUtil: highUtilItems.length,
+        veryHighUtil: veryHighUtilItems.length,
+        interestFeesHigh: interestFeesHighItems.length,
+        installmentsUp: installmentsUpItems.length
+      },
+      totals: {
+        interestFeesHighTotal
+      },
+      topUrgent
+    };
+  }, [creditHealth]);
+
   const topCreditAttention = sortedCreditAttention[0] ?? null;
 
   const coachMensajes = useMemo(() => {
@@ -632,6 +672,53 @@ export function InicioClient() {
                   Ver todas
                 </Button>
               </div>
+
+              {(() => {
+                const c = creditExecutiveSummary.counts;
+                const chips: Array<{ key: string; label: string; tone: "alert" | "attention" | "info" }> = [];
+
+                if (c.overdue > 0) chips.push({ key: "overdue", label: `Vencidas ${c.overdue}`, tone: "alert" });
+                if (c.minMissing > 0) chips.push({ key: "min", label: `Mínimo pendiente ${c.minMissing}`, tone: "alert" });
+                if (c.dueSoon > 0) chips.push({ key: "due", label: `Por vencer ${c.dueSoon}`, tone: "attention" });
+                if (c.veryHighUtil > 0) chips.push({ key: "util90", label: `Cupo ≥90% ${c.veryHighUtil}`, tone: "alert" });
+                else if (c.highUtil > 0) chips.push({ key: "util70", label: `Cupo alto ${c.highUtil}`, tone: "attention" });
+                if (c.interestFeesHigh > 0) chips.push({ key: "if", label: `Int/Com altos ${c.interestFeesHigh}`, tone: "info" });
+                if (c.installmentsUp > 0) chips.push({ key: "inst", label: `Cuotas subiendo ${c.installmentsUp}`, tone: "attention" });
+
+                const visible = chips.slice(0, 5);
+                if (!visible.length) return null;
+
+                return (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/70 bg-white/85 px-3 py-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {visible.map((chip) => (
+                        <span
+                          key={chip.key}
+                          className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${creditToneToClasses(chip.tone)}`}
+                        >
+                          {chip.label}
+                        </span>
+                      ))}
+                      {c.interestFeesHigh > 0 && creditExecutiveSummary.totals.interestFeesHighTotal > 0 ? (
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-700">
+                          Total {formatCurrency(creditExecutiveSummary.totals.interestFeesHighTotal)}
+                        </span>
+                      ) : null}
+                    </div>
+                    {creditExecutiveSummary.topUrgent ? (
+                      <button
+                        type="button"
+                        className="tap-feedback shrink-0 rounded-full border border-slate-200 bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-slate-700"
+                        onClick={() =>
+                          (window.location.href = `/cuentas?card=${encodeURIComponent(creditExecutiveSummary.topUrgent!)}`)
+                        }
+                      >
+                        Abrir crítica
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })()}
 
               <div className="space-y-2">
                 {sortedCreditAttention.slice(0, 3).map((item) => {
@@ -952,6 +1039,7 @@ export function InicioClient() {
       calculatorResult,
       coachMensajes,
       creditDebtTotal,
+      creditExecutiveSummary,
       creditHealthLoading,
       debtsLoading,
       debtsPendingTotal,
