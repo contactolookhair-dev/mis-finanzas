@@ -242,11 +242,17 @@ export async function previewImportFile(input: {
         geminiError: string | null;
         textLength: number;
         geminiBody?: string;
+        extractorUsed?: string | null;
+        extractorAttempts?: unknown;
+        extractorError?: string | null;
       } = {
         aiUsed: false,
         geminiStatus: null,
         geminiError: null,
-        textLength: rawText.length
+        textLength: rawText.length,
+        extractorUsed: extraction.debug.extractorUsed,
+        extractorAttempts: extraction.debug.extractorAttempts,
+        extractorError: extraction.debug.extractorError
       };
 
       // Prefer AI structuring when configured. If not configured or it fails,

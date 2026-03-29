@@ -983,6 +983,12 @@ export function ImportTransactionsPanel(props: {
               <div>geminiStatus: <span className="font-mono">{String((preview?.debug ?? previewDebug)?.geminiStatus ?? "—")}</span></div>
               <div>geminiError: <span className="font-mono">{String((preview?.debug ?? previewDebug)?.geminiError ?? "—")}</span></div>
               <div>textLength: <span className="font-mono">{String((preview?.debug ?? previewDebug)?.textLength ?? "—")}</span></div>
+              {"extractorUsed" in ((preview?.debug ?? previewDebug) ?? {}) ? (
+                <div>extractorUsed: <span className="font-mono">{String((preview?.debug ?? previewDebug as any)?.extractorUsed ?? "—")}</span></div>
+              ) : null}
+              {"extractorError" in ((preview?.debug ?? previewDebug) ?? {}) ? (
+                <div>extractorError: <span className="font-mono">{String((preview?.debug ?? previewDebug as any)?.extractorError ?? "—")}</span></div>
+              ) : null}
             </div>
           </SurfaceCard>
         ) : null}
