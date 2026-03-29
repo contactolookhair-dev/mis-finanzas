@@ -553,15 +553,56 @@ export async function previewImportFile(input: {
             return { level: "low" as const, confidence: 0.35 };
           };
 
+          const toYmdFromDmy = (dmy: string) => {
+            const match = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (!match) return null;
+            return `${match[3]}-${match[2]}-${match[1]}`;
+          };
+
+          // Build once per preview request (no globals): date+amount index for reconstructing missing merchants.
+          const lineIndex = new Map<string, string>();
+          for (const line of lines) {
+            const dmy = extractDate(line);
+            const ymd = dmy ? toYmdFromDmy(dmy) : null;
+            const amt = extractAmount(line);
+            const absAmt = typeof amt === "number" ? Math.abs(amt) : null;
+            if (!ymd || absAmt == null) continue;
+            const key = `${ymd}|${Math.round(absAmt)}`;
+            if (!lineIndex.has(key)) lineIndex.set(key, line);
+          }
+
           const rows = transactions
             .map((tx, index) => {
+
               const baseText = normalizeSpace(
                 (typeof tx.merchant === "string" && tx.merchant) ||
                   (typeof tx.descriptionRaw === "string" && tx.descriptionRaw) ||
                   ""
               );
               const cleanedText = stripLeadingCity(baseText);
-              const merchant = cleanedText.length > 0 ? cleanedText : "Movimiento";
+              let merchant = cleanedText.length > 0 ? cleanedText : "Movimiento";
+
+              if (merchant === "Movimiento" && typeof tx.date === "string" && typeof tx.amount === "number") {
+                const key = `${tx.date}|${Math.round(Math.abs(tx.amount))}`;
+                const matchedLine = lineIndex.get(key) ?? null;
+                if (matchedLine) {
+                  const lineClean = normalizeSpace(matchedLine);
+                  const dmy = extractDate(lineClean);
+                  const afterDate = dmy ? lineClean.split(dmy).slice(1).join(dmy).trim() : lineClean;
+                  if (afterDate.includes(" T ")) {
+                    const between = afterDate.split(" T ")[0]?.trim() ?? "";
+                    merchant = stripLeadingCity(between) || merchant;
+                  } else {
+                    // Fallback: take everything before first amount-like token.
+                    const amountToken = lineClean.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?/);
+                    if (amountToken?.index != null && amountToken.index > 0) {
+                      const beforeAmt = lineClean.slice(0, amountToken.index).trim();
+                      const withoutCity = stripLeadingCity(beforeAmt);
+                      merchant = dmy ? withoutCity.replace(dmy, "").trim() || merchant : withoutCity || merchant;
+                    }
+                  }
+                }
+              }
 
               const installmentFromText = extractInstallmentFromText(merchant);
               const isInstallmentFromAI =
@@ -592,8 +633,14 @@ export async function previewImportFile(input: {
                   : null;
 
               const amount = Math.abs(tx.amount);
-              const direction = tx.direction ?? (tx.amount < 0 ? "debit" : "debit");
-              const kind = classifyCreditCardKind(merchant, direction);
+              const inferredDirection: "debit" | "credit" =
+                tx.direction ??
+                (() => {
+                  const inferredKind = classifyCreditCardKind(merchant, "debit");
+                  return inferredKind === "payment" || inferredKind === "refund" ? "credit" : "debit";
+                })();
+
+              const kind = classifyCreditCardKind(merchant, inferredDirection);
               const kindWithInstallment = isInstallment && kind === "purchase" ? "installment_purchase" : kind;
 
               // Drop non-transactional summary/header lines.
@@ -618,8 +665,8 @@ export async function previewImportFile(input: {
                 fecha: tx.date ?? null,
                 descripcion: merchant,
                 descripcionBase: merchant,
-                cargo: direction === "debit" ? amount : undefined,
-                abono: direction === "credit" ? amount : undefined,
+                cargo: inferredDirection === "debit" ? amount : undefined,
+                abono: inferredDirection === "credit" ? amount : undefined,
                 esCompraEnCuotas: isInstallment,
                 cuotaActual: isInstallment ? (effectiveInstallment?.cuotaActual ?? null) : null,
                 cuotaTotal: isInstallment ? (effectiveInstallment?.cuotaTotal ?? null) : null,
