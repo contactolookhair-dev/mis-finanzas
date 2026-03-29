@@ -448,9 +448,22 @@ export async function previewImportFile(input: {
             const normalized = normalizeSpace(value);
             if (!normalized) return "";
 
-            // If statement-style lines include " T " as a separator, prefer the left side.
+            // Falabella/CMR PDF lines often look like:
+            // "Santiago 20/02/2026 Copec asistido T 30.000 30.000 01/01 ..."
+            // Prefer the segment after the date and before " T " when present, otherwise fallback.
+            const dateMatch = normalized.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
+            const afterDate =
+              dateMatch && dateMatch.index != null
+                ? normalized.slice(dateMatch.index + dateMatch[0].length).trim()
+                : null;
+            const betweenDateAndT =
+              afterDate && afterDate.includes(" T ") ? afterDate.split(" T ")[0]?.trim() ?? "" : "";
+
+            // If statement-style lines include " T " as a separator, prefer the left side as a fallback.
             const tSplit = normalized.split(/\s+T\s+/i);
-            const candidate = (tSplit[0] ?? normalized).trim();
+            const leftOfT = (tSplit[0] ?? normalized).trim();
+
+            const candidate = betweenDateAndT || leftOfT || normalized;
 
             const cleaned = candidate
               .replace(/\b\d{2}\/\d{2}\/\d{4}\b/g, " ")
@@ -708,7 +721,9 @@ export async function previewImportFile(input: {
                 }
               }
 
-              const installmentFromText = extractInstallmentFromText(merchant);
+              // IMPORTANT: installment ratios like "03/06" usually live in the raw line;
+              // our merchant cleaning removes them, so extract from the raw best line.
+              const installmentFromText = extractInstallmentFromText(bestLineFromRaw);
               const isInstallmentFromAI =
                 tx.installment?.isInstallment === true &&
                 typeof tx.installment.installmentTotal === "number" &&

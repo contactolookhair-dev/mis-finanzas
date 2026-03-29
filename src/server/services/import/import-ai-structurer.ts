@@ -82,10 +82,39 @@ function extractMoneyFromText(value: string) {
   return best;
 }
 
+function extractMerchantFromStatementLine(value: string) {
+  const line = value.replace(/\s+/g, " ").trim();
+  if (!line) return "";
+  const dateMatch = line.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
+  if (!dateMatch) return "";
+
+  const afterDate = line.slice((dateMatch.index ?? 0) + dateMatch[0].length).trim();
+  if (!afterDate) return "";
+
+  if (afterDate.includes(" T ")) {
+    const between = afterDate.split(" T ")[0]?.trim() ?? "";
+    return between;
+  }
+
+  const amountToken = afterDate.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/);
+  if (amountToken?.index != null && amountToken.index > 0) {
+    return afterDate.slice(0, amountToken.index).trim();
+  }
+
+  return "";
+}
+
 const aiTransactionSchema = z
   .object({
     date: z.string().nullable().optional().default(null),
     merchant: z.string().default(""),
+    merchantName: z.string().nullable().optional().default(null),
+    merchant_name: z.string().nullable().optional().default(null),
+    description: z.string().nullable().optional().default(null),
+    descripcion: z.string().nullable().optional().default(null),
+    glosa: z.string().nullable().optional().default(null),
+    detalle: z.string().nullable().optional().default(null),
+    comercio: z.string().nullable().optional().default(null),
     // Gemini may return different field names for the amount; we normalize post-parse.
     amount: moneyLikeOptionalSchema,
     postedAmount: moneyLikeOptionalSchema,
@@ -120,6 +149,13 @@ const aiTransactionSchema = z
   .default({
     date: null,
     merchant: "",
+    merchantName: null,
+    merchant_name: null,
+    description: null,
+    descripcion: null,
+    glosa: null,
+    detalle: null,
+    comercio: null,
     amount: null,
     postedAmount: null,
     chargeAmount: null,
@@ -343,7 +379,9 @@ function normalizeAiPreview(preview: AiImportPreview) {
     if (amount == null) {
       const text = [
         typeof tx.descriptionRaw === "string" ? tx.descriptionRaw : "",
-        typeof tx.merchant === "string" ? tx.merchant : ""
+        typeof tx.merchant === "string" ? tx.merchant : "",
+        typeof tx.description === "string" ? tx.description : "",
+        typeof tx.descripcion === "string" ? tx.descripcion : ""
       ]
         .join(" ")
         .trim();
@@ -354,20 +392,43 @@ function normalizeAiPreview(preview: AiImportPreview) {
       }
     }
 
-    const merchantTrimmed = typeof tx.merchant === "string" ? tx.merchant.trim() : "";
-    const needsReview = tx.needsReview === true || amount == null || merchantTrimmed.length === 0;
+    const merchantCandidates = [
+      { key: "merchant", value: typeof tx.merchant === "string" ? tx.merchant.trim() : "" },
+      { key: "merchantName", value: typeof tx.merchantName === "string" ? tx.merchantName.trim() : "" },
+      { key: "merchant_name", value: typeof tx.merchant_name === "string" ? tx.merchant_name.trim() : "" },
+      { key: "description", value: typeof tx.description === "string" ? tx.description.trim() : "" },
+      { key: "descripcion", value: typeof tx.descripcion === "string" ? tx.descripcion.trim() : "" },
+      { key: "glosa", value: typeof tx.glosa === "string" ? tx.glosa.trim() : "" },
+      { key: "detalle", value: typeof tx.detalle === "string" ? tx.detalle.trim() : "" },
+      { key: "comercio", value: typeof tx.comercio === "string" ? tx.comercio.trim() : "" }
+    ].filter((c) => c.value.length > 0);
+
+    let merchant = merchantCandidates[0]?.value ?? "";
+    let merchantSource = merchantCandidates[0]?.key ?? null;
+
+    if (!merchant) {
+      const raw = typeof tx.descriptionRaw === "string" ? tx.descriptionRaw : "";
+      const fromLine = raw ? extractMerchantFromStatementLine(raw) : "";
+      if (fromLine) {
+        merchant = fromLine;
+        merchantSource = "descriptionRaw";
+      }
+    }
+
+    const needsReview = tx.needsReview === true || amount == null || merchant.length === 0;
 
     if (debug && idx < 10) {
       console.log("[imports/ai] tx normalize", {
         index: idx + 1,
         amountSource,
         amount,
-        merchant: merchantTrimmed ? merchantTrimmed.slice(0, 80) : null,
+        merchantSource,
+        merchant: merchant ? merchant.slice(0, 80) : null,
         descriptionRaw: typeof tx.descriptionRaw === "string" ? tx.descriptionRaw.slice(0, 120) : null
       });
     }
 
-    return { ...tx, amount, needsReview };
+    return { ...tx, merchant, amount, needsReview };
   });
 
   return { ...preview, transactions: normalizedTransactions };
