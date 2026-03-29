@@ -361,6 +361,7 @@ export async function previewImportFile(input: {
       const pdfDebug: {
         aiUsed: boolean;
         geminiModel?: string | null;
+        geminiApiVersion?: string | null;
         geminiStatus: number | null;
         geminiError: string | null;
         textLength: number;
@@ -398,6 +399,7 @@ export async function previewImportFile(input: {
         if (ai.ok) {
           pdfDebug.aiUsed = true;
           pdfDebug.geminiModel = ai.debug.geminiModel ?? null;
+          pdfDebug.geminiApiVersion = ai.debug.geminiApiVersion ?? null;
           pdfDebug.geminiStatus = ai.debug.geminiStatus;
           pdfDebug.geminiError = ai.debug.geminiError;
           if (ai.debug.geminiBody) pdfDebug.geminiBody = ai.debug.geminiBody;
@@ -477,6 +479,7 @@ export async function previewImportFile(input: {
         } else {
           pdfDebug.aiUsed = true;
           pdfDebug.geminiModel = ai.debug.geminiModel ?? null;
+          pdfDebug.geminiApiVersion = ai.debug.geminiApiVersion ?? null;
           pdfDebug.geminiStatus = ai.debug.geminiStatus;
           pdfDebug.geminiError =
             ai.debug.geminiError ?? `${ai.error}: ${ai.message}`;

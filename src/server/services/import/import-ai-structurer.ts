@@ -1,45 +1,93 @@
 import { z } from "zod";
 
+const normalizeEnum = (value: unknown) => (typeof value === "string" ? value.trim() : value);
+
+const documentTypeSchema = z.preprocess((value) => {
+  const v = normalizeEnum(value);
+  if (typeof v !== "string") return v;
+  const lower = v.toLowerCase();
+  if (lower === "credit_card_statement" || lower === "bank_statement" || lower === "unknown") return lower;
+  if (lower.includes("credit") || lower.includes("tarjeta") || lower.includes("estado de cuenta")) {
+    return "credit_card_statement";
+  }
+  if (lower.includes("cartola") || lower.includes("cuenta") || lower.includes("corriente")) {
+    return "bank_statement";
+  }
+  return "unknown";
+}, z.enum(["credit_card_statement", "bank_statement", "unknown"]));
+
+const currencySchema = z.preprocess((value) => {
+  const v = normalizeEnum(value);
+  if (typeof v !== "string") return v;
+  const upper = v.toUpperCase();
+  if (upper.includes("CLP") || upper.includes("PESO")) return "CLP";
+  if (upper.includes("USD") || upper.includes("DOLAR") || upper.includes("DÓLAR")) return "USD";
+  return "UNKNOWN";
+}, z.enum(["CLP", "USD", "UNKNOWN"]));
+
+const directionSchema = z.preprocess((value) => {
+  const v = normalizeEnum(value);
+  if (typeof v !== "string") return v;
+  const lower = v.toLowerCase();
+  if (lower === "debit" || lower === "cargo" || lower === "egreso" || lower === "compra") return "debit";
+  if (lower === "credit" || lower === "abono" || lower === "ingreso" || lower === "pago") return "credit";
+  return "debit";
+}, z.enum(["debit", "credit"]));
+
+const txTypeSchema = z.preprocess((value) => {
+  const v = normalizeEnum(value);
+  if (typeof v !== "string") return v;
+  const lower = v.toLowerCase();
+  if (lower === "purchase" || lower === "compra") return "purchase";
+  if (lower === "payment" || lower === "pago" || lower === "abono") return "payment";
+  if (lower === "refund" || lower.includes("devol")) return "refund";
+  if (lower === "fee" || lower.includes("comisi")) return "fee";
+  if (lower === "interest" || lower.includes("intere")) return "interest";
+  if (lower === "cash_advance" || lower.includes("avance")) return "cash_advance";
+  return "other";
+}, z.enum(["purchase", "payment", "refund", "fee", "interest", "cash_advance", "other"]));
+
 const aiImportPreviewSchema = z.object({
-  documentType: z.enum(["credit_card_statement", "bank_statement", "unknown"]),
-  issuer: z.string().nullable(),
-  accountName: z.string().nullable(),
-  statementDate: z.string().nullable(),
-  dueDate: z.string().nullable(),
-  billedTotal: z.number().nullable(),
-  minimumPayment: z.number().nullable(),
-  creditLimitTotal: z.number().nullable(),
-  creditLimitUsed: z.number().nullable(),
-  creditLimitAvailable: z.number().nullable(),
-  currency: z.enum(["CLP", "USD", "UNKNOWN"]),
-  summaryNeedsReview: z.boolean(),
+  documentType: documentTypeSchema.default("unknown"),
+  issuer: z.string().nullable().optional().default(null),
+  accountName: z.string().nullable().optional().default(null),
+  statementDate: z.string().nullable().optional().default(null),
+  dueDate: z.string().nullable().optional().default(null),
+  billedTotal: z.number().nullable().optional().default(null),
+  minimumPayment: z.number().nullable().optional().default(null),
+  creditLimitTotal: z.number().nullable().optional().default(null),
+  creditLimitUsed: z.number().nullable().optional().default(null),
+  creditLimitAvailable: z.number().nullable().optional().default(null),
+  currency: currencySchema.default("UNKNOWN"),
+  summaryNeedsReview: z.boolean().optional().default(true),
   transactions: z
     .array(
       z.object({
-        date: z.string().nullable(),
-        merchant: z.string(),
+        date: z.string().nullable().optional().default(null),
+        merchant: z.string().default(""),
         amount: z.number(),
-        direction: z.enum(["debit", "credit"]),
-        type: z.enum([
-          "purchase",
-          "payment",
-          "refund",
-          "fee",
-          "interest",
-          "cash_advance",
-          "other"
-        ]),
-        categorySuggestion: z.string().nullable(),
-        descriptionRaw: z.string().nullable(),
-        installment: z.object({
-          isInstallment: z.boolean(),
-          installmentCurrent: z.number().int().nullable(),
-          installmentTotal: z.number().int().nullable(),
-          installmentsRemaining: z.number().int().nullable(),
-          installmentAmount: z.number().nullable(),
-          originalAmount: z.number().nullable()
-        }),
-        needsReview: z.boolean()
+        direction: directionSchema,
+        type: txTypeSchema,
+        categorySuggestion: z.string().nullable().optional().default(null),
+        descriptionRaw: z.string().nullable().optional().default(null),
+        installment: z
+          .object({
+            isInstallment: z.boolean(),
+            installmentCurrent: z.number().int().nullable(),
+            installmentTotal: z.number().int().nullable(),
+            installmentsRemaining: z.number().int().nullable(),
+            installmentAmount: z.number().nullable(),
+            originalAmount: z.number().nullable()
+          })
+          .default({
+            isInstallment: false,
+            installmentCurrent: null,
+            installmentTotal: null,
+            installmentsRemaining: null,
+            installmentAmount: null,
+            originalAmount: null
+          }),
+        needsReview: z.boolean().optional().default(true)
       })
     )
     .default([])
@@ -56,6 +104,7 @@ export type AiStructurePdfResult =
       debug: {
         geminiKeyPresent: boolean;
         geminiModel: string | null;
+        geminiApiVersion: "v1" | "v1beta" | null;
         geminiStatus: number | null;
         geminiError: string | null;
         geminiBody?: string;
@@ -68,6 +117,7 @@ export type AiStructurePdfResult =
       debug: {
         geminiKeyPresent: boolean;
         geminiModel: string | null;
+        geminiApiVersion: "v1" | "v1beta" | null;
         geminiStatus: number | null;
         geminiError: string | null;
         geminiBody?: string;
@@ -122,6 +172,7 @@ export async function structurePdfTextWithAI(input: {
       debug: {
         geminiKeyPresent: false,
         geminiModel: null,
+        geminiApiVersion: null,
         geminiStatus: null,
         geminiError: "missing_api_key"
       }
@@ -161,77 +212,116 @@ export async function structurePdfTextWithAI(input: {
   let geminiStatus: number | null = null;
   let geminiBody: string | undefined;
   let geminiModel: string | null = null;
+  let geminiApiVersion: "v1" | "v1beta" | null = null;
   try {
     let lastErrorBody: string | null = null;
     let lastStatus: number | null = null;
 
     for (const candidateModel of modelsToTry) {
       geminiModel = candidateModel;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        candidateModel
-      )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: system }]
-          },
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: user }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            responseMimeType: "application/json"
-          }
-        })
-      });
-
-      geminiStatus = res.status;
-      lastStatus = res.status;
-      console.log("[imports/ai] gemini status:", res.status, "model:", candidateModel);
-
-      if (!res.ok) {
-        const bodyText = await res.text().catch(() => "");
-        lastErrorBody = bodyText || `HTTP_${res.status}`;
-        if (includeDevBody) {
-          console.log("[imports/ai] gemini error body:", bodyText);
-        }
-
-        // Retry on "model not found/unsupported" errors, otherwise fail fast.
-        const shouldRetry =
-          res.status === 404 ||
-          bodyText.toLowerCase().includes("is not found") ||
-          bodyText.toLowerCase().includes("not supported");
-        if (shouldRetry) {
-          continue;
-        }
-
-        return {
-          ok: false,
-          error: "ai_failed",
-          message: `Gemini respondió error (${res.status}).`,
-          debug: {
-            geminiKeyPresent,
-            geminiModel: candidateModel,
-            geminiStatus: res.status,
-            geminiError: bodyText ? bodyText.slice(0, 1200) : `HTTP_${res.status}`,
-            geminiBody: includeDevBody ? bodyText : undefined
-          }
-        };
-      }
-
-      const payload = (await res.json()) as {
+      // In production some environments return 404 for v1beta; try stable v1 first, then v1beta.
+      const apiVersions: Array<"v1" | "v1beta"> = ["v1", "v1beta"];
+      let payload: {
         candidates?: Array<{
           content?: { parts?: Array<{ text?: string }> };
         }>;
-      };
+      } | null = null;
+
+      let lastHttpBodyText = "";
+      let lastHttpStatus: number | null = null;
+      let lastApiVersionTried: "v1" | "v1beta" | null = null;
+
+      for (const apiVersion of apiVersions) {
+        lastApiVersionTried = apiVersion;
+        geminiApiVersion = apiVersion;
+        const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${encodeURIComponent(
+          candidateModel
+        )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [{ text: system }]
+            },
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: user }]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        geminiStatus = res.status;
+        lastStatus = res.status;
+        lastHttpStatus = res.status;
+        console.log("[imports/ai] gemini status:", res.status, "model:", candidateModel, "api:", apiVersion);
+
+        if (!res.ok) {
+          const bodyText = await res.text().catch(() => "");
+          lastHttpBodyText = bodyText;
+          lastErrorBody = bodyText || `HTTP_${res.status}`;
+          if (includeDevBody) {
+            console.log("[imports/ai] gemini error body:", bodyText);
+          }
+
+          // If this API version isn't available (or model not found), try next apiVersion/model.
+          const bodyLower = bodyText.toLowerCase();
+          const shouldRetry =
+            res.status === 404 ||
+            bodyLower.includes("is not found") ||
+            bodyLower.includes("not supported") ||
+            bodyLower.includes("not found");
+
+          if (shouldRetry) {
+            continue;
+          }
+
+          return {
+            ok: false,
+            error: "ai_failed",
+            message: `Gemini respondió error (${res.status}).`,
+            debug: {
+              geminiKeyPresent,
+              geminiModel: candidateModel,
+              geminiApiVersion: apiVersion,
+              geminiStatus: res.status,
+              geminiError: bodyText ? bodyText.slice(0, 1200) : `HTTP_${res.status}`,
+              geminiBody: includeDevBody ? bodyText : undefined
+            }
+          };
+        }
+
+        payload = (await res.json()) as {
+          candidates?: Array<{
+            content?: { parts?: Array<{ text?: string }> };
+          }>;
+        };
+        break;
+      }
+
+      if (!payload) {
+        return {
+          ok: false,
+          error: "ai_failed",
+          message: `Gemini respondió error (${lastHttpStatus ?? "unknown"}).`,
+          debug: {
+            geminiKeyPresent,
+            geminiModel: candidateModel,
+            geminiApiVersion: lastApiVersionTried,
+            geminiStatus: lastHttpStatus,
+            geminiError: (lastHttpBodyText || lastErrorBody || "unknown_error").slice(0, 1200)
+          }
+        };
+      }
 
       const content = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ?? "";
       if (includeDevBody) {
@@ -246,6 +336,7 @@ export async function structurePdfTextWithAI(input: {
           debug: {
             geminiKeyPresent,
             geminiModel: candidateModel,
+            geminiApiVersion,
             geminiStatus,
             geminiError: "invalid_json",
             geminiBody: includeDevBody ? geminiBody : undefined
@@ -273,6 +364,7 @@ export async function structurePdfTextWithAI(input: {
         debug: {
           geminiKeyPresent,
           geminiModel: candidateModel,
+          geminiApiVersion,
           geminiStatus,
           geminiError: null,
           geminiBody: includeDevBody ? geminiBody : undefined
@@ -288,8 +380,9 @@ export async function structurePdfTextWithAI(input: {
       debug: {
         geminiKeyPresent,
         geminiModel,
+        geminiApiVersion,
         geminiStatus: lastStatus,
-        geminiError: lastErrorBody ? lastErrorBody.slice(0, 1200) : "unknown_error"
+        geminiError: (lastErrorBody ?? "unknown_error").slice(0, 1200)
       }
     };
 
@@ -307,6 +400,7 @@ export async function structurePdfTextWithAI(input: {
       debug: {
         geminiKeyPresent,
         geminiModel,
+        geminiApiVersion,
         geminiStatus,
         geminiError: errMessage,
         geminiBody: includeDevBody ? geminiBody : undefined
