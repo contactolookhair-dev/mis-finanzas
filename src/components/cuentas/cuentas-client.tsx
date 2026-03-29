@@ -562,7 +562,11 @@ function AccountDetailModal({
     };
     totals: {
       purchases: number;
+      purchasesNormal?: number;
+      purchasesInstallments?: number;
       payments: number;
+      paymentsOnly?: number;
+      refunds?: number;
       interest: number;
       fees: number;
       cashAdvances: number;
@@ -701,6 +705,50 @@ function AccountDetailModal({
       max: 8
     });
   }, [selectedStatement, previousStatement, statementInsights, selectedImportBatchId]);
+
+  const selectedStatementBreakdown = useMemo(() => {
+    if (!selectedStatement) {
+      return null;
+    }
+
+    const totals = selectedStatement.totals ?? ({} as StatementItem["totals"]);
+    const purchasesInstallments =
+      typeof totals.purchasesInstallments === "number" ? totals.purchasesInstallments : 0;
+    const purchasesNormal =
+      typeof totals.purchasesNormal === "number"
+        ? totals.purchasesNormal
+        : Math.max(0, (totals.purchases ?? 0) - purchasesInstallments);
+
+    const paymentsOnly =
+      typeof totals.paymentsOnly === "number" ? totals.paymentsOnly : totals.payments ?? 0;
+    const refunds = typeof totals.refunds === "number" ? totals.refunds : 0;
+
+    const interest = totals.interest ?? 0;
+    const fees = totals.fees ?? 0;
+    const cashAdvances = totals.cashAdvances ?? 0;
+    const insurance = totals.insurance ?? 0;
+
+    const spent = purchasesNormal + purchasesInstallments + cashAdvances;
+    const billed =
+      selectedStatement.summary.totalBilled === null || selectedStatement.summary.totalBilled === undefined
+        ? spent + interest + fees + insurance
+        : selectedStatement.summary.totalBilled;
+    const remaining = Math.max(0, billed - paymentsOnly);
+
+    return {
+      purchasesNormal,
+      purchasesInstallments,
+      cashAdvances,
+      interest,
+      fees,
+      insurance,
+      paymentsOnly,
+      refunds,
+      spent,
+      billed,
+      remaining
+    };
+  }, [selectedStatement]);
 
   function formatDelta(current: number | null, prev: number | null) {
     if (current === null || prev === null) return null;
@@ -1103,58 +1151,119 @@ function AccountDetailModal({
                     </div>
                   </div>
 
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Totales compras</p>
-                      <p className="mt-1 text-base font-semibold text-rose-700">
-                        {formatCurrency(selectedStatement?.totals.purchases ?? 0)}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Movimientos: {selectedStatement?.totals.movementCount ?? 0}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Totales abonos</p>
-                      <p className="mt-1 text-base font-semibold text-emerald-700">
-                        {formatCurrency(selectedStatement?.totals.payments ?? 0)}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Dudosas: {selectedStatement?.totals.dubiousCount ?? 0}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Intereses / comisiones</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">
-                        Intereses: {formatCurrency(selectedStatement?.totals.interest ?? 0)}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Comisiones: {formatCurrency(selectedStatement?.totals.fees ?? 0)}
-                      </p>
-                      {previousStatement ? (
-                        <p className="mt-1 text-[11px] text-slate-500">
-                          {(() => {
-                            const dI = formatDelta(selectedStatement?.totals.interest ?? null, previousStatement.totals.interest);
-                            const dF = formatDelta(selectedStatement?.totals.fees ?? null, previousStatement.totals.fees);
-                            const sI = dI ? (dI.delta > 0 ? "+" : dI.delta < 0 ? "−" : "") : "";
-                            const sF = dF ? (dF.delta > 0 ? "+" : dF.delta < 0 ? "−" : "") : "";
-                            return `vs anterior int ${dI ? `${sI}${formatCurrency(Math.abs(dI.delta))}` : "—"} · com ${dF ? `${sF}${formatCurrency(Math.abs(dF.delta))}` : "—"}`;
-                          })()}
+                  {selectedStatementBreakdown ? (
+                    <>
+                      <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Resumen del ciclo
                         </p>
-                      ) : null}
-                    </div>
-                    <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Avances / seguros</p>
-                      <p className="mt-1 text-sm font-semibold text-slate-900">
-                        Avances: {formatCurrency(selectedStatement?.totals.cashAdvances ?? 0)}
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Seguros: {formatCurrency(selectedStatement?.totals.insurance ?? 0)}
-                      </p>
-                    </div>
-                  </div>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Gastado
+                            </p>
+                            <p className="mt-1 text-base font-semibold text-rose-700">
+                              {formatCurrency(selectedStatementBreakdown.spent)}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Pagado
+                            </p>
+                            <p className="mt-1 text-base font-semibold text-emerald-700">
+                              {formatCurrency(selectedStatementBreakdown.paymentsOnly)}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Falta por pagar
+                            </p>
+                            <p className="mt-1 text-base font-semibold text-slate-900">
+                              {formatCurrency(selectedStatementBreakdown.remaining)}
+                            </p>
+                            {selectedStatement?.summary.minimumPayment != null ? (
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                Mínimo: {formatCurrency(selectedStatement.summary.minimumPayment)}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        <p className="mt-2 text-[11px] text-slate-500">
+                          Movimientos: {selectedStatement?.totals.movementCount ?? 0}
+                          {" · "}
+                          Dudosas: {selectedStatement?.totals.dubiousCount ?? 0}
+                        </p>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Compras normales
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-rose-700">
+                            {formatCurrency(selectedStatementBreakdown.purchasesNormal)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Cuotas
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-rose-700">
+                            {formatCurrency(selectedStatementBreakdown.purchasesInstallments)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-500">Compras en cuotas del período.</p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Pagos / abonos
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-emerald-700">
+                            {formatCurrency(selectedStatementBreakdown.paymentsOnly)}
+                          </p>
+                          {selectedStatementBreakdown.refunds > 0 ? (
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              Devoluciones: {formatCurrency(selectedStatementBreakdown.refunds)}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Avances
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-900">
+                            {formatCurrency(selectedStatementBreakdown.cashAdvances)}
+                          </p>
+                          {selectedStatementBreakdown.insurance > 0 ? (
+                            <p className="mt-1 text-[11px] text-slate-500">
+                              Seguros: {formatCurrency(selectedStatementBreakdown.insurance)}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Intereses
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-900">
+                            {formatCurrency(selectedStatementBreakdown.interest)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Comisiones
+                          </p>
+                          <p className="mt-1 text-base font-semibold text-slate-900">
+                            {formatCurrency(selectedStatementBreakdown.fees)}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
 
                   {statementInsights.length > 0 ? (
                     <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">

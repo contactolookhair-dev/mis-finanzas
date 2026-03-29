@@ -55,8 +55,14 @@ export async function GET(
         availableLimit: summary.creditAvailable
       },
       totals: {
+        // Keep legacy aggregated fields for backwards-compatibility.
         purchases: summary.totals.purchases + summary.totals.installmentPurchases,
         payments: summary.totals.payments + summary.totals.refunds,
+        // New, more explicit breakdown for credit-card UX.
+        purchasesNormal: summary.totals.purchases,
+        purchasesInstallments: summary.totals.installmentPurchases,
+        paymentsOnly: summary.totals.payments,
+        refunds: summary.totals.refunds,
         interest: summary.totals.interests,
         fees: summary.totals.fees,
         cashAdvances: summary.totals.cashAdvances,
@@ -71,4 +77,3 @@ export async function GET(
 
   return NextResponse.json({ items: responseItems });
 }
-
