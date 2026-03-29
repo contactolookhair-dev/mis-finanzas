@@ -127,6 +127,11 @@ export async function POST(request: Request) {
   let safeTextLength = 0;
   let safeRowsCount = 0;
   const debugEntries: Array<{ stage: string; payload?: Record<string, unknown> }> = [];
+  let formData: FormData | null = null;
+  let selectedTemplateId: FormDataEntryValue | null = null;
+  let importTypeRaw: string | undefined = undefined;
+  let importType: ReturnType<typeof normalizeImportType> = undefined;
+  let preferredAccountId: string | undefined = undefined;
 
   const recordStage = (name: string, payload?: Record<string, unknown>) => {
     if (DEBUG_IMPORT_PREVIEW) {
@@ -164,15 +169,69 @@ export async function POST(request: Request) {
     return safeJsonResponse({ success: true, isolated: true });
   }
   try {
+    // 1) Always read the upload first so we can debug uploads and provide a fallback preview
+    // even if auth/workspace context is missing.
+    stage = "read_form_data";
+    recordStage(stage);
+    formData = await request.formData();
+    const keys = Array.from(formData.keys()).slice(0, 50);
+    const rawFile = formData.get("file");
+    if (rawFile instanceof File) safeFile = rawFile;
+
+    // Mandatory visibility for production debugging: confirms the field name and whether a File arrived.
+    console.log("[imports/preview] read_form_data", {
+      keys,
+      hasFile: rawFile instanceof File
+    });
+
+    if (!(rawFile instanceof File)) {
+      logStage("preview_failed", { errorMessage: "missing_file" });
+      return safeJsonResponse({
+        success: false,
+        error: "preview_failed",
+        message: "No se recibio ningun archivo. Intenta nuevamente.",
+        debug: {
+          ...buildDebugPayload({ stage: "missing_file" }),
+          formDataKeys: keys,
+          hasFileField: formData.has("file")
+        }
+      });
+    }
+
+    selectedTemplateId = formData.get("templateId");
+    importTypeRaw = normalizeOptionalString(formData.get("type"));
+    importType = normalizeImportType(importTypeRaw);
+    preferredAccountId = normalizeOptionalString(formData.get("accountId"));
+
+    stage = "read_file_bytes";
+    recordStage(stage);
+    safeBytes = new Uint8Array(await rawFile.arrayBuffer());
+    looksLikePdf =
+      safeBytes.length >= 5 &&
+      safeBytes[0] === 0x25 &&
+      safeBytes[1] === 0x50 &&
+      safeBytes[2] === 0x44 &&
+      safeBytes[3] === 0x46 &&
+      safeBytes[4] === 0x2d;
+
+    console.log("imports preview received", {
+      fileName: safeFile ? safeFile.name : null,
+      mimeType: safeFile ? safeFile.type : null,
+      fileSize: safeBytes.byteLength,
+      importTypeRaw,
+      importType,
+      preferredAccountId,
+      selectedTemplateId: normalizeOptionalString(selectedTemplateId)
+    });
+
     // Local-only bypass to allow debugging the endpoint without auth/session.
     // Do NOT enable this in production.
     if (process.env.DEBUG_IMPORT_PREVIEW_BYPASS_AUTH === "true" && process.env.NODE_ENV !== "production") {
       stage = "read_form_data";
       recordStage(stage);
-      const formData = await request.formData();
-      const file = formData.get("file");
-      if (file instanceof File) safeFile = file;
-      if (!(file instanceof File)) {
+      const bypassFile = formData.get("file");
+      if (bypassFile instanceof File) safeFile = bypassFile;
+      if (!(bypassFile instanceof File)) {
         logStage("preview_failed", { errorMessage: "missing_file" });
         return safeJsonResponse({
           success: false,
@@ -186,7 +245,7 @@ export async function POST(request: Request) {
 
       stage = "read_file_bytes";
       recordStage(stage);
-      const bytes = new Uint8Array(await file.arrayBuffer());
+      const bytes = safeBytes ?? new Uint8Array(await bypassFile.arrayBuffer());
       safeBytes = bytes;
       looksLikePdf =
         bytes.length >= 5 &&
@@ -201,8 +260,8 @@ export async function POST(request: Request) {
       const { previewImportFile } = await import("@/server/services/import-service");
       const rawPreview = await previewImportFile({
         workspaceId: "debug",
-        fileName: file.name,
-        mimeType: file.type,
+        fileName: bypassFile.name,
+        mimeType: bypassFile.type,
         bytes,
         preferredImportType: normalizeImportType(normalizeOptionalString(formData.get("type"))),
         preferredAccountId: normalizeOptionalString(formData.get("accountId")),
@@ -231,95 +290,6 @@ export async function POST(request: Request) {
       );
     }
 
-    stage = "load_dependencies:tenant:start";
-    recordStage(stage);
-    const tenantModule = await import("@/server/tenant/workspace-context");
-    stage = "load_dependencies:tenant:ok";
-    recordStage(stage);
-
-    stage = "load_dependencies:permissions:start";
-    recordStage(stage);
-    const permissionsModule = await import("@/server/permissions/permissions");
-    stage = "load_dependencies:permissions:ok";
-    recordStage(stage);
-
-    stage = "load_dependencies:import-service:start";
-    recordStage(stage);
-    const importServiceModule = await import("@/server/services/import-service");
-    stage = "load_dependencies:import-service:ok";
-    recordStage(stage);
-
-    const { getWorkspaceContextFromRequest } = tenantModule;
-    const { hasPermission } = permissionsModule;
-    const { previewImportFile } = importServiceModule;
-
-    stage = "resolve_context";
-    recordStage(stage);
-    const context = await getWorkspaceContextFromRequest(request as never);
-    if (!context.workspaceId || !context.userKey || !context.role) {
-      console.warn("imports preview auth context missing");
-      return jsonPreviewError();
-    }
-    if (!hasPermission(context.role, "transactions:import")) {
-      console.warn("imports preview permission denied", { role: context.role });
-      return jsonPreviewError();
-    }
-
-    stage = "read_form_data";
-    recordStage(stage);
-    const formData = await request.formData();
-    if (DEBUG_IMPORT_PREVIEW) {
-      const keys = Array.from(formData.keys()).slice(0, 20);
-      console.log(
-        "[imports/preview]",
-        JSON.stringify({
-          stage: "read_form_data",
-          formDataKeys: keys,
-          hasFileField: formData.has("file")
-        })
-      );
-    }
-    const file = formData.get("file");
-    if (file instanceof File) {
-      safeFile = file;
-    }
-    const selectedTemplateId = formData.get("templateId");
-    const importTypeRaw = normalizeOptionalString(formData.get("type"));
-    const importType = normalizeImportType(importTypeRaw);
-    const preferredAccountId = normalizeOptionalString(formData.get("accountId"));
-
-    console.log("imports preview received", {
-      workspaceId: context.workspaceId,
-      fileName: safeFile ? safeFile.name : null,
-      mimeType: safeFile ? safeFile.type : null,
-      importTypeRaw,
-      importType,
-      preferredAccountId,
-      fileSize: file instanceof File ? file.size : null,
-      selectedTemplateId: normalizeOptionalString(selectedTemplateId)
-    });
-
-    if (!(file instanceof File)) {
-      logStage("preview_failed", { errorMessage: "missing_file" });
-      const debug = buildDebugPayload({
-        stage: "missing_file",
-        looksLikePdf
-      }) as Record<string, unknown> | undefined;
-      const keys = Array.from(formData.keys()).slice(0, 50);
-      return safeJsonResponse({
-        success: false,
-        error: "preview_failed",
-        message: "No se recibio ningun archivo. Intenta nuevamente.",
-        debug: {
-          ...(debug ?? {}),
-          formDataKeys: keys,
-          hasFileField: formData.has("file")
-        }
-      });
-    }
-
-    logStage("file_parsed");
-
     if (importTypeRaw && !importType) {
       console.warn("imports preview unknown type", { importTypeRaw });
     }
@@ -328,58 +298,203 @@ export async function POST(request: Request) {
       console.warn("imports preview accountId appears truncated", { preferredAccountId });
     }
 
-    stage = "read_file_bytes";
-    recordStage(stage);
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    safeBytes = bytes;
-    looksLikePdf =
-      bytes.length >= 5 &&
-      bytes[0] === 0x25 &&
-      bytes[1] === 0x50 &&
-      bytes[2] === 0x44 &&
-      bytes[3] === 0x46 &&
-      bytes[4] === 0x2d;
-    console.log("imports preview parsing", {
-      fileName: file.name,
-      fileSize: bytes.byteLength,
-      importType,
-      preferredAccountId
-    });
+    // 2) Best-effort auth/context. If it fails, DO NOT return early: we can still give a fallback preview.
+    let context: { workspaceId?: string; userKey?: string; role?: string } | null = null;
+    let hasPreviewPermission = false;
+    try {
+      stage = "load_dependencies:tenant:start";
+      recordStage(stage);
+      const tenantModule = await import("@/server/tenant/workspace-context");
+      stage = "load_dependencies:tenant:ok";
+      recordStage(stage);
 
-    stage = "build_preview";
-    recordStage(stage, {
-      fileName: safeFile ? safeFile.name : null,
-      fileType: safeFile ? safeFile.type : null,
-      fileSize: bytes.byteLength
-    });
-    const rawPreview = await previewImportFile({
-      workspaceId: context.workspaceId,
-      userKey: context.userKey,
-      fileName: file.name,
-      mimeType: file.type,
-      bytes,
-      selectedTemplateId: typeof selectedTemplateId === "string" ? selectedTemplateId : undefined,
-      preferredAccountId,
-      preferredImportType: importType
-    });
-    previewResult = isPlainObject(rawPreview) ? rawPreview : {};
-    safeRowsCount = Array.isArray(previewResult?.rows) ? previewResult.rows.length : 0;
-    const debugFromService =
-      previewResult && typeof previewResult === "object" && "debug" in previewResult
-        ? (previewResult as any).debug
-        : null;
-    if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.textLength === "number") {
-      safeTextLength = debugFromService.textLength;
+      stage = "load_dependencies:permissions:start";
+      recordStage(stage);
+      const permissionsModule = await import("@/server/permissions/permissions");
+      stage = "load_dependencies:permissions:ok";
+      recordStage(stage);
+
+      const { getWorkspaceContextFromRequest } = tenantModule as any;
+      const { hasPermission } = permissionsModule as any;
+
+      stage = "resolve_context";
+      recordStage(stage);
+      context = await getWorkspaceContextFromRequest(request as never);
+      hasPreviewPermission = Boolean(
+        context?.workspaceId && context?.userKey && context?.role && hasPermission(context.role, "transactions:import")
+      );
+      if (!hasPreviewPermission) {
+        console.warn("imports preview context/permission missing; falling back to unauth preview", {
+          workspaceId: context?.workspaceId ?? null,
+          role: context?.role ?? null
+        });
+      }
+    } catch (contextError) {
+      console.warn("imports preview context failed; falling back to unauth preview", {
+        stage,
+        message: contextError instanceof Error ? contextError.message : String(contextError)
+      });
+      context = null;
+      hasPreviewPermission = false;
+    }
+
+    // 3) If we have context + permission, use the full import-service preview.
+    // Otherwise, fall back to a minimal preview built from extracted text.
+    if (hasPreviewPermission && context?.workspaceId && context.userKey) {
+      stage = "load_dependencies:import-service:start";
+      recordStage(stage);
+      const importServiceModule = await import("@/server/services/import-service");
+      stage = "load_dependencies:import-service:ok";
+      recordStage(stage);
+      const { previewImportFile } = importServiceModule as any;
+
+      const bytes = safeBytes!;
+      stage = "build_preview";
+      recordStage(stage, {
+        fileName: safeFile ? safeFile.name : null,
+        fileType: safeFile ? safeFile.type : null,
+        fileSize: bytes.byteLength
+      });
+      const rawPreview = await previewImportFile({
+        workspaceId: context.workspaceId,
+        userKey: context.userKey,
+        fileName: safeFile?.name ?? "upload.pdf",
+        mimeType: safeFile?.type ?? "",
+        bytes,
+        selectedTemplateId: typeof selectedTemplateId === "string" ? selectedTemplateId : undefined,
+        preferredAccountId,
+        preferredImportType: importType
+      });
+      previewResult = isPlainObject(rawPreview) ? rawPreview : {};
+      safeRowsCount = Array.isArray(previewResult?.rows) ? previewResult.rows.length : 0;
+      const debugFromService =
+        previewResult && typeof previewResult === "object" && "debug" in previewResult
+          ? (previewResult as any).debug
+          : null;
+      if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.textLength === "number") {
+        safeTextLength = debugFromService.textLength;
+        logStage("text_extracted");
+      }
+      if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.aiUsed === "boolean") {
+        logStage("ai_attempted", { errorMessage: debugFromService.aiUsed ? null : "ai_not_used" });
+      }
+      recordStage("preview_built", {
+        parser: previewResult.parser,
+        rows: Array.isArray(previewResult.rows) ? previewResult.rows.length : 0
+      });
+      logStage("rows_built");
+    } else if (looksLikePdf && safeBytes) {
+      // Unauthenticated fallback: extract text and build minimal rows so the UI can render/edit.
+      stage = "build_preview:fallback_unauth";
+      recordStage(stage);
+      const { extractPdfTextFromBytes } = await import("@/server/services/import/pdf-text-extractor");
+      const extraction = await extractPdfTextFromBytes(safeBytes);
+      if (!extraction.ok) {
+        safeTextLength = 0;
+        safeRowsCount = 0;
+        logStage("preview_failed", { errorMessage: extraction.error });
+        return safeJsonResponse({
+          success: false,
+          error: "preview_failed",
+          message: resolveFunctionalPreviewMessage({
+            stage: "extract_text",
+            errorMessage: extraction.message
+          }),
+          debug: {
+            ...buildDebugPayload({
+              stage: "extract_text",
+              errorMessage: extraction.message,
+              parser: "pdf",
+              supported: false,
+              looksLikePdf: true,
+              textLength: 0,
+              rowsCount: 0
+            }),
+            extractorDebug: extraction.debug
+          }
+        });
+      }
+
+      const rawText = extraction.text;
+      safeTextLength = rawText.length;
       logStage("text_extracted");
+      const lines = rawText
+        .split(/\r?\n/)
+        .map((l) => l.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+
+      const extractDate = (value: string) => {
+        const match = value.match(/\b(\d{2}\/\d{2}\/\d{4})\b/);
+        return match?.[1] ?? null;
+      };
+      const extractAmount = (value: string) => {
+        const match = value.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?/);
+        if (!match) return null;
+        const token = match[0].trim();
+        const negative = token.includes("(") || token.startsWith("-");
+        const sanitized = token.replace(/[$()\s-]/g, "");
+        const normalized = sanitized.includes(",")
+          ? sanitized.replace(/\./g, "").replace(",", ".")
+          : sanitized.replace(/\./g, "");
+        const parsed = Number(normalized);
+        if (!Number.isFinite(parsed)) return null;
+        return negative ? -Math.abs(parsed) : parsed;
+      };
+
+      const meaningfulLines = lines.filter((l) => l.length > 5);
+      const ensuredLines = meaningfulLines.length > 0 ? meaningfulLines : lines.length > 0 ? lines : [rawText.slice(0, 400)];
+      const rowsFallback = ensuredLines.map((line, index) => ({
+        id: globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(index + 1),
+        rowNumber: index + 1,
+        date: extractDate(line) ?? undefined,
+        description: line,
+        amount: (() => {
+          const amount = extractAmount(line);
+          return typeof amount === "number" ? Math.abs(amount) : undefined;
+        })(),
+        rawValues: { raw: line, needsReview: true },
+        issues: [],
+        include: true,
+        financialOrigin: "PERSONAL",
+        isReimbursable: false,
+        isBusinessPaidPersonally: false,
+        duplicateStatus: "none",
+        suggestionMeta: {}
+      }));
+
+      safeRowsCount = rowsFallback.length;
+      logStage("rows_built");
+      logStage("preview_response_sent");
+      return safeJsonResponse({
+        success: true,
+        parser: "pdf",
+        supported: true,
+        warnings: [],
+        debug: {
+          ...buildDebugPayload({
+            stage: "fallback_unauth_preview",
+            parser: "pdf",
+            supported: true,
+            looksLikePdf: true,
+            textLength: safeTextLength,
+            rowsCount: safeRowsCount
+          }),
+          authBypassed: true
+        },
+        rows: rowsFallback,
+        summary: {
+          totalRows: rowsFallback.length,
+          readyToImport: rowsFallback.length,
+          duplicates: 0,
+          invalid: 0
+        },
+        references: { categories: [], businessUnits: [], accounts: [] },
+        availableTemplates: [],
+        appliedTemplate: null,
+        pdfMeta: null,
+        pdfAccountSuggestion: null
+      });
     }
-    if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.aiUsed === "boolean") {
-      logStage("ai_attempted", { errorMessage: debugFromService.aiUsed ? null : "ai_not_used" });
-    }
-    recordStage("preview_built", {
-      parser: previewResult.parser,
-      rows: Array.isArray(previewResult.rows) ? previewResult.rows.length : 0
-    });
-    logStage("rows_built");
 
     if (previewResult?.parser === "pdf" && !previewResult.supported) {
       // Temporary rule: never block the user if we extracted text or produced rows.
