@@ -230,7 +230,7 @@ function SuggestionBadge({ suggestion }: { suggestion?: ImportFieldSuggestion })
       {suggestion.source === "rule"
         ? "Sugerido por regla"
         : suggestion.source === "history"
-          ? "Sugerido por historico"
+          ? suggestion.label
           : suggestion.source === "manual"
             ? "Ajustado manualmente"
             : suggestion.label}
@@ -414,6 +414,29 @@ export function ImportTransactionsPanel(props: {
       lowConfidence
     };
   }, [normalizedRows]);
+
+  const learnMerchantCategory = async (params: { merchant: string; categoryId: string }) => {
+    const merchant = params.merchant.trim();
+    if (!merchant) return;
+    if (isPlaceholderDescription(merchant)) return;
+    if (!params.categoryId) return;
+
+    try {
+      await fetch("/api/classification-rules/learn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          merchant,
+          categoryId: params.categoryId
+        })
+      });
+    } catch (error) {
+      // Non-blocking: classification memory should never break the import UX.
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("[imports] learn category failed", error);
+      }
+    }
+  };
 
   const detectorInstitutionLabel = useMemo(() => {
     const institution =
@@ -1606,11 +1629,18 @@ export function ImportTransactionsPanel(props: {
                       </div>
                       <Select
                         value={row.categoryId ?? ""}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const categoryId = event.target.value || undefined;
                           setManualField(row, row.id, "categoryId", {
-                            categoryId: event.target.value || undefined
-                          })
-                        }
+                            categoryId
+                          });
+                          if (categoryId) {
+                            void learnMerchantCategory({
+                              merchant: row.description,
+                              categoryId
+                            });
+                          }
+                        }}
                       >
                         <option value="">Sin categoria</option>
                         {preview.references.categories.map((category) => (

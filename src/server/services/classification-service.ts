@@ -20,6 +20,12 @@ type ClassificationSuggestionResult = {
   suggestionMeta: FieldSuggestionMap;
 };
 
+const LEARNED_RULE_PREFIX = "Auto (historial):";
+
+function isLearnedRule(rule: { name?: string }) {
+  return typeof rule.name === "string" && rule.name.startsWith(LEARNED_RULE_PREFIX);
+}
+
 function normalizeText(value: string) {
   return value
     .normalize("NFD")
@@ -86,7 +92,9 @@ export function suggestClassificationForRow(
   const matchingRules = context.rules.filter((rule) =>
     matchRule(description, rule.keyword, rule.matchMode)
   );
-  const selectedRule = matchingRules[0];
+  // Learned "merchant -> category" mappings are stored as rules but should behave like history
+  // and take precedence over other rules/AI suggestions.
+  const selectedRule = matchingRules.find((rule) => isLearnedRule(rule)) ?? matchingRules[0];
 
   const result: ClassificationSuggestionResult = {
     suggestionMeta
@@ -96,40 +104,50 @@ export function suggestClassificationForRow(
     if (selectedRule.categoryId) {
       result.categoryId = selectedRule.categoryId;
       setSuggestion(suggestionMeta, "categoryId", {
-        source: "rule",
-        label: `Regla: ${selectedRule.name}`,
-        confidence: selectedRule.matchMode === "EXACT" ? 0.95 : 0.82
+        source: isLearnedRule(selectedRule) ? "history" : "rule",
+        label: isLearnedRule(selectedRule)
+          ? "Categoría automática (basado en historial)"
+          : `Regla: ${selectedRule.name}`,
+        confidence: selectedRule.matchMode === "EXACT" ? 0.95 : isLearnedRule(selectedRule) ? 0.9 : 0.82
       });
     }
     if (selectedRule.businessUnitId) {
       result.businessUnitId = selectedRule.businessUnitId;
       setSuggestion(suggestionMeta, "businessUnitId", {
-        source: "rule",
-        label: `Regla: ${selectedRule.name}`,
-        confidence: selectedRule.matchMode === "EXACT" ? 0.95 : 0.82
+        source: isLearnedRule(selectedRule) ? "history" : "rule",
+        label: isLearnedRule(selectedRule)
+          ? "Unidad automática (basado en historial)"
+          : `Regla: ${selectedRule.name}`,
+        confidence: selectedRule.matchMode === "EXACT" ? 0.95 : isLearnedRule(selectedRule) ? 0.9 : 0.82
       });
     }
     if (selectedRule.financialOrigin) {
       result.financialOrigin = selectedRule.financialOrigin;
       setSuggestion(suggestionMeta, "financialOrigin", {
-        source: "rule",
-        label: `Regla: ${selectedRule.name}`,
-        confidence: selectedRule.matchMode === "EXACT" ? 0.92 : 0.78
+        source: isLearnedRule(selectedRule) ? "history" : "rule",
+        label: isLearnedRule(selectedRule)
+          ? "Origen automático (basado en historial)"
+          : `Regla: ${selectedRule.name}`,
+        confidence: selectedRule.matchMode === "EXACT" ? 0.92 : isLearnedRule(selectedRule) ? 0.88 : 0.78
       });
     }
     if (typeof selectedRule.isReimbursable === "boolean") {
       result.isReimbursable = selectedRule.isReimbursable;
       setSuggestion(suggestionMeta, "isReimbursable", {
-        source: "rule",
-        label: `Regla: ${selectedRule.name}`,
-        confidence: 0.8
+        source: isLearnedRule(selectedRule) ? "history" : "rule",
+        label: isLearnedRule(selectedRule)
+          ? "Reembolsable (basado en historial)"
+          : `Regla: ${selectedRule.name}`,
+        confidence: isLearnedRule(selectedRule) ? 0.86 : 0.8
       });
       if (selectedRule.isReimbursable && selectedRule.financialOrigin === "EMPRESA") {
         result.isBusinessPaidPersonally = true;
         setSuggestion(suggestionMeta, "isBusinessPaidPersonally", {
-          source: "rule",
-          label: `Regla: ${selectedRule.name}`,
-          confidence: 0.8
+          source: isLearnedRule(selectedRule) ? "history" : "rule",
+          label: isLearnedRule(selectedRule)
+            ? "Negocio pagado personalmente (basado en historial)"
+            : `Regla: ${selectedRule.name}`,
+          confidence: isLearnedRule(selectedRule) ? 0.86 : 0.8
         });
       }
     }
@@ -214,8 +232,12 @@ export function applyClassificationSuggestions(
     };
     return {
       ...row,
-      categoryId: suggestion.categoryId ?? row.categoryId,
-      businessUnitId: suggestion.businessUnitId ?? row.businessUnitId,
+      // Never overwrite values already provided by the file/template or set upstream.
+      // Suggestions should fill gaps, not stomp user data.
+      categoryId: row.categoryId ?? suggestion.categoryId,
+      businessUnitId: row.businessUnitId ?? suggestion.businessUnitId,
+      // For these, the row often contains defaults (e.g. PERSONAL) rather than user input,
+      // so we allow the engine to override when it has a suggestion.
       financialOrigin: suggestion.financialOrigin ?? row.financialOrigin,
       type: suggestion.type ?? row.type,
       isReimbursable:
