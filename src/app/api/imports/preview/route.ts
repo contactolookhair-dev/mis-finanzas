@@ -121,17 +121,98 @@ function resolveFunctionalPreviewMessage(params: { stage: string; errorMessage?:
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+async function parseMultipartUpload(request: Request): Promise<{
+  rawBodySize: number;
+  fields: Record<string, string>;
+  file: { fieldName: string; fileName: string; mimeType: string; buffer: Buffer };
+}> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    throw new Error(`invalid_content_type:${contentType || "missing"}`);
+  }
+  if (!request.body) {
+    throw new Error("missing_request_body");
+  }
+
+  const { default: Busboy } = await import("busboy");
+  const { Readable, Transform } = await import("node:stream");
+
+  const bb = Busboy({
+    headers: {
+      "content-type": contentType
+    }
+  });
+
+  const fields: Record<string, string> = {};
+  const files: Array<{ fieldName: string; fileName: string; mimeType: string; chunks: Buffer[] }> = [];
+
+  bb.on("field", (name: string, value: string) => {
+    fields[name] = value;
+  });
+
+  bb.on("file", (fieldName: string, file: any, info: any) => {
+    const fileName = String(info?.filename ?? "");
+    const mimeType = String(info?.mimeType ?? "");
+    const chunks: Buffer[] = [];
+    files.push({ fieldName, fileName, mimeType, chunks });
+
+    file.on("data", (data: Buffer) => {
+      chunks.push(data);
+    });
+  });
+
+  const raw = Readable.fromWeb(request.body as any);
+  let rawBodySize = 0;
+  const counter = new Transform({
+    transform(chunk, _enc, cb) {
+      rawBodySize += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+      cb(null, chunk);
+    }
+  });
+
+  const done = new Promise<{
+    rawBodySize: number;
+    fields: Record<string, string>;
+    file: { fieldName: string; fileName: string; mimeType: string; buffer: Buffer };
+  }>((resolve, reject) => {
+    bb.on("error", (err: unknown) => reject(err));
+    bb.on("finish", () => {
+      const uploaded = files.find((f) => f.fieldName === "file") ?? files[0];
+      if (!uploaded) {
+        reject(new Error("missing_file_field"));
+        return;
+      }
+      resolve({
+        rawBodySize,
+        fields,
+        file: {
+          fieldName: uploaded.fieldName,
+          fileName: uploaded.fileName,
+          mimeType: uploaded.mimeType,
+          buffer: Buffer.concat(uploaded.chunks)
+        }
+      });
+    });
+  });
+
+  raw.pipe(counter).pipe(bb);
+  return done;
+}
+
 export async function POST(request: Request) {
   let stage = "init";
   let previewResult: Record<string, unknown> | null = null;
   let looksLikePdf = false;
   let safeFile: File | null = null;
+  let safeUploadedFileName: string | null = null;
+  let safeUploadedMimeType: string | null = null;
+  let safeUploadedFileSize: number | null = null;
   let safeBytes: Uint8Array | null = null;
   let safeTextLength = 0;
   let safeRowsCount = 0;
   const debugEntries: Array<{ stage: string; payload?: Record<string, unknown> }> = [];
-  let formData: FormData | null = null;
-  let selectedTemplateId: FormDataEntryValue | null = null;
+  let rawBodySize: number | null = null;
+  let selectedTemplateId: string | undefined = undefined;
   let importTypeRaw: string | undefined = undefined;
   let importType: ReturnType<typeof normalizeImportType> = undefined;
   let preferredAccountId: string | undefined = undefined;
@@ -150,8 +231,8 @@ export async function POST(request: Request) {
       JSON.stringify(
         buildStageLog({
           stage: name,
-          fileName: safeFile ? safeFile.name : null,
-          mimeType: safeFile ? safeFile.type : null,
+          fileName: safeFile ? safeFile.name : safeUploadedFileName,
+          mimeType: safeFile ? safeFile.type : safeUploadedMimeType,
           textLength: safeTextLength,
           rowsCount: safeRowsCount,
           errorMessage: params?.errorMessage ?? null
@@ -172,44 +253,32 @@ export async function POST(request: Request) {
     return safeJsonResponse({ success: true, isolated: true });
   }
   try {
-    // 1) Always read the upload first so we can debug uploads and provide a fallback preview
-    // even if auth/workspace context is missing.
-    stage = "read_form_data";
+    // Read multipart manually (Vercel/App Router has had issues with request.formData() for some uploads).
+    stage = "read_multipart";
     recordStage(stage);
-    console.log("[imports/preview] about to read formData");
-    formData = await request.formData();
-    const keys = Array.from(formData.keys()).slice(0, 50);
-    const rawFile = formData.get("file");
-    if (rawFile instanceof File) safeFile = rawFile;
+    const parsed = await parseMultipartUpload(request);
+    rawBodySize = parsed.rawBodySize;
 
-    // Mandatory visibility for production debugging: confirms the field name and whether a File arrived.
+    console.log("[preview] raw body size", parsed.rawBodySize);
+
+    const { file, fields } = parsed;
+    safeUploadedFileName = file.fileName || null;
+    safeUploadedMimeType = file.mimeType || null;
+    safeUploadedFileSize = file.buffer.length;
+    // Mandatory visibility for production debugging: confirms field names and whether a file arrived.
     console.log("[imports/preview] read_form_data", {
-      keys,
-      hasFile: rawFile instanceof File
+      keys: Object.keys(fields).concat(file ? [file.fieldName] : []),
+      hasFile: Boolean(file?.buffer?.length)
     });
 
-    if (!(rawFile instanceof File)) {
-      logStage("preview_failed", { errorMessage: "missing_file" });
-      return safeJsonResponse({
-        success: false,
-        error: "preview_failed",
-        message: "No se recibio ningun archivo. Intenta nuevamente.",
-        debug: {
-          ...buildDebugPayload({ stage: "missing_file" }),
-          formDataKeys: keys,
-          hasFileField: formData.has("file")
-        }
-      });
-    }
-
-    selectedTemplateId = formData.get("templateId");
-    importTypeRaw = normalizeOptionalString(formData.get("type"));
+    importTypeRaw = typeof fields.type === "string" ? fields.type : undefined;
     importType = normalizeImportType(importTypeRaw);
-    preferredAccountId = normalizeOptionalString(formData.get("accountId"));
+    preferredAccountId = typeof fields.accountId === "string" ? fields.accountId.trim() : undefined;
+    selectedTemplateId = typeof fields.templateId === "string" ? fields.templateId.trim() : undefined;
 
     stage = "read_file_bytes";
     recordStage(stage);
-    safeBytes = new Uint8Array(await rawFile.arrayBuffer());
+    safeBytes = new Uint8Array(file.buffer);
     looksLikePdf =
       safeBytes.length >= 5 &&
       safeBytes[0] === 0x25 &&
@@ -218,81 +287,19 @@ export async function POST(request: Request) {
       safeBytes[3] === 0x46 &&
       safeBytes[4] === 0x2d;
 
+    // Avoid constructing a File() in Node (can cause TS/SharedArrayBuffer typing issues in build).
+    // We only need these for logs; the actual bytes are in safeBytes.
+    safeFile = null;
+
     console.log("imports preview received", {
-      fileName: safeFile ? safeFile.name : null,
-      mimeType: safeFile ? safeFile.type : null,
-      fileSize: safeBytes.byteLength,
+      fileName: safeUploadedFileName,
+      mimeType: safeUploadedMimeType,
+      fileSize: safeUploadedFileSize,
       importTypeRaw,
       importType,
       preferredAccountId,
-      selectedTemplateId: normalizeOptionalString(selectedTemplateId)
+      selectedTemplateId
     });
-
-    // Local-only bypass to allow debugging the endpoint without auth/session.
-    // Do NOT enable this in production.
-    if (process.env.DEBUG_IMPORT_PREVIEW_BYPASS_AUTH === "true" && process.env.NODE_ENV !== "production") {
-      stage = "read_form_data";
-      recordStage(stage);
-      const bypassFile = formData.get("file");
-      if (bypassFile instanceof File) safeFile = bypassFile;
-      if (!(bypassFile instanceof File)) {
-        logStage("preview_failed", { errorMessage: "missing_file" });
-        return safeJsonResponse({
-          success: false,
-          error: "preview_failed",
-          message: "Falta el archivo PDF.",
-          debug: buildDebugPayload({ stage: "missing_file" })
-        });
-      }
-
-      logStage("file_parsed");
-
-      stage = "read_file_bytes";
-      recordStage(stage);
-      const bytes = safeBytes ?? new Uint8Array(await bypassFile.arrayBuffer());
-      safeBytes = bytes;
-      looksLikePdf =
-        bytes.length >= 5 &&
-        bytes[0] === 0x25 &&
-        bytes[1] === 0x50 &&
-        bytes[2] === 0x44 &&
-        bytes[3] === 0x46 &&
-        bytes[4] === 0x2d;
-
-      stage = "build_preview";
-      recordStage(stage);
-      const { previewImportFile } = await import("@/server/services/import-service");
-      const rawPreview = await previewImportFile({
-        workspaceId: "debug",
-        fileName: bypassFile.name,
-        mimeType: bypassFile.type,
-        bytes,
-        preferredImportType: normalizeImportType(normalizeOptionalString(formData.get("type"))),
-        preferredAccountId: normalizeOptionalString(formData.get("accountId")),
-        selectedTemplateId: normalizeOptionalString(formData.get("templateId"))
-      });
-
-      previewResult = isPlainObject(rawPreview) ? rawPreview : {};
-      safeRowsCount = Array.isArray(previewResult?.rows) ? previewResult.rows.length : 0;
-      const debugFromService =
-        previewResult && typeof previewResult === "object" && "debug" in previewResult
-          ? (previewResult as any).debug
-          : null;
-      if (debugFromService && typeof debugFromService === "object" && typeof debugFromService.textLength === "number") {
-        safeTextLength = debugFromService.textLength;
-        logStage("text_extracted");
-      }
-
-      logStage("rows_built");
-      logStage("preview_response_sent");
-      return safeJsonResponse(
-        JSON.parse(JSON.stringify({
-          success: true,
-          ...safePreviewResult(),
-          supported: true
-        }))
-      );
-    }
 
     if (importTypeRaw && !importType) {
       console.warn("imports preview unknown type", { importTypeRaw });
@@ -355,15 +362,15 @@ export async function POST(request: Request) {
       const bytes = safeBytes!;
       stage = "build_preview";
       recordStage(stage, {
-        fileName: safeFile ? safeFile.name : null,
-        fileType: safeFile ? safeFile.type : null,
+        fileName: safeUploadedFileName,
+        fileType: safeUploadedMimeType,
         fileSize: bytes.byteLength
       });
       const rawPreview = await previewImportFile({
         workspaceId: context.workspaceId,
         userKey: context.userKey,
-        fileName: safeFile?.name ?? "upload.pdf",
-        mimeType: safeFile?.type ?? "",
+        fileName: safeUploadedFileName ?? "upload.pdf",
+        mimeType: safeUploadedMimeType ?? "",
         bytes,
         selectedTemplateId: typeof selectedTemplateId === "string" ? selectedTemplateId : undefined,
         preferredAccountId,
@@ -549,7 +556,9 @@ export async function POST(request: Request) {
   } catch (error) {
       console.error("imports preview failed", {
         stage,
-        file: safeFile ? { name: safeFile.name, type: safeFile.type, size: safeFile.size } : null,
+        file: safeUploadedFileName
+          ? { name: safeUploadedFileName, type: safeUploadedMimeType, size: safeUploadedFileSize }
+          : null,
         error,
         stack: error instanceof Error ? error.stack : null
       });
