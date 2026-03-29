@@ -63,7 +63,11 @@ function getValueFromTemplateColumns(
   aliases: string[],
   fallbackAliases: string[]
 ) {
-  return getValueFromAliases(row, aliases.length > 0 ? aliases : fallbackAliases);
+  // Try template-provided aliases first, but never block extraction completely:
+  // if the template doesn't match the actual parsed row shape, fall back to standard aliases.
+  const primary = aliases.length > 0 ? getValueFromAliases(row, aliases) : undefined;
+  if (primary !== undefined) return primary;
+  return getValueFromAliases(row, fallbackAliases);
 }
 
 function buildDateFromParts(year: number, month: number, day: number) {

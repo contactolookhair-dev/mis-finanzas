@@ -412,6 +412,13 @@ export async function previewImportFile(input: {
           const dubiousCount = transactions.filter((t) => t.needsReview).length;
 
           const rows = transactions.map((tx, index) => {
+            const merchant =
+              (typeof tx.merchant === "string" && tx.merchant.trim().length > 0
+                ? tx.merchant.trim()
+                : typeof tx.descriptionRaw === "string" && tx.descriptionRaw.trim().length > 0
+                  ? tx.descriptionRaw.trim()
+                  : "Movimiento");
+
             const amount = Math.abs(tx.amount);
             const isInstallment =
               tx.installment?.isInstallment === true &&
@@ -424,8 +431,8 @@ export async function previewImportFile(input: {
 
             return {
               fecha: tx.date ?? null,
-              descripcion: tx.merchant,
-              descripcionBase: tx.merchant,
+              descripcion: merchant,
+              descripcionBase: merchant,
               cargo: tx.direction === "debit" ? amount : undefined,
               abono: tx.direction === "credit" ? amount : undefined,
               esCompraEnCuotas: isInstallment,
@@ -436,7 +443,7 @@ export async function previewImportFile(input: {
               cuotasRestantes: isInstallment ? tx.installment.installmentsRemaining : null,
               __aiKind: "pdf-ai",
               __aiType: tx.type,
-              __aiNeedsReview: tx.needsReview,
+              __aiNeedsReview: tx.needsReview || merchant === "Movimiento",
               __aiRaw: tx.descriptionRaw,
               __aiIndex: index + 1,
               __aiConfidence: ai.confidence
@@ -600,12 +607,30 @@ export async function previewImportFile(input: {
       parser: parsed.parser
     });
 
+    // If the PDF is (or was detected as) Falabella/CMR, never apply a Banco de Chile cartola template by accident.
+    // Force the Falabella template unless the user explicitly selected another one.
+    let effectiveSelectedTemplateId = input.selectedTemplateId;
+    if (!effectiveSelectedTemplateId && parsed.parser === "pdf" && parsed.meta && typeof parsed.meta === "object") {
+      const meta = parsed.meta as Record<string, unknown>;
+      const kind = meta.kind;
+      const statement = meta.statement as Record<string, unknown> | undefined;
+      const institution = typeof statement?.institution === "string" ? statement.institution.toLowerCase() : "";
+      const brand = typeof statement?.brand === "string" ? statement.brand.toLowerCase() : "";
+      const cardLabel = typeof statement?.cardLabel === "string" ? statement.cardLabel.toLowerCase() : "";
+      const looksFalabella =
+        kind === "falabella-cmr" ||
+        kind === "ai-pdf-import" && (institution.includes("falabella") || brand.includes("cmr") || cardLabel.includes("cmr"));
+      if (looksFalabella && availableTemplates.some((t) => t.id === "falabella-cmr-pdf")) {
+        effectiveSelectedTemplateId = "falabella-cmr-pdf";
+      }
+    }
+
     templateDetection = detectImportTemplate({
       parser: parsed.parser,
       fileName: input.fileName,
       headers: parsed.headers,
       templates: availableTemplates,
-      selectedTemplateId: input.selectedTemplateId
+      selectedTemplateId: effectiveSelectedTemplateId
     });
   } catch (error) {
     console.error("previewImportFile template enrichment failed; continuing with minimal preview", {
