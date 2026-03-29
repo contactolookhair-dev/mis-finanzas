@@ -47,17 +47,36 @@ const txTypeSchema = z.preprocess((value) => {
   return "other";
 }, z.enum(["purchase", "payment", "refund", "fee", "interest", "cash_advance", "other"]));
 
+function parseChileanMoneyLike(input: string) {
+  const raw = input.trim();
+  if (!raw) return null;
+  const negative = raw.includes("(") || raw.startsWith("-");
+  const sanitized = raw.replace(/[$()\s]/g, "").replace(/^-/, "");
+  const normalized = sanitized.includes(",")
+    ? sanitized.replace(/\./g, "").replace(",", ".")
+    : sanitized.replace(/\./g, "");
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return negative ? -Math.abs(parsed) : parsed;
+}
+
+const numberLikeSchema = z.preprocess((value) => {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return parseChileanMoneyLike(value);
+  return value;
+}, z.number());
+
 const aiImportPreviewSchema = z.object({
   documentType: documentTypeSchema.default("unknown"),
   issuer: z.string().nullable().optional().default(null),
   accountName: z.string().nullable().optional().default(null),
   statementDate: z.string().nullable().optional().default(null),
   dueDate: z.string().nullable().optional().default(null),
-  billedTotal: z.number().nullable().optional().default(null),
-  minimumPayment: z.number().nullable().optional().default(null),
-  creditLimitTotal: z.number().nullable().optional().default(null),
-  creditLimitUsed: z.number().nullable().optional().default(null),
-  creditLimitAvailable: z.number().nullable().optional().default(null),
+  billedTotal: numberLikeSchema.nullable().optional().default(null),
+  minimumPayment: numberLikeSchema.nullable().optional().default(null),
+  creditLimitTotal: numberLikeSchema.nullable().optional().default(null),
+  creditLimitUsed: numberLikeSchema.nullable().optional().default(null),
+  creditLimitAvailable: numberLikeSchema.nullable().optional().default(null),
   currency: currencySchema.default("UNKNOWN"),
   summaryNeedsReview: z.boolean().optional().default(true),
   transactions: z
@@ -65,19 +84,19 @@ const aiImportPreviewSchema = z.object({
       z.object({
         date: z.string().nullable().optional().default(null),
         merchant: z.string().default(""),
-        amount: z.number(),
-        direction: directionSchema,
-        type: txTypeSchema,
+        amount: numberLikeSchema,
+        direction: directionSchema.optional().default("debit"),
+        type: txTypeSchema.optional().default("other"),
         categorySuggestion: z.string().nullable().optional().default(null),
         descriptionRaw: z.string().nullable().optional().default(null),
         installment: z
           .object({
-            isInstallment: z.boolean(),
+            isInstallment: z.boolean().optional().default(false),
             installmentCurrent: z.number().int().nullable(),
             installmentTotal: z.number().int().nullable(),
             installmentsRemaining: z.number().int().nullable(),
-            installmentAmount: z.number().nullable(),
-            originalAmount: z.number().nullable()
+            installmentAmount: numberLikeSchema.nullable(),
+            originalAmount: numberLikeSchema.nullable()
           })
           .default({
             isInstallment: false,
