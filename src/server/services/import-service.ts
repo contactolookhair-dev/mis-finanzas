@@ -609,6 +609,21 @@ export async function previewImportFile(input: {
             return `${match[3]}-${match[2]}-${match[1]}`;
           };
 
+          const normalizeAiDateToYmd = (value: string | null) => {
+            if (!value) return null;
+            const trimmed = value.trim();
+            if (!trimmed) return null;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+            const dmyMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (dmyMatch) return `${dmyMatch[3]}-${dmyMatch[2]}-${dmyMatch[1]}`;
+            // Sometimes Gemini includes time or other noise; try best-effort.
+            const embedded = trimmed.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+            if (embedded) return `${embedded[3]}-${embedded[2]}-${embedded[1]}`;
+            const embeddedIso = trimmed.match(/(\d{4})-(\d{2})-(\d{2})/);
+            if (embeddedIso) return `${embeddedIso[1]}-${embeddedIso[2]}-${embeddedIso[3]}`;
+            return null;
+          };
+
           // Build once per preview request (no globals): date+amount index for reconstructing missing merchants.
           const lineIndex = new Map<string, string>();
           for (const line of lines) {
@@ -643,16 +658,27 @@ export async function previewImportFile(input: {
           const rows = transactions
             .map((tx, index) => {
 
+              const normalizedDate = typeof tx.date === "string" ? normalizeAiDateToYmd(tx.date) : null;
+
               const baseText = normalizeSpace(
                 (typeof tx.merchant === "string" && tx.merchant) ||
                   (typeof tx.descriptionRaw === "string" && tx.descriptionRaw) ||
                   ""
               );
-              const cleanedText = cleanMerchantForPreview(stripLeadingCity(baseText));
+              const bestLineFromRaw =
+                baseText.includes("\n")
+                  ? baseText
+                      .split(/\r?\n/)
+                      .map((l) => normalizeSpace(l))
+                      .filter(Boolean)
+                      .find((l) => /(\d{2}\/\d{2}\/\d{4}).*\sT\s/.test(l) || /\d{1,3}(?:[.\s]\d{3})+/.test(l)) ??
+                    baseText
+                  : baseText;
+              const cleanedText = cleanMerchantForPreview(stripLeadingCity(bestLineFromRaw));
               let merchant = cleanedText.length > 0 ? cleanedText : "Movimiento";
 
-              if (merchant === "Movimiento" && typeof tx.date === "string" && typeof tx.amount === "number") {
-                const key = `${tx.date}|${Math.round(Math.abs(tx.amount))}`;
+              if (merchant === "Movimiento" && normalizedDate && typeof tx.amount === "number") {
+                const key = `${normalizedDate}|${Math.round(Math.abs(tx.amount))}`;
                 const matchedLine = lineIndex.get(key) ?? null;
                 if (matchedLine) {
                   const lineClean = normalizeSpace(matchedLine);
@@ -731,20 +757,52 @@ export async function previewImportFile(input: {
                 merchant === "Movimiento" ||
                 kindWithInstallment === "purchase" && merchant.length < 4;
 
+              const cuotaActual = isInstallment ? (effectiveInstallment?.cuotaActual ?? null) : null;
+              const cuotaTotal = isInstallment ? (effectiveInstallment?.cuotaTotal ?? null) : null;
+              const cuotasRestantes =
+                isInstallment && typeof cuotaActual === "number" && typeof cuotaTotal === "number"
+                  ? Math.max(0, cuotaTotal - cuotaActual)
+                  : isInstallment
+                    ? tx.installment.installmentsRemaining
+                    : null;
+
+              if (process.env.DEBUG_IMPORT_PREVIEW === "true" && index < 5) {
+                console.log("[imports/preview] row debug", {
+                  index: index + 1,
+                  dateRaw: typeof tx.date === "string" ? tx.date : null,
+                  dateNormalized: normalizedDate,
+                  merchantRaw: typeof tx.merchant === "string" ? tx.merchant : null,
+                  descriptionRaw: typeof tx.descriptionRaw === "string" ? tx.descriptionRaw.slice(0, 120) : null,
+                  merchantFinal: merchant,
+                  installmentLabelRaw:
+                    typeof tx.descriptionRaw === "string"
+                      ? (tx.descriptionRaw.match(/\b\d{1,2}\s*\/\s*\d{1,2}\b/)?.[0] ?? null)
+                      : null,
+                  cuotaActual,
+                  cuotaTotal,
+                  cuotasRestantes
+                });
+              }
+
               return {
-                fecha: tx.date ?? null,
+                // Prefer normalized YYYY-MM-DD when possible to improve downstream mapping.
+                fecha: normalizedDate ?? tx.date ?? null,
                 descripcion: merchant,
                 descripcionBase: merchant,
                 cargo: inferredDirection === "debit" ? amount : undefined,
                 abono: inferredDirection === "credit" ? amount : undefined,
                 esCompraEnCuotas: isInstallment,
-                cuotaActual: isInstallment ? (effectiveInstallment?.cuotaActual ?? null) : null,
-                cuotaTotal: isInstallment ? (effectiveInstallment?.cuotaTotal ?? null) : null,
+                cuotaActual,
+                cuotaTotal,
                 installments: isInstallment ? (effectiveInstallment?.installments ?? null) : null,
                 installmentLabel: isInstallment ? (effectiveInstallment?.installmentLabel ?? null) : null,
                 montoCuota: isInstallment ? tx.installment.installmentAmount : null,
                 montoTotalCompra: isInstallment ? tx.installment.originalAmount : null,
-                cuotasRestantes: isInstallment ? tx.installment.installmentsRemaining : null,
+                cuotasRestantes,
+                // Compatibility fields used by some UI helpers.
+                currentInstallment: cuotaActual,
+                totalInstallments: cuotaTotal,
+                remainingInstallments: typeof cuotasRestantes === "number" ? cuotasRestantes : null,
                 __aiKind: "pdf-ai",
                 __aiType: kindWithInstallment,
                 __aiNeedsReview: needsReview,

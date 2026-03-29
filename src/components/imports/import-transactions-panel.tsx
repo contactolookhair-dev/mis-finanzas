@@ -205,6 +205,7 @@ function normalizePreviewRow(row: ImportPreviewRow): ImportPreviewRow {
   const installment = getInstallmentPreview(row);
 
   if (!installment.descriptionBase) return row;
+  if (isPlaceholderDescription(installment.descriptionBase)) return row;
   if (row.description === installment.descriptionBase) return row;
 
   return {
@@ -1560,6 +1561,9 @@ export function ImportTransactionsPanel(props: {
                           </div>
 
                           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                            {typeof installmentPreview.currentInstallment === "number" ? (
+                              <span>Pagadas: {installmentPreview.currentInstallment}</span>
+                            ) : null}
                             {formatCurrencyCLP(installmentPreview.installmentAmount) ? (
                               <span>Pagas: {formatCurrencyCLP(installmentPreview.installmentAmount)}</span>
                             ) : null}
@@ -1567,7 +1571,7 @@ export function ImportTransactionsPanel(props: {
                               <span>Total: {formatCurrencyCLP(installmentPreview.totalPurchaseAmount)}</span>
                             ) : null}
                             {typeof installmentPreview.remainingInstallments === "number" ? (
-                              <span>Restantes: {installmentPreview.remainingInstallments}</span>
+                              <span>Pendientes: {installmentPreview.remainingInstallments}</span>
                             ) : null}
                           </div>
                         </div>
