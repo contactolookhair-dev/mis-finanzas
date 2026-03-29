@@ -82,9 +82,18 @@ type CreditHealthItem = {
   name: string;
   bank: string | null;
   periodLabel: string;
+  closingDate?: string | null;
+  dueDate?: string | null;
+  daysToDue?: number | null;
+  minimumPayment?: number | null;
+  minimumMissing?: number | null;
+  coveredMinimum?: boolean | null;
   utilizationPct: number | null;
   importBatchId: string;
   totals: {
+    purchases?: number;
+    installmentPurchases?: number;
+    payments?: number;
     interest: number;
     fees: number;
     cashAdvances: number;
@@ -95,6 +104,8 @@ type CreditHealthItem = {
     used: number | null;
     interest: number | null;
     fees: number | null;
+    installments?: number | null;
+    payments?: number | null;
   };
   badges: Array<{ key: string; label: string; tone: "alert" | "attention" | "positive" | "info" }>;
   priority: number;
@@ -2079,6 +2090,10 @@ export function CuentasClient() {
   );
 
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+  const creditHealthByAccountId = useMemo(
+    () => new Map(creditHealth.map((item) => [item.accountId, item])),
+    [creditHealth]
+  );
 
   const sortedCreditAttention = useMemo(() => {
     return [...creditHealth].sort((a, b) => {
@@ -2525,6 +2540,48 @@ export function CuentasClient() {
                   <div className="mt-4 space-y-2">
                     {account.type === "CREDITO" && credit ? (
                       <>
+                        {(() => {
+                          const health = creditHealthByAccountId.get(account.id) ?? null;
+                          if (!health) return null;
+
+                          const chips: Array<{ key: string; label: string; tone: "alert" | "attention" | "positive" | "info" }> = [];
+
+                          if (health.daysToDue != null) {
+                            if (health.daysToDue < 0) chips.push({ key: "overdue", label: "Vencida", tone: "alert" });
+                            else if (health.daysToDue <= 3) chips.push({ key: "dueSoon", label: `Por vencer (${health.daysToDue}d)`, tone: "attention" });
+                          }
+                          if (health.coveredMinimum === false && typeof health.minimumMissing === "number" && health.minimumMissing > 0) {
+                            chips.push({ key: "min", label: `Falta mínimo ${formatCurrency(health.minimumMissing)}`, tone: "alert" });
+                          }
+                          if (typeof health.utilizationPct === "number") {
+                            if (health.utilizationPct >= 90) chips.push({ key: "util", label: `Cupo ${health.utilizationPct}%`, tone: "alert" });
+                            else if (health.utilizationPct >= 70) chips.push({ key: "util", label: `Cupo ${health.utilizationPct}%`, tone: "attention" });
+                          }
+                          const interestFees = (health.totals.interest ?? 0) + (health.totals.fees ?? 0);
+                          if (interestFees > 0) {
+                            chips.push({ key: "if", label: `Int/Com ${formatCurrency(interestFees)}`, tone: "info" });
+                          }
+                          if ((health.deltas.installments ?? 0) > 0) {
+                            chips.push({ key: "inst", label: `Cuotas +${formatCurrency(Math.abs(health.deltas.installments ?? 0))}`, tone: "attention" });
+                          }
+                          if (health.totals.cashAdvances > 0) {
+                            chips.push({ key: "adv", label: `Avances ${formatCurrency(health.totals.cashAdvances)}`, tone: "alert" });
+                          }
+
+                          const visible = chips.slice(0, 4);
+                          return visible.length ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {visible.map((chip) => (
+                                <span
+                                  key={chip.key}
+                                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${creditToneToClasses(chip.tone)}`}
+                                >
+                                  {chip.label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null;
+                        })()}
                         <p className="text-xs text-slate-500">Deuda actual</p>
                         <p className={`text-2xl font-semibold tracking-tight ${balanceTone}`}>
                           {formatCurrency(credit.debt)}

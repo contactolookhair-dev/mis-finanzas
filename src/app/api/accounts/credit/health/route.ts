@@ -12,6 +12,8 @@ type StatementSnapshot = {
   importedAt: string;
   summary: {
     periodLabel: string;
+    closingDate: string | null;
+    dueDate: string | null;
     totalBilled: number | null;
     minimumPayment: number | null;
     creditLimit: number | null;
@@ -19,6 +21,9 @@ type StatementSnapshot = {
     availableLimit: number | null;
   };
   totals: {
+    purchases: number;
+    installmentPurchases: number;
+    payments: number;
     interest: number;
     fees: number;
     cashAdvances: number;
@@ -59,6 +64,8 @@ function parseStatementFromBatch(batch: {
     importedAt: batch.createdAt.toISOString(),
     summary: {
       periodLabel,
+      closingDate,
+      dueDate: typeof s.paymentDate === "string" ? (s.paymentDate as string) : null,
       totalBilled: typeof s.totalBilled === "number" && Number.isFinite(s.totalBilled) ? (s.totalBilled as number) : null,
       minimumPayment:
         typeof s.minimumDue === "number" && Number.isFinite(s.minimumDue) ? (s.minimumDue as number) : null,
@@ -69,6 +76,9 @@ function parseStatementFromBatch(batch: {
         typeof s.creditAvailable === "number" && Number.isFinite(s.creditAvailable) ? (s.creditAvailable as number) : null
     },
     totals: {
+      purchases: getNum("purchases"),
+      installmentPurchases: getNum("installmentPurchases"),
+      payments: getNum("payments"),
       interest: getNum("interests"),
       fees: getNum("fees"),
       cashAdvances: getNum("cashAdvances"),
@@ -91,6 +101,13 @@ function delta(current: number | null, previous: number | null) {
   if (current === null || previous === null) return null;
   if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
   return current - previous;
+}
+
+function parseYmd(value: string) {
+  // Expect YYYY-MM-DD.
+  const d = new Date(`${value}T12:00:00`);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d;
 }
 
 export async function GET(request: NextRequest) {
@@ -172,6 +189,20 @@ export async function GET(request: NextRequest) {
       const utilization = safeRatio(latest.summary.usedLimit, latest.summary.creditLimit);
       const utilizationPct = utilization === null ? null : Math.round(utilization * 100);
 
+      const dueDate = latest.summary.dueDate;
+      const due = dueDate ? parseYmd(dueDate) : null;
+      const today = new Date();
+      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0);
+      const daysToDue = due ? Math.ceil((due.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24)) : null;
+      const overdue = typeof daysToDue === "number" ? daysToDue < 0 : false;
+      const dueSoon = typeof daysToDue === "number" ? daysToDue >= 0 && daysToDue <= 3 : false;
+
+      const minimumMissing =
+        latest.summary.minimumPayment !== null
+          ? Math.max(0, latest.summary.minimumPayment - (latest.totals.payments ?? 0))
+          : null;
+      const coveredMinimum = minimumMissing === null ? null : minimumMissing <= 0;
+
       const hasInterest = latest.totals.interest > 0;
       const hasFees = latest.totals.fees > 0;
       const hasCashAdvances = latest.totals.cashAdvances > 0;
@@ -181,6 +212,8 @@ export async function GET(request: NextRequest) {
       const usedDelta = previous ? delta(latest.summary.usedLimit, previous.summary.usedLimit) : null;
       const interestDelta = previous ? latest.totals.interest - previous.totals.interest : null;
       const feesDelta = previous ? latest.totals.fees - previous.totals.fees : null;
+      const installmentDelta = previous ? latest.totals.installmentPurchases - previous.totals.installmentPurchases : null;
+      const paymentsDelta = previous ? latest.totals.payments - previous.totals.payments : null;
 
       const improved =
         (usedDelta !== null && usedDelta < 0) ||
@@ -188,15 +221,21 @@ export async function GET(request: NextRequest) {
         (feesDelta !== null && feesDelta < 0);
 
       const badges: Array<{ key: string; label: string; tone: "alert" | "attention" | "positive" | "info" }> = [];
+      if (overdue) badges.push({ key: "overdue", label: "Vencida", tone: "alert" });
+      else if (dueSoon) badges.push({ key: "due-soon", label: "Por vencer", tone: "attention" });
+      if (coveredMinimum === false) badges.push({ key: "min-missing", label: "Falta mínimo", tone: "alert" });
       if (utilization !== null && utilization >= 0.9) badges.push({ key: "very-high", label: "Cupo muy alto", tone: "alert" });
       else if (utilization !== null && utilization >= 0.7) badges.push({ key: "high", label: "Cupo alto", tone: "attention" });
       if (hasInterest) badges.push({ key: "interest", label: "Con intereses", tone: "attention" });
       if (hasFees) badges.push({ key: "fees", label: "Con comisiones", tone: "info" });
       if (hasCashAdvances) badges.push({ key: "adv", label: "Con avances", tone: "alert" });
       if (needsReview) badges.push({ key: "review", label: "Revisar importación", tone: "info" });
+      if (installmentDelta !== null && installmentDelta > 0) badges.push({ key: "inst-up", label: "Cuotas subiendo", tone: "attention" });
       if (improved) badges.push({ key: "improved", label: "Mejora reciente", tone: "positive" });
 
       const priority =
+        (overdue ? 120 : dueSoon ? 85 : 0) +
+        (coveredMinimum === false ? 90 : 0) +
         (utilization !== null && utilization >= 0.9 ? 100 : utilization !== null && utilization >= 0.7 ? 70 : 0) +
         (hasCashAdvances ? 65 : 0) +
         (hasInterest ? 55 : 0) +
@@ -211,13 +250,21 @@ export async function GET(request: NextRequest) {
         importedAt: latest.importedAt,
         importBatchId: latest.importBatchId,
         periodLabel: latest.summary.periodLabel,
+        closingDate: latest.summary.closingDate,
+        dueDate: latest.summary.dueDate,
+        daysToDue,
+        minimumPayment: latest.summary.minimumPayment,
+        minimumMissing,
+        coveredMinimum,
         utilizationPct,
         totals: latest.totals,
         deltas: {
           billed: billedDelta,
           used: usedDelta,
           interest: interestDelta,
-          fees: feesDelta
+          fees: feesDelta,
+          installments: installmentDelta,
+          payments: paymentsDelta
         },
         badges,
         priority
