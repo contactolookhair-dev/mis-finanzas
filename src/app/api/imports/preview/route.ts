@@ -268,6 +268,17 @@ export async function POST(request: Request) {
     stage = "read_form_data";
     recordStage(stage);
     const formData = await request.formData();
+    if (DEBUG_IMPORT_PREVIEW) {
+      const keys = Array.from(formData.keys()).slice(0, 20);
+      console.log(
+        "[imports/preview]",
+        JSON.stringify({
+          stage: "read_form_data",
+          formDataKeys: keys,
+          hasFileField: formData.has("file")
+        })
+      );
+    }
     const file = formData.get("file");
     if (file instanceof File) {
       safeFile = file;
@@ -290,7 +301,21 @@ export async function POST(request: Request) {
 
     if (!(file instanceof File)) {
       logStage("preview_failed", { errorMessage: "missing_file" });
-      return jsonPreviewError();
+      const debug = buildDebugPayload({
+        stage: "missing_file",
+        looksLikePdf
+      }) as Record<string, unknown> | undefined;
+      const keys = Array.from(formData.keys()).slice(0, 50);
+      return safeJsonResponse({
+        success: false,
+        error: "preview_failed",
+        message: "No se recibio ningun archivo. Intenta nuevamente.",
+        debug: {
+          ...(debug ?? {}),
+          formDataKeys: keys,
+          hasFileField: formData.has("file")
+        }
+      });
     }
 
     logStage("file_parsed");
