@@ -800,9 +800,98 @@ function AccountDetailModal({
       coveredTotal,
       nearDue,
       overdue,
-      minimumAtRisk
+      minimumAtRisk,
+      minimum,
+      billed,
+      paid
     };
   }, [account, selectedStatement, billingPeriod, selectedStatementBreakdown]);
+
+  const statementActionableMessages = useMemo(() => {
+    if (!account || account.type !== "CREDITO") return [];
+    if (!cycleInfo) return [];
+
+    const paid = typeof cycleInfo.paid === "number" && Number.isFinite(cycleInfo.paid) ? cycleInfo.paid : null;
+    const billed = typeof cycleInfo.billed === "number" && Number.isFinite(cycleInfo.billed) ? cycleInfo.billed : null;
+    const minimum =
+      typeof cycleInfo.minimum === "number" && Number.isFinite(cycleInfo.minimum)
+        ? cycleInfo.minimum
+        : null;
+
+    const missingMinimum =
+      paid != null && minimum != null ? Math.max(0, minimum - paid) : null;
+    const missingTotal =
+      paid != null && billed != null ? Math.max(0, billed - paid) : null;
+
+    type Tone = "alert" | "attention" | "positive" | "info";
+    const messages: Array<{ tone: Tone; title: string; detail?: string }> = [];
+
+    // Priority order:
+    // 1) overdue
+    if (cycleInfo.overdue) {
+      messages.push({
+        tone: "alert",
+        title: "Tu tarjeta está vencida",
+        detail: "Revisa el pago lo antes posible para evitar intereses y comisiones adicionales."
+      });
+    }
+
+    // 2) minimum not covered
+    if (cycleInfo.coveredMinimum === false) {
+      messages.push({
+        tone: cycleInfo.overdue ? "alert" : "attention",
+        title: "Aún no cubres el pago mínimo",
+        detail:
+          missingMinimum != null
+            ? `Te faltan ${formatCurrency(missingMinimum)} para cubrir el mínimo.`
+            : "Te falta cubrir el mínimo de este ciclo."
+      });
+    } else if (cycleInfo.coveredMinimum === true) {
+      messages.push({
+        tone: "positive",
+        title: "Mínimo cubierto",
+        detail: "Bien ahí. Ya estás cubriendo el mínimo de este ciclo."
+      });
+    }
+
+    // 3) few days remaining
+    if (!cycleInfo.overdue && typeof cycleInfo.daysToDue === "number" && cycleInfo.daysToDue >= 0 && cycleInfo.daysToDue <= 3) {
+      messages.push({
+        tone: "attention",
+        title: "Quedan pocos días para pagar",
+        detail: `${cycleInfo.daysToDue} día(s) para el vencimiento.`
+      });
+    }
+
+    // 4) only total remaining
+    if (cycleInfo.coveredTotal === false && missingTotal != null && missingTotal > 0) {
+      messages.push({
+        tone: cycleInfo.coveredMinimum === true ? "info" : "attention",
+        title: "Aún falta para cubrir el total",
+        detail: `Te faltan ${formatCurrency(missingTotal)} para dejar el ciclo pagado.`
+      });
+    }
+
+    // 5) all covered
+    if (cycleInfo.coveredTotal === true) {
+      messages.push({
+        tone: "positive",
+        title: "Ciclo cubierto",
+        detail: "Ya pagaste el total facturado de este ciclo."
+      });
+    }
+
+    // Deduplicate by title, keep first occurrences (higher priority).
+    const seen = new Set<string>();
+    const unique = messages.filter((m) => {
+      if (seen.has(m.title)) return false;
+      seen.add(m.title);
+      return true;
+    });
+
+    // Keep it short: max 3.
+    return unique.slice(0, 3);
+  }, [account, cycleInfo]);
 
   function formatDelta(current: number | null, prev: number | null) {
     if (current === null || prev === null) return null;
@@ -1287,6 +1376,47 @@ function AccountDetailModal({
                               Bien ahí: este ciclo ya está cubierto.
                             </p>
                           ) : null}
+                        </div>
+                      ) : null}
+
+                      {statementActionableMessages.length > 0 ? (
+                        <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Qué hacer ahora
+                          </p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            {statementActionableMessages.map((m) => {
+                              const tone =
+                                m.tone === "alert"
+                                  ? "border-rose-200 bg-rose-50 text-rose-800"
+                                  : m.tone === "attention"
+                                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                                    : m.tone === "positive"
+                                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                                      : "border-slate-200 bg-slate-50 text-slate-800";
+                              const badge =
+                                m.tone === "alert"
+                                  ? "Urgente"
+                                  : m.tone === "attention"
+                                    ? "Atención"
+                                    : m.tone === "positive"
+                                      ? "Ok"
+                                      : "Info";
+                              return (
+                                <div key={`${m.tone}-${m.title}`} className={`rounded-2xl border px-3 py-2 ${tone}`}>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="text-sm font-semibold">{m.title}</p>
+                                    <span className="shrink-0 rounded-full bg-white/60 px-2 py-0.5 text-[10px] font-semibold">
+                                      {badge}
+                                    </span>
+                                  </div>
+                                  {m.detail ? (
+                                    <p className="mt-1 text-xs leading-relaxed opacity-90">{m.detail}</p>
+                                  ) : null}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       ) : null}
 
