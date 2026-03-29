@@ -82,6 +82,7 @@ export const importPreviewRowSchema = z.object({
   montoTotalCompra: z.number().finite().nullable().optional(),
   installments: z.number().int().nullable().optional(),
   installmentLabel: z.string().nullable().optional(),
+  installmentLabelRaw: z.string().nullable().optional(),
 
   // Compatibility aliases used by the UI in some places.
   currentInstallment: z.number().int().nullable().optional(),

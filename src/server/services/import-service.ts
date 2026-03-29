@@ -868,6 +868,22 @@ export async function previewImportFile(input: {
                   : isInstallment
                     ? tx.installment.installmentsRemaining
                     : null;
+              const installmentLabelRaw =
+                installmentFromText && typeof installmentFromText.installmentLabel === "string"
+                  ? installmentFromText.installmentLabel
+                  : effectiveInstallment && typeof effectiveInstallment.installmentLabel === "string"
+                    ? effectiveInstallment.installmentLabel
+                    : null;
+
+              if (process.env.DEBUG_IMPORT_PREVIEW === "true" && installmentFromText) {
+                console.log("[installments] final row", {
+                  merchant,
+                  installmentLabelRaw,
+                  cuotaActual,
+                  cuotaTotal,
+                  cuotasRestantes
+                });
+              }
 
               if (process.env.DEBUG_IMPORT_PREVIEW === "true" && index < 5) {
                 console.log("[imports/preview] row debug", {
@@ -901,6 +917,7 @@ export async function previewImportFile(input: {
                 cuotaTotal,
                 installments: isInstallment ? (effectiveInstallment?.installments ?? null) : null,
                 installmentLabel: isInstallment ? (effectiveInstallment?.installmentLabel ?? null) : null,
+                installmentLabelRaw,
                 montoCuota: isInstallment ? tx.installment.installmentAmount : null,
                 montoTotalCompra: isInstallment ? tx.installment.originalAmount : null,
                 cuotasRestantes,
