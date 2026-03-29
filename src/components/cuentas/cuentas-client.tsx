@@ -750,6 +750,60 @@ function AccountDetailModal({
     };
   }, [selectedStatement]);
 
+  const cycleInfo = useMemo(() => {
+    if (!account || account.type !== "CREDITO") return null;
+
+    const today = new Date();
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0);
+
+    const closingDateStr =
+      selectedStatement?.summary.closingDate ?? (billingPeriod ? billingPeriod.periodEnd : null);
+    const dueDateStr =
+      selectedStatement?.summary.dueDate ?? (billingPeriod?.dueDate ? billingPeriod.dueDate.toISOString().slice(0, 10) : null);
+
+    const closingDate = closingDateStr ? new Date(`${closingDateStr}T12:00:00`) : null;
+    const dueDate = dueDateStr ? new Date(`${dueDateStr}T12:00:00`) : null;
+
+    const daysToDue =
+      dueDate
+        ? Math.ceil((dueDate.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+    let status: "acumulando" | "en_pago" | "vencido" | "sin_fecha" = "sin_fecha";
+    if (closingDate && dueDate) {
+      if (startOfToday.getTime() <= closingDate.getTime()) status = "acumulando";
+      else if (startOfToday.getTime() <= dueDate.getTime()) status = "en_pago";
+      else status = "vencido";
+    } else if (dueDate) {
+      status = startOfToday.getTime() <= dueDate.getTime() ? "en_pago" : "vencido";
+    }
+
+    const minimum = selectedStatement?.summary.minimumPayment ?? null;
+    const billed = selectedStatementBreakdown?.billed ?? (selectedStatement?.summary.totalBilled ?? null);
+    const paid = selectedStatementBreakdown?.paymentsOnly ?? null;
+    const coveredMinimum =
+      minimum != null && paid != null ? paid >= minimum : null;
+    const coveredTotal =
+      billed != null && paid != null ? paid >= billed : null;
+
+    const nearDue = typeof daysToDue === "number" && daysToDue >= 0 && daysToDue <= 3;
+    const overdue = status === "vencido";
+    const minimumAtRisk =
+      overdue ? true : coveredMinimum === false && nearDue;
+
+    return {
+      closingDateStr,
+      dueDateStr,
+      daysToDue,
+      status,
+      coveredMinimum,
+      coveredTotal,
+      nearDue,
+      overdue,
+      minimumAtRisk
+    };
+  }, [account, selectedStatement, billingPeriod, selectedStatementBreakdown]);
+
   function formatDelta(current: number | null, prev: number | null) {
     if (current === null || prev === null) return null;
     const delta = current - prev;
@@ -1153,6 +1207,89 @@ function AccountDetailModal({
 
                   {selectedStatementBreakdown ? (
                     <>
+                      {cycleInfo ? (
+                        <div
+                          className={`rounded-2xl border p-3 ${
+                            cycleInfo.overdue
+                              ? "border-rose-200 bg-rose-50/80"
+                              : cycleInfo.minimumAtRisk || cycleInfo.nearDue
+                                ? "border-amber-200 bg-amber-50/80"
+                                : "border-slate-200/70 bg-white/85"
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                                Ciclo de facturación
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-slate-900">
+                                Cierre {cycleInfo.closingDateStr ?? "—"} · Vence {cycleInfo.dueDateStr ?? "—"}
+                              </p>
+                              <p className="mt-1 text-[11px] text-slate-600">
+                                {typeof cycleInfo.daysToDue === "number"
+                                  ? cycleInfo.daysToDue < 0
+                                    ? `Vencido hace ${Math.abs(cycleInfo.daysToDue)} día(s)`
+                                    : `${cycleInfo.daysToDue} día(s) para pagar`
+                                  : "Sin fecha de vencimiento detectada"}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                  cycleInfo.status === "vencido"
+                                    ? "border-rose-200 bg-white/70 text-rose-800"
+                                    : cycleInfo.status === "en_pago"
+                                      ? "border-amber-200 bg-white/70 text-amber-900"
+                                      : cycleInfo.status === "acumulando"
+                                        ? "border-slate-200 bg-white/70 text-slate-700"
+                                        : "border-slate-200 bg-white/70 text-slate-700"
+                                }`}
+                              >
+                                {cycleInfo.status === "vencido"
+                                  ? "Vencido"
+                                  : cycleInfo.status === "en_pago"
+                                    ? "Ventana de pago"
+                                    : cycleInfo.status === "acumulando"
+                                      ? "Acumulando"
+                                      : "Sin fechas"}
+                              </span>
+                              {cycleInfo.coveredMinimum === true ? (
+                                <span className="inline-flex rounded-full border border-emerald-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                                  Mínimo cubierto
+                                </span>
+                              ) : cycleInfo.coveredMinimum === false ? (
+                                <span className="inline-flex rounded-full border border-rose-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-rose-800">
+                                  Falta mínimo
+                                </span>
+                              ) : null}
+                              {cycleInfo.coveredTotal === true ? (
+                                <span className="inline-flex rounded-full border border-emerald-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                                  Total cubierto
+                                </span>
+                              ) : cycleInfo.coveredTotal === false ? (
+                                <span className="inline-flex rounded-full border border-slate-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                                  Falta total
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {cycleInfo.minimumAtRisk ? (
+                            <p className="mt-2 text-xs font-semibold text-rose-800">
+                              Ojo: estás cerca del vencimiento y aún no cubres el pago mínimo.
+                            </p>
+                          ) : cycleInfo.nearDue && cycleInfo.coveredMinimum !== false ? (
+                            <p className="mt-2 text-xs font-semibold text-amber-900">
+                              Quedan pocos días para el vencimiento. Revisa que estés al día.
+                            </p>
+                          ) : cycleInfo.coveredTotal === true ? (
+                            <p className="mt-2 text-xs font-semibold text-emerald-800">
+                              Bien ahí: este ciclo ya está cubierto.
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+
                       <div className="rounded-2xl border border-slate-200/70 bg-white/85 p-3">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
                           Resumen del ciclo
