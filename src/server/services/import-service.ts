@@ -9,6 +9,7 @@ import { createTransactionWithAutomation } from "@/server/services/transaction-s
 import { buildDuplicateFingerprint } from "@/server/services/import/import-fingerprint";
 import { importCommitPayloadSchema, type ImportPreviewRow } from "@/shared/types/imports";
 import { DebtorStatus, ExpenseFrequency } from "@prisma/client";
+import { randomUUID } from "crypto";
 
 function normalizeLookupKey(value: string) {
   return value
@@ -99,6 +100,64 @@ export async function previewImportFile(input: {
     import("@/server/services/import/import-template-service"),
     import("@/server/services/classification-service")
   ]);
+
+  const buildMinimalPreviewRows = (rawRows: Array<Record<string, unknown>>): ImportPreviewRow[] => {
+    const pickString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+    const pickNumber = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+
+    return rawRows.map((raw, index) => {
+      const date =
+        pickString(raw.date) ||
+        pickString(raw.fecha) ||
+        pickString(raw.Date) ||
+        pickString(raw.Fecha) ||
+        undefined;
+
+      const description =
+        pickString(raw.description) ||
+        pickString(raw.descripcion) ||
+        pickString(raw.Descripcion) ||
+        pickString(raw.raw) ||
+        JSON.stringify(raw);
+
+      const cargo = pickNumber(raw.cargo);
+      const abono = pickNumber(raw.abono);
+      const amountCandidate =
+        pickNumber(raw.amount) ??
+        pickNumber(raw.monto) ??
+        (typeof cargo === "number" ? cargo : undefined) ??
+        (typeof abono === "number" ? abono : undefined);
+
+      const amount = typeof amountCandidate === "number" ? Math.abs(amountCandidate) : undefined;
+      const type =
+        typeof cargo === "number"
+          ? ("EGRESO" as const)
+          : typeof abono === "number"
+            ? ("INGRESO" as const)
+            : typeof amountCandidate === "number"
+              ? amountCandidate < 0
+                ? ("EGRESO" as const)
+                : ("INGRESO" as const)
+              : undefined;
+
+      return {
+        id: randomUUID(),
+        rowNumber: index + 1,
+        date,
+        description,
+        amount,
+        type,
+        rawValues: raw,
+        issues: [],
+        include: true,
+        financialOrigin: "PERSONAL",
+        isReimbursable: false,
+        isBusinessPaidPersonally: false,
+        duplicateStatus: "none",
+        suggestionMeta: {}
+      };
+    });
+  };
 
   const looksLikePdf =
     input.fileName.toLowerCase().endsWith(".pdf") ||
@@ -383,20 +442,53 @@ export async function previewImportFile(input: {
     hasMeta: Boolean(parsed.meta)
   });
 
-  const availableTemplates = await listWorkspaceAwareImportTemplates({
-    workspaceId: input.workspaceId,
-    parser: parsed.parser
-  });
+  // From here on, we enrich preview with templates, suggestions and duplicate detection.
+  // None of that should be able to break the preview (especially for PDFs). If anything fails,
+  // we still return a minimal editable preview from the parsed rows.
+  let availableTemplates: Awaited<ReturnType<typeof listWorkspaceAwareImportTemplates>> = [];
+  let templateDetection:
+    | ReturnType<typeof detectImportTemplate>
+    | {
+      detectedTemplate: null;
+      mode: "none";
+      confidence: number;
+    } = { detectedTemplate: null, mode: "none", confidence: 0 };
 
-  const templateDetection = detectImportTemplate({
-    parser: parsed.parser,
-    fileName: input.fileName,
-    headers: parsed.headers,
-    templates: availableTemplates,
-    selectedTemplateId: input.selectedTemplateId
-  });
+  try {
+    availableTemplates = await listWorkspaceAwareImportTemplates({
+      workspaceId: input.workspaceId,
+      parser: parsed.parser
+    });
 
-  const references = await getImportReferenceData(input.workspaceId);
+    templateDetection = detectImportTemplate({
+      parser: parsed.parser,
+      fileName: input.fileName,
+      headers: parsed.headers,
+      templates: availableTemplates,
+      selectedTemplateId: input.selectedTemplateId
+    });
+  } catch (error) {
+    console.error("previewImportFile template enrichment failed; continuing with minimal preview", {
+      parser: parsed.parser,
+      fileName: input.fileName,
+      error: error instanceof Error ? error.message : error
+    });
+  }
+
+  let references: Awaited<ReturnType<typeof getImportReferenceData>> = {
+    categories: [],
+    businessUnits: [],
+    accounts: []
+  };
+  try {
+    references = await getImportReferenceData(input.workspaceId);
+  } catch (error) {
+    console.error("previewImportFile reference data load failed; continuing with minimal preview", {
+      workspaceId: input.workspaceId,
+      error: error instanceof Error ? error.message : error
+    });
+  }
+
   const preferredAccount =
     input.preferredAccountId
       ? references.accounts.find((account) => account.id === input.preferredAccountId) ?? null
@@ -460,21 +552,37 @@ export async function previewImportFile(input: {
     template: templateDetection.detectedTemplate
   });
 
-  const classificationContext = await getClassificationEngineContext(input.workspaceId);
-  const suggestedRows = applyClassificationSuggestions(normalizedRows, classificationContext);
+  let suggestedRows = normalizedRows;
+  try {
+    const classificationContext = await getClassificationEngineContext(input.workspaceId);
+    suggestedRows = applyClassificationSuggestions(normalizedRows, classificationContext);
+  } catch (error) {
+    console.error("previewImportFile classification suggestions failed; continuing", {
+      workspaceId: input.workspaceId,
+      error: error instanceof Error ? error.message : error
+    });
+  }
 
   const candidateFingerprints = suggestedRows
     .map((row) => row.duplicateFingerprint)
     .filter((value): value is string => Boolean(value));
 
-  const existing = await findTransactionsByFingerprints(input.workspaceId, candidateFingerprints);
-  const existingFingerprints = new Set(
-    existing
-      .map((item) => item.duplicateFingerprint)
-      .filter((value): value is string => Boolean(value))
-  );
+  let rows: ImportPreviewRow[] = suggestedRows;
+  try {
+    const existing = await findTransactionsByFingerprints(input.workspaceId, candidateFingerprints);
+    const existingFingerprints = new Set(
+      existing
+        .map((item) => item.duplicateFingerprint)
+        .filter((value): value is string => Boolean(value))
+    );
 
-  const rows = markDuplicateStatuses(suggestedRows, existingFingerprints);
+    rows = markDuplicateStatuses(suggestedRows, existingFingerprints);
+  } catch (error) {
+    console.error("previewImportFile duplicate check failed; continuing", {
+      workspaceId: input.workspaceId,
+      error: error instanceof Error ? error.message : error
+    });
+  }
 
   const summary = {
     totalRows: rows.length,
@@ -566,6 +674,11 @@ export async function previewImportFile(input: {
         }
       };
     }
+  }
+
+  // Last-resort safety: if enrichment somehow produced zero rows, fall back to raw parsed rows.
+  if (!Array.isArray(rows) || rows.length === 0) {
+    rows = buildMinimalPreviewRows(parsed.rows as Array<Record<string, unknown>>);
   }
 
   return {
