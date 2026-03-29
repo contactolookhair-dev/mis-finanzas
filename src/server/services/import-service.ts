@@ -213,9 +213,110 @@ export async function previewImportFile(input: {
       };
 
       const extractAmount = (value: string) => {
-        // Matches: 30.000, 5.140.163, (18.990), -1.200, $ 12.345, 1.234,56
-        const match = value.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})*(?:,\d{1,2})?\)?/);
-        return match ? parseChileanAmountToken(match[0]) : null;
+        // Prefer "money-looking" tokens. Avoid capturing day/month numbers from dates.
+        const candidates: Array<{ token: string; parsed: number }> = [];
+
+        // Primary: numbers with thousand separators (CLP style) e.g. 5.140.163, 30.000, (18.990), -1.200
+        const moneyLike = /-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/g;
+        for (const match of value.matchAll(moneyLike)) {
+          const token = match[0];
+          const parsed = parseChileanAmountToken(token);
+          if (typeof parsed === "number") candidates.push({ token, parsed });
+        }
+
+        // Secondary: long digit sequences (>= 4 digits) without separators (some banks export like 25140)
+        if (candidates.length === 0) {
+          const longDigits = /-?\$?\(?\d{4,}(?:,\d{1,2})?\)?/g;
+          for (const match of value.matchAll(longDigits)) {
+            const token = match[0];
+            const parsed = parseChileanAmountToken(token);
+            if (typeof parsed === "number") candidates.push({ token, parsed });
+          }
+        }
+
+        if (candidates.length === 0) return null;
+        // Choose the largest absolute value (usually the amount vs. codes).
+        candidates.sort((a, b) => Math.abs(b.parsed) - Math.abs(a.parsed));
+        return candidates[0]!.parsed;
+      };
+
+      const extractInstallment = (value: string) => {
+        // Detect installments like 03/06, 10/12, 4/12. Avoid matching dates (dd/mm/yyyy).
+        const rx = /\b(\d{1,2})\/(\d{1,2})\b(?!\/\d{4})/g;
+        const matches = Array.from(value.matchAll(rx));
+        if (matches.length === 0) return null;
+        // Use the last match (often the installment is near the end of the line).
+        const last = matches[matches.length - 1]!;
+        const current = Number(last[1]);
+        const total = Number(last[2]);
+        if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 1) return null;
+        // Treat 01/01 as "no cuotas" unless we have clear evidence otherwise.
+        if (current === 1 && total === 1) return null;
+        return {
+          cuotaActual: current,
+          cuotaTotal: total,
+          installments: total,
+          installmentLabel: `${String(current).padStart(2, "0")}/${String(total).padStart(2, "0")}`
+        };
+      };
+
+      const inferDirection = (value: string, amount: number | null) => {
+        const lower = value.toLowerCase();
+        if (typeof amount === "number" && amount < 0) return "credit" as const;
+        if (lower.includes("abono") || lower.includes("pago") || lower.includes("devoluc")) return "credit" as const;
+        return "debit" as const;
+      };
+
+      const extractDescription = (line: string, date: string | null) => {
+        const cityBlacklist = new Set([
+          "santiago",
+          "las condes",
+          "providencia",
+          "nunoa",
+          "ñuñoa",
+          "vitacura",
+          "la florida",
+          "puente alto",
+          "maipu",
+          "maipú",
+          "valparaiso",
+          "valparaíso",
+          "vina del mar",
+          "viña del mar",
+          "concepcion",
+          "concepción",
+          "rancagua",
+          "temuco",
+          "antofagasta"
+        ]);
+
+        if (!date) return line;
+        const dateMatch = line.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
+        if (!dateMatch || dateMatch.index == null) return line;
+
+        const prefix = line.slice(0, dateMatch.index).trim();
+        const afterDate = line.slice(dateMatch.index + dateMatch[0].length).trim();
+
+        const dropPrefix =
+          prefix.length > 0 &&
+          prefix.length <= 30 &&
+          !/\d/.test(prefix) &&
+          cityBlacklist.has(prefix.toLowerCase());
+
+        const rest = dropPrefix ? afterDate : `${prefix} ${afterDate}`.trim();
+
+        const markerIndex = rest.indexOf(" T ");
+        if (markerIndex >= 0) {
+          return rest.slice(0, markerIndex).replace(/\s+/g, " ").trim();
+        }
+
+        // Otherwise take text up to the first money-like token
+        const moneyLike = rest.match(/-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/);
+        if (moneyLike && moneyLike.index != null) {
+          return rest.slice(0, moneyLike.index).replace(/\s+/g, " ").trim();
+        }
+
+        return rest.replace(/\s+/g, " ").trim();
       };
 
       const cleanedLines = lines.map((l) => l.trim()).filter(Boolean);
@@ -228,16 +329,38 @@ export async function previewImportFile(input: {
             ? [rawText.trim().slice(0, 400)]
             : [];
 
-      const rowsFallback = ensuredLines.map((line, index) => ({
-        rowNumber: index + 1,
-        description: line,
-        amount: extractAmount(line),
-        date: extractDate(line),
-        needsReview: true
-      })) as Array<Record<string, unknown>>;
+      const rowsFallback = ensuredLines.map((line, index) => {
+        const date = extractDate(line);
+        const amount = extractAmount(line);
+        const installment = extractInstallment(line);
+        const direction = inferDirection(line, amount);
+        const description = extractDescription(line, date);
+
+        const absAmount = typeof amount === "number" ? Math.abs(amount) : null;
+        const cargo = direction === "debit" ? absAmount : null;
+        const abono = direction === "credit" ? absAmount : null;
+
+        return {
+          rowNumber: index + 1,
+          // Keep both generic + expected keys so downstream normalizer/template can pick them.
+          date,
+          description,
+          amount,
+          needsReview: true,
+          fecha: date,
+          descripcion: description,
+          cargo: typeof cargo === "number" ? cargo : undefined,
+          abono: typeof abono === "number" ? abono : undefined,
+          cuotaActual: installment?.cuotaActual ?? null,
+          cuotaTotal: installment?.cuotaTotal ?? null,
+          installments: installment?.installments ?? null,
+          installmentLabel: installment?.installmentLabel ?? null
+        } as Record<string, unknown>;
+      }) as Array<Record<string, unknown>>;
 
       const pdfDebug: {
         aiUsed: boolean;
+        geminiModel?: string | null;
         geminiStatus: number | null;
         geminiError: string | null;
         textLength: number;
@@ -274,6 +397,7 @@ export async function previewImportFile(input: {
 
         if (ai.ok) {
           pdfDebug.aiUsed = true;
+          pdfDebug.geminiModel = ai.debug.geminiModel ?? null;
           pdfDebug.geminiStatus = ai.debug.geminiStatus;
           pdfDebug.geminiError = ai.debug.geminiError;
           if (ai.debug.geminiBody) pdfDebug.geminiBody = ai.debug.geminiBody;
@@ -352,6 +476,7 @@ export async function previewImportFile(input: {
           (parsed as unknown as Record<string, unknown>).debug = pdfDebug;
         } else {
           pdfDebug.aiUsed = true;
+          pdfDebug.geminiModel = ai.debug.geminiModel ?? null;
           pdfDebug.geminiStatus = ai.debug.geminiStatus;
           pdfDebug.geminiError =
             ai.debug.geminiError ?? `${ai.error}: ${ai.message}`;

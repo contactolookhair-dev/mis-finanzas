@@ -55,6 +55,7 @@ export type AiStructurePdfResult =
       confidence: number | null;
       debug: {
         geminiKeyPresent: boolean;
+        geminiModel: string | null;
         geminiStatus: number | null;
         geminiError: string | null;
         geminiBody?: string;
@@ -66,6 +67,7 @@ export type AiStructurePdfResult =
       message: string;
       debug: {
         geminiKeyPresent: boolean;
+        geminiModel: string | null;
         geminiStatus: number | null;
         geminiError: string | null;
         geminiBody?: string;
@@ -119,13 +121,25 @@ export async function structurePdfTextWithAI(input: {
       message: "La lectura inteligente no está configurada todavía (falta GEMINI_API_KEY).",
       debug: {
         geminiKeyPresent: false,
+        geminiModel: null,
         geminiStatus: null,
         geminiError: "missing_api_key"
       }
     };
   }
 
-  const model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
+  const modelCandidates = [
+    process.env.GEMINI_MODEL,
+    // Keep in sync with financial-insights-service defaults
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-flash"
+  ]
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+    .map((v) => v.trim());
+
+  const modelsToTry = Array.from(new Set(modelCandidates));
 
   const system = [
     "Eres un motor de extracción de datos para importación de PDFs de finanzas personales (Chile).",
@@ -146,12 +160,18 @@ export async function structurePdfTextWithAI(input: {
 
   let geminiStatus: number | null = null;
   let geminiBody: string | undefined;
+  let geminiModel: string | null = null;
   try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        model
-      )}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
+    let lastErrorBody: string | null = null;
+    let lastStatus: number | null = null;
+
+    for (const candidateModel of modelsToTry) {
+      geminiModel = candidateModel;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        candidateModel
+      )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -168,86 +188,111 @@ export async function structurePdfTextWithAI(input: {
           ],
           generationConfig: {
             temperature: 0.1,
-            // Ask for strict JSON, then validate with Zod.
             responseMimeType: "application/json"
           }
         })
+      });
+
+      geminiStatus = res.status;
+      lastStatus = res.status;
+      console.log("[imports/ai] gemini status:", res.status, "model:", candidateModel);
+
+      if (!res.ok) {
+        const bodyText = await res.text().catch(() => "");
+        lastErrorBody = bodyText || `HTTP_${res.status}`;
+        if (includeDevBody) {
+          console.log("[imports/ai] gemini error body:", bodyText);
+        }
+
+        // Retry on "model not found/unsupported" errors, otherwise fail fast.
+        const shouldRetry =
+          res.status === 404 ||
+          bodyText.toLowerCase().includes("is not found") ||
+          bodyText.toLowerCase().includes("not supported");
+        if (shouldRetry) {
+          continue;
+        }
+
+        return {
+          ok: false,
+          error: "ai_failed",
+          message: `Gemini respondió error (${res.status}).`,
+          debug: {
+            geminiKeyPresent,
+            geminiModel: candidateModel,
+            geminiStatus: res.status,
+            geminiError: bodyText ? bodyText.slice(0, 1200) : `HTTP_${res.status}`,
+            geminiBody: includeDevBody ? bodyText : undefined
+          }
+        };
       }
-    );
 
-    geminiStatus = res.status;
-    console.log("[imports/ai] gemini status:", res.status);
+      const payload = (await res.json()) as {
+        candidates?: Array<{
+          content?: { parts?: Array<{ text?: string }> };
+        }>;
+      };
 
-    if (!res.ok) {
-      geminiBody = await res.text().catch(() => "");
+      const content = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("").trim() ?? "";
       if (includeDevBody) {
-        console.log("[imports/ai] gemini error body:", geminiBody);
+        geminiBody = content.slice(0, 8000);
       }
+      const parsedJson = typeof content === "string" ? tryParseLooseJson(content) : null;
+      if (!parsedJson) {
+        return {
+          ok: false,
+          error: "ai_invalid_response",
+          message: "La IA no devolvió JSON válido.",
+          debug: {
+            geminiKeyPresent,
+            geminiModel: candidateModel,
+            geminiStatus,
+            geminiError: "invalid_json",
+            geminiBody: includeDevBody ? geminiBody : undefined
+          }
+        };
+      }
+
+      const preview = aiImportPreviewSchema.parse(parsedJson);
+
+      const warnings: string[] = [];
+      if (preview.summaryNeedsReview) warnings.push("La IA marcó el resumen como 'requiere revisión'.");
+      const dubiousCount = preview.transactions.filter((t) => t.needsReview).length;
+      if (dubiousCount > 0) warnings.push(`Hay ${dubiousCount} movimientos marcados para revisión.`);
+
+      const confidence =
+        preview.transactions.length > 0
+          ? Math.max(0.2, 1 - dubiousCount / Math.max(1, preview.transactions.length))
+          : null;
+
       return {
-        ok: false,
-        error: "ai_failed",
-        message: `Gemini respondió error (${res.status}).`,
+        ok: true,
+        preview,
+        warnings,
+        confidence,
         debug: {
           geminiKeyPresent,
-          geminiStatus: res.status,
-          geminiError: geminiBody ? geminiBody.slice(0, 1200) : `HTTP_${res.status}`,
-          geminiBody: includeDevBody ? geminiBody : undefined
-        }
-      };
-    }
-
-    const payloadText = await res.text();
-    if (includeDevBody) {
-      geminiBody = payloadText;
-      console.log("[imports/ai] gemini ok body:", payloadText);
-    }
-    const payload = (payloadText ? JSON.parse(payloadText) : null) as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> };
-      }>;
-    };
-
-    const text = payload.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    const parsedJson = typeof text === "string" ? tryParseLooseJson(text) : null;
-    if (!parsedJson) {
-      return {
-        ok: false,
-        error: "ai_invalid_response",
-        message: "La IA no devolvió JSON válido.",
-        debug: {
-          geminiKeyPresent,
+          geminiModel: candidateModel,
           geminiStatus,
-          geminiError: "invalid_json",
+          geminiError: null,
           geminiBody: includeDevBody ? geminiBody : undefined
         }
       };
     }
 
-    const preview = aiImportPreviewSchema.parse(parsedJson);
-
-    const warnings: string[] = [];
-    if (preview.summaryNeedsReview) warnings.push("La IA marcó el resumen como 'requiere revisión'.");
-    const dubiousCount = preview.transactions.filter((t) => t.needsReview).length;
-    if (dubiousCount > 0) warnings.push(`Hay ${dubiousCount} movimientos marcados para revisión.`);
-
-    // Confidence here is basic (we can improve later).
-    const confidence =
-      preview.transactions.length > 0
-        ? Math.max(0.2, 1 - dubiousCount / Math.max(1, preview.transactions.length))
-        : null;
-
+    // Exhausted model list
     return {
-      ok: true,
-      preview,
-      warnings,
-      confidence,
+      ok: false,
+      error: "ai_failed",
+      message: `Gemini respondió error (${lastStatus ?? "unknown"}).`,
       debug: {
         geminiKeyPresent,
-        geminiStatus,
-        geminiError: null,
-        geminiBody: includeDevBody ? geminiBody : undefined
+        geminiModel,
+        geminiStatus: lastStatus,
+        geminiError: lastErrorBody ? lastErrorBody.slice(0, 1200) : "unknown_error"
       }
     };
+
   } catch (error) {
     const errMessage = error instanceof Error ? error.message : String(error);
     const errStack = error instanceof Error ? error.stack : null;
@@ -261,6 +306,7 @@ export async function structurePdfTextWithAI(input: {
       message: errMessage,
       debug: {
         geminiKeyPresent,
+        geminiModel,
         geminiStatus,
         geminiError: errMessage,
         geminiBody: includeDevBody ? geminiBody : undefined
