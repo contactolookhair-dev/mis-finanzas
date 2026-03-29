@@ -219,8 +219,8 @@ export async function structurePdfTextWithAI(input: {
 
     for (const candidateModel of modelsToTry) {
       geminiModel = candidateModel;
-      // In production some environments return 404 for v1beta; try stable v1 first, then v1beta.
-      const apiVersions: Array<"v1" | "v1beta"> = ["v1", "v1beta"];
+      // Prefer v1beta (supports systemInstruction + responseMimeType). Fall back to v1 with a compatible payload.
+      const apiVersions: Array<"v1" | "v1beta"> = ["v1beta", "v1"];
       let payload: {
         candidates?: Array<{
           content?: { parts?: Array<{ text?: string }> };
@@ -238,26 +238,42 @@ export async function structurePdfTextWithAI(input: {
           candidateModel
         )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
+        const requestBody =
+          apiVersion === "v1beta"
+            ? {
+                systemInstruction: {
+                  parts: [{ text: system }]
+                },
+                contents: [
+                  {
+                    role: "user",
+                    parts: [{ text: user }]
+                  }
+                ],
+                generationConfig: {
+                  temperature: 0.1,
+                  responseMimeType: "application/json"
+                }
+              }
+            : {
+                // v1 does not accept systemInstruction/responseMimeType. Merge instructions into user prompt.
+                contents: [
+                  {
+                    role: "user",
+                    parts: [{ text: `${system}\n\n${user}` }]
+                  }
+                ],
+                generationConfig: {
+                  temperature: 0.1
+                }
+              };
+
         const res = await fetch(url, {
           method: "POST",
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({
-            systemInstruction: {
-              parts: [{ text: system }]
-            },
-            contents: [
-              {
-                role: "user",
-                parts: [{ text: user }]
-              }
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: "application/json"
-            }
-          })
+          body: JSON.stringify(requestBody)
         });
 
         geminiStatus = res.status;
