@@ -454,6 +454,13 @@ export function ImportTransactionsPanel(props: {
       setCommitSummary(null);
       setPreviewDebug(null);
 
+      console.log("[preview upload DEBUG]", {
+        selectedFile,
+        name: selectedFile?.name,
+        type: selectedFile?.type,
+        size: selectedFile?.size
+      });
+
       const formData = new FormData();
       formData.append("file", selectedFile);
       if (selectedTemplateId) {
@@ -474,17 +481,12 @@ export function ImportTransactionsPanel(props: {
         contextualAccountId,
         selectedTemplateId
       });
-      if (typeof window !== "undefined") {
-        console.log("[preview] calling", window.location.origin);
-      }
+      console.log("[preview upload DEBUG] sending request");
 
       const response = await fetch("/api/imports/preview", {
         method: "POST",
         // Be explicit: the preview route is workspace/auth protected and needs cookies in production.
         credentials: "include",
-        headers: {
-          Accept: "application/json"
-        },
         body: formData
       });
 
