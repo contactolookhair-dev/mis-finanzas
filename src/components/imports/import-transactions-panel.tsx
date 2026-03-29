@@ -474,6 +474,9 @@ export function ImportTransactionsPanel(props: {
         contextualAccountId,
         selectedTemplateId
       });
+      if (typeof window !== "undefined") {
+        console.log("[preview] calling", window.location.origin);
+      }
 
       const response = await fetch("/api/imports/preview", {
         method: "POST",
