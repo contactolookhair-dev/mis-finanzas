@@ -150,6 +150,65 @@ function tryParseLooseJson(value: string) {
   }
 }
 
+type GeminiApiVersion = "v1" | "v1beta";
+
+const MODEL_CACHE_TTL_MS = 5 * 60 * 1000;
+const modelCache: Partial<Record<GeminiApiVersion, { fetchedAt: number; models: string[] }>> = {};
+
+async function listGeminiModels(params: { apiKey: string; apiVersion: GeminiApiVersion }): Promise<string[] | null> {
+  const cached = modelCache[params.apiVersion];
+  if (cached && Date.now() - cached.fetchedAt < MODEL_CACHE_TTL_MS) {
+    return cached.models;
+  }
+
+  const url = `https://generativelanguage.googleapis.com/${params.apiVersion}/models?key=${encodeURIComponent(
+    params.apiKey
+  )}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => "");
+      console.warn("[imports/ai] listModels failed", { api: params.apiVersion, status: res.status, body: bodyText });
+      return null;
+    }
+
+    const payload = (await res.json()) as {
+      models?: Array<{
+        name?: string;
+        supportedGenerationMethods?: string[];
+      }>;
+    };
+
+    const models =
+      payload.models
+        ?.filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+        .map((m) => String(m.name ?? "").trim())
+        .filter(Boolean)
+        // API returns names like "models/gemini-..."; we pass only the id part to our URL builder.
+        .map((name) => (name.startsWith("models/") ? name.slice("models/".length) : name)) ?? [];
+
+    if (models.length > 0) {
+      modelCache[params.apiVersion] = { fetchedAt: Date.now(), models };
+      return models;
+    }
+
+    return null;
+  } catch (error) {
+    console.warn("[imports/ai] listModels exception", {
+      api: params.apiVersion,
+      message: error instanceof Error ? error.message : String(error)
+    });
+    return null;
+  }
+}
+
 export async function structurePdfTextWithAI(input: {
   workspaceId: string;
   userKey: string;
@@ -179,13 +238,38 @@ export async function structurePdfTextWithAI(input: {
     };
   }
 
+  // Discover models at runtime for the current API version to avoid hardcoding invalid names.
+  // Prefer flash variants for cost/perf.
+  let discoveredApiVersion: GeminiApiVersion | null = null;
+  let discoveredModels: string[] = [];
+  const discoveredV1 = await listGeminiModels({ apiKey, apiVersion: "v1" });
+  if (discoveredV1 && discoveredV1.length > 0) {
+    discoveredApiVersion = "v1";
+    discoveredModels = discoveredV1;
+  } else {
+    const discoveredV1beta = await listGeminiModels({ apiKey, apiVersion: "v1beta" });
+    if (discoveredV1beta && discoveredV1beta.length > 0) {
+      discoveredApiVersion = "v1beta";
+      discoveredModels = discoveredV1beta;
+    }
+  }
+
+  const preferFlash = (m: string) => m.toLowerCase().includes("flash");
+  const discoveredSorted = discoveredModels.length
+    ? [
+        ...discoveredModels.filter(preferFlash),
+        ...discoveredModels.filter((m) => !preferFlash(m))
+      ]
+    : [];
+
   const modelCandidates = [
     process.env.GEMINI_MODEL,
-    // Keep in sync with financial-insights-service defaults
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
+    ...discoveredSorted,
+    // Safety net if listModels fails for some reason.
     "gemini-1.5-flash-latest",
-    "gemini-1.5-flash"
+    "gemini-1.5-flash",
+    "gemini-1.5-pro-latest",
+    "gemini-1.5-pro"
   ]
     .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
     .map((v) => v.trim());
@@ -212,7 +296,7 @@ export async function structurePdfTextWithAI(input: {
   let geminiStatus: number | null = null;
   let geminiBody: string | undefined;
   let geminiModel: string | null = null;
-  let geminiApiVersion: "v1" | "v1beta" | null = null;
+  let geminiApiVersion: GeminiApiVersion | null = null;
   try {
     let lastErrorBody: string | null = null;
     let lastStatus: number | null = null;
@@ -220,7 +304,8 @@ export async function structurePdfTextWithAI(input: {
     for (const candidateModel of modelsToTry) {
       geminiModel = candidateModel;
       // Prefer v1beta (supports systemInstruction + responseMimeType). Fall back to v1 with a compatible payload.
-      const apiVersions: Array<"v1" | "v1beta"> = ["v1beta", "v1"];
+      const apiVersions: Array<GeminiApiVersion> =
+        discoveredApiVersion === "v1" ? ["v1", "v1beta"] : ["v1beta", "v1"];
       let payload: {
         candidates?: Array<{
           content?: { parts?: Array<{ text?: string }> };
