@@ -67,7 +67,28 @@ export const importPreviewRowSchema = z.object({
     .default({}),
   issues: z.array(z.string()).default([]),
   include: z.boolean().default(true),
-  rawValues: z.record(z.unknown()).default({})
+  rawValues: z.record(z.unknown()).default({}),
+
+  // Credit card statement extras (Falabella/CMR and future banks).
+  // Kept optional to avoid breaking existing CSV/XLSX imports and older data.
+  descripcionBase: z.string().optional(),
+  descriptionBase: z.string().optional(),
+  esCompraEnCuotas: z.boolean().optional(),
+  isInstallmentPurchase: z.boolean().optional(),
+  cuotaActual: z.number().int().nullable().optional(),
+  cuotaTotal: z.number().int().nullable().optional(),
+  cuotasRestantes: z.number().int().nullable().optional(),
+  montoCuota: z.number().finite().nullable().optional(),
+  montoTotalCompra: z.number().finite().nullable().optional(),
+  installments: z.number().int().nullable().optional(),
+  installmentLabel: z.string().nullable().optional(),
+
+  // Compatibility aliases used by the UI in some places.
+  currentInstallment: z.number().int().nullable().optional(),
+  totalInstallments: z.number().int().nullable().optional(),
+  remainingInstallments: z.number().int().nullable().optional(),
+  installmentAmount: z.number().finite().nullable().optional(),
+  totalPurchaseAmount: z.number().finite().nullable().optional()
 });
 
 export const importCommitRowSchema = z.object({

@@ -1432,8 +1432,12 @@ export function ImportTransactionsPanel(props: {
               .filter((row) => {
                 if (rowView === "all") return true;
                 const installment = getInstallmentPreview(row);
-                if (rowView === "installments") return installment.isInstallmentPurchase;
-                return !installment.isInstallmentPurchase;
+                const isRealInstallment =
+                  installment.isInstallmentPurchase &&
+                  typeof installment.totalInstallments === "number" &&
+                  installment.totalInstallments > 1;
+                if (rowView === "installments") return isRealInstallment;
+                return !isRealInstallment;
               })
               .map((row) => {
               const duplicateLabel = getDuplicateLabel(row.duplicateStatus);
@@ -1551,7 +1555,9 @@ export function ImportTransactionsPanel(props: {
                         </p>
                       ) : null}
 
-                      {installmentPreview.isInstallmentPurchase ? (
+                      {installmentPreview.isInstallmentPurchase &&
+                      typeof installmentPreview.totalInstallments === "number" &&
+                      installmentPreview.totalInstallments > 1 ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700">
                           <div className="font-medium text-slate-900">
                             {installmentPreview.currentInstallment != null &&
