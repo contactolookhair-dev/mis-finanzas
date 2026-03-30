@@ -129,12 +129,36 @@ export const importCommitRowSchema = z.object({
     })
     .optional(),
   issues: z.array(z.string()).default([]),
-  include: z.boolean().default(true)
+  include: z.boolean().default(true),
+
+  // Credit card statement extras (Falabella/CMR and future banks).
+  // Optional so existing commits (CSV/XLSX) stay compatible.
+  descripcionBase: z.string().optional(),
+  descriptionBase: z.string().optional(),
+  esCompraEnCuotas: z.boolean().optional(),
+  isInstallmentPurchase: z.boolean().optional(),
+  cuotaActual: z.number().int().nullable().optional(),
+  cuotaTotal: z.number().int().nullable().optional(),
+  cuotasRestantes: z.number().int().nullable().optional(),
+  montoCuota: z.number().finite().nullable().optional(),
+  montoTotalCompra: z.number().finite().nullable().optional(),
+  installments: z.number().int().nullable().optional(),
+  installmentLabel: z.string().nullable().optional(),
+  installmentLabelRaw: z.string().nullable().optional(),
+
+  // Compatibility aliases used by the UI in some places.
+  currentInstallment: z.number().int().nullable().optional(),
+  totalInstallments: z.number().int().nullable().optional(),
+  remainingInstallments: z.number().int().nullable().optional(),
+  installmentAmount: z.number().finite().nullable().optional(),
+  totalPurchaseAmount: z.number().finite().nullable().optional()
 });
 
 export const importCommitPayloadSchema = z.object({
   parser: importParserKindSchema,
   fileName: z.string().min(1),
+  importType: z.enum(["credit", "account"]).optional(),
+  accountId: z.string().optional(),
   rows: z.array(importCommitRowSchema),
   pdfMeta: z.record(z.unknown()).optional(),
   pdfWarnings: z.array(z.string()).optional(),

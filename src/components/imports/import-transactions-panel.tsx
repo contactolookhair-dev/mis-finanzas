@@ -212,6 +212,30 @@ function getInstallmentPreview(row: ImportPreviewRow) {
   };
 }
 
+function validateManualInstallments(installment: ReturnType<typeof getInstallmentPreview>) {
+  const current = installment.currentInstallment;
+  const total = installment.totalInstallments;
+  const issues: string[] = [];
+
+  if (installment.isInstallmentPurchase) {
+    if (typeof total === "number" && Number.isFinite(total) && total > 48) {
+      issues.push("Total de cuotas demasiado alto (máx 48)");
+    }
+    if (
+      typeof current === "number" &&
+      Number.isFinite(current) &&
+      typeof total === "number" &&
+      Number.isFinite(total) &&
+      total > 0 &&
+      current > total
+    ) {
+      issues.push("La cuota actual no puede ser mayor al total");
+    }
+  }
+
+  return issues;
+}
+
 function normalizePreviewRow(row: ImportPreviewRow): ImportPreviewRow {
   const installment = getInstallmentPreview(row);
 
@@ -278,6 +302,7 @@ export function ImportTransactionsPanel(props: {
   const [success, setSuccess] = useState<string | null>(null);
   const [commitSummary, setCommitSummary] = useState<CommitSummary | null>(null);
   const [creatingSuggestedAccount, setCreatingSuggestedAccount] = useState(false);
+  const autoInstallmentsRef = useRef<Map<string, ReturnType<typeof getInstallmentPreview>>>(new Map());
   const [selectedPdfAccountId, setSelectedPdfAccountId] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [rowView, setRowView] = useState<"all" | "normal" | "installments">("all");
@@ -539,7 +564,9 @@ export function ImportTransactionsPanel(props: {
               "Fecha no reconocida",
               "Descripcion vacia",
               "Monto no reconocido",
-              "Tipo no reconocido"
+              "Tipo no reconocido",
+              "La cuota actual no puede ser mayor al total",
+              "Total de cuotas demasiado alto (máx 48)"
             ].includes(issue)
         );
 
@@ -549,6 +576,9 @@ export function ImportTransactionsPanel(props: {
           nextIssues.push("Monto no reconocido");
         }
         if (!next.type) nextIssues.push("Tipo no reconocido");
+
+        const installmentIssues = validateManualInstallments(getInstallmentPreview(next));
+        nextIssues.push(...installmentIssues);
 
         if (next.classification === "NEGOCIO" && next.type === "EGRESO" && !next.businessUnitId) {
           nextIssues.push("Selecciona unidad de negocio");
@@ -671,6 +701,8 @@ export function ImportTransactionsPanel(props: {
 
       setPreview(payload);
       setSelectedTemplateId(payload.appliedTemplate?.id ?? "");
+      // Keep the server-detected installments as "auto" reference even if the user edits them later.
+      autoInstallmentsRef.current = new Map(payloadRows.map((row) => [row.id, getInstallmentPreview(row)]));
       setRows(payloadRows.map(normalizePreviewRow));
       setSelectedPdfAccountId(payload.pdfAccountSuggestion?.accountId ?? contextualAccountId ?? "");
 
@@ -805,6 +837,11 @@ export function ImportTransactionsPanel(props: {
       const payload = {
         parser: preview.parser,
         fileName: selectedFile?.name ?? "importacion",
+        importType: importLane,
+        accountId:
+          importLane === "credit"
+            ? (selectedPdfAccountId || initialAccountId || undefined)
+            : undefined,
         appliedTemplateId: preview.appliedTemplate?.id ?? undefined,
         pdfMeta: preview.pdfMeta ?? undefined,
         pdfWarnings: preview.warnings ?? undefined,
@@ -836,7 +873,26 @@ export function ImportTransactionsPanel(props: {
           duplicateStatus: row.duplicateStatus,
           suggestionMeta: row.suggestionMeta,
           issues: row.issues,
-          include: row.include
+          include: row.include,
+
+          // Credit card statement extras (used for CMR/Falabella preview + persistence in import metadata).
+          descripcionBase: (row as any).descripcionBase,
+          descriptionBase: (row as any).descriptionBase,
+          esCompraEnCuotas: (row as any).esCompraEnCuotas,
+          isInstallmentPurchase: (row as any).isInstallmentPurchase,
+          cuotaActual: (row as any).cuotaActual ?? null,
+          cuotaTotal: (row as any).cuotaTotal ?? null,
+          cuotasRestantes: (row as any).cuotasRestantes ?? null,
+          montoCuota: (row as any).montoCuota ?? null,
+          montoTotalCompra: (row as any).montoTotalCompra ?? null,
+          installments: (row as any).installments ?? null,
+          installmentLabel: (row as any).installmentLabel ?? null,
+          installmentLabelRaw: (row as any).installmentLabelRaw ?? null,
+          currentInstallment: (row as any).currentInstallment ?? null,
+          totalInstallments: (row as any).totalInstallments ?? null,
+          remainingInstallments: (row as any).remainingInstallments ?? null,
+          installmentAmount: (row as any).installmentAmount ?? null,
+          totalPurchaseAmount: (row as any).totalPurchaseAmount ?? null
         }))
       };
 
@@ -1466,6 +1522,12 @@ export function ImportTransactionsPanel(props: {
                   : null;
               const rowDubious = Boolean(parserMeta?.dubious);
               const installmentPreview = getInstallmentPreview(row);
+              const autoInstallment = autoInstallmentsRef.current.get(row.id) ?? null;
+              const hasAutoInstallment =
+                Boolean(autoInstallment?.isInstallmentPurchase) &&
+                ((typeof autoInstallment?.totalInstallments === "number" && autoInstallment.totalInstallments > 1) ||
+                  Boolean(autoInstallment?.installmentLabel));
+              const manualInstallmentIssues = validateManualInstallments(installmentPreview);
 
               return (
                 <div
@@ -1565,6 +1627,183 @@ export function ImportTransactionsPanel(props: {
                           Descripción faltante: este valor es un placeholder. Revísalo antes de guardar.
                         </p>
                       ) : null}
+
+                      <div className="mt-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-medium text-slate-900">¿Es compra en cuotas?</span>
+                          <Select
+                            value={installmentPreview.isInstallmentPurchase ? "yes" : "no"}
+                            onChange={(event) => {
+                              const nextValue = event.target.value;
+                              if (nextValue === "no") {
+                                updateRow(row.id, {
+                                  esCompraEnCuotas: false,
+                                  isInstallmentPurchase: false,
+                                  cuotaActual: null,
+                                  cuotaTotal: null,
+                                  cuotasRestantes: null,
+                                  installmentLabelRaw: null,
+                                  installmentLabel: null,
+                                  installments: null,
+                                  montoCuota: null,
+                                  montoTotalCompra: null,
+                                  currentInstallment: null,
+                                  totalInstallments: null,
+                                  remainingInstallments: null,
+                                  installmentAmount: null,
+                                  totalPurchaseAmount: null
+                                } as any);
+                                return;
+                              }
+
+                              const seedCurrent =
+                                typeof installmentPreview.currentInstallment === "number"
+                                  ? installmentPreview.currentInstallment
+                                  : typeof autoInstallment?.currentInstallment === "number"
+                                    ? autoInstallment.currentInstallment
+                                    : null;
+                              const seedTotal =
+                                typeof installmentPreview.totalInstallments === "number"
+                                  ? installmentPreview.totalInstallments
+                                  : typeof autoInstallment?.totalInstallments === "number"
+                                    ? autoInstallment.totalInstallments
+                                    : null;
+                              const seedRemaining =
+                                typeof seedCurrent === "number" && typeof seedTotal === "number"
+                                  ? Math.max(seedTotal - seedCurrent, 0)
+                                  : null;
+                              const seedLabel =
+                                typeof seedCurrent === "number" && typeof seedTotal === "number"
+                                  ? `${seedCurrent}/${seedTotal}`
+                                  : autoInstallment?.installmentLabel ?? "en cuotas";
+
+                              updateRow(row.id, {
+                                esCompraEnCuotas: true,
+                                isInstallmentPurchase: true,
+                                cuotaActual: seedCurrent,
+                                cuotaTotal: seedTotal,
+                                cuotasRestantes: seedRemaining,
+                                installmentLabelRaw: seedLabel,
+                                installmentLabel: seedLabel,
+                                installments: seedTotal,
+                                currentInstallment: seedCurrent,
+                                totalInstallments: seedTotal,
+                                remainingInstallments: seedRemaining
+                              } as any);
+                            }}
+                          >
+                            <option value="no">No</option>
+                            <option value="yes">Sí</option>
+                          </Select>
+                        </div>
+
+                        {hasAutoInstallment ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                              Auto: cuotas
+                            </span>
+                            {typeof autoInstallment?.currentInstallment === "number" &&
+                            typeof autoInstallment?.totalInstallments === "number" ? (
+                              <span className="text-slate-600">
+                                Detectado: {autoInstallment.currentInstallment}/{autoInstallment.totalInstallments}
+                              </span>
+                            ) : autoInstallment?.installmentLabel ? (
+                              <span className="text-slate-600">Detectado: {autoInstallment.installmentLabel}</span>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {installmentPreview.isInstallmentPurchase ? (
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            <label className="space-y-1">
+                              <span className="text-[11px] font-medium text-slate-500">Cuota actual</span>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={typeof installmentPreview.currentInstallment === "number" ? installmentPreview.currentInstallment : ""}
+                                onChange={(event) => {
+                                  const raw = event.target.value;
+                                  const nextCurrent = raw === "" ? null : Math.max(0, Math.floor(Number(raw)));
+                                  const total =
+                                    typeof installmentPreview.totalInstallments === "number"
+                                      ? installmentPreview.totalInstallments
+                                      : null;
+                                  const remaining =
+                                    typeof nextCurrent === "number" && typeof total === "number"
+                                      ? Math.max(total - nextCurrent, 0)
+                                      : null;
+                                  const label =
+                                    typeof nextCurrent === "number" && typeof total === "number"
+                                      ? `${nextCurrent}/${total}`
+                                      : "en cuotas";
+                                  updateRow(row.id, {
+                                    esCompraEnCuotas: true,
+                                    isInstallmentPurchase: true,
+                                    cuotaActual: nextCurrent,
+                                    currentInstallment: nextCurrent,
+                                    cuotasRestantes: remaining,
+                                    remainingInstallments: remaining,
+                                    installmentLabelRaw: label,
+                                    installmentLabel: label
+                                  } as any);
+                                }}
+                              />
+                            </label>
+                            <label className="space-y-1">
+                              <span className="text-[11px] font-medium text-slate-500">Cuotas totales</span>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={typeof installmentPreview.totalInstallments === "number" ? installmentPreview.totalInstallments : ""}
+                                onChange={(event) => {
+                                  const raw = event.target.value;
+                                  const nextTotal = raw === "" ? null : Math.max(0, Math.floor(Number(raw)));
+                                  const current =
+                                    typeof installmentPreview.currentInstallment === "number"
+                                      ? installmentPreview.currentInstallment
+                                      : null;
+                                  const remaining =
+                                    typeof current === "number" && typeof nextTotal === "number"
+                                      ? Math.max(nextTotal - current, 0)
+                                      : null;
+                                  const label =
+                                    typeof current === "number" && typeof nextTotal === "number"
+                                      ? `${current}/${nextTotal}`
+                                      : "en cuotas";
+                                  updateRow(row.id, {
+                                    esCompraEnCuotas: true,
+                                    isInstallmentPurchase: true,
+                                    cuotaTotal: nextTotal,
+                                    totalInstallments: nextTotal,
+                                    installments: nextTotal,
+                                    cuotasRestantes: remaining,
+                                    remainingInstallments: remaining,
+                                    installmentLabelRaw: label,
+                                    installmentLabel: label
+                                  } as any);
+                                }}
+                              />
+                            </label>
+                            <div className="sm:col-span-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                              {typeof installmentPreview.currentInstallment === "number" ? (
+                                <span>Pagadas: {installmentPreview.currentInstallment}</span>
+                              ) : (
+                                <span>Pagadas: —</span>
+                              )}
+                              {typeof installmentPreview.remainingInstallments === "number" ? (
+                                <span>Pendientes: {installmentPreview.remainingInstallments}</span>
+                              ) : (
+                                <span>Pendientes: —</span>
+                              )}
+                            </div>
+                            {manualInstallmentIssues.length > 0 ? (
+                              <div className="sm:col-span-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+                                {manualInstallmentIssues.join(" · ")}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
 
                       {installmentPreview.isInstallmentPurchase &&
                       ((typeof installmentPreview.totalInstallments === "number" &&

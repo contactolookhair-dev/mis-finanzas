@@ -10,6 +10,7 @@ import { buildDuplicateFingerprint } from "@/server/services/import/import-finge
 import { importCommitPayloadSchema, type ImportPreviewRow } from "@/shared/types/imports";
 import { DebtorStatus, ExpenseFrequency } from "@prisma/client";
 import { randomUUID } from "crypto";
+import { detectInstallmentsFromText } from "@/server/services/import/installments";
 
 function normalizeLookupKey(value: string) {
   return value
@@ -542,92 +543,14 @@ export async function previewImportFile(input: {
           };
 
           const extractInstallmentFromText = (text: string) => {
-            const normalized = text.toLowerCase();
-
-            // Explicitly ignore statements that say there's no installments.
-            if (
-              normalized.includes("sin cuotas") ||
-              normalized.includes("no cuotas") ||
-              normalized.includes("sin cuota")
-            ) {
-              return null;
-            }
-
-            // IMPORTANT: this regex would also match the day/month inside a date like "10/12/2026".
-            // Strip full dates first so we only detect true installment ratios.
-            const withoutDates = text.replace(/\b\d{2}\/\d{2}\/\d{4}\b/g, " ");
-            const ratio = withoutDates.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\b/);
-            if (ratio) {
-              const current = Number(ratio[1]);
-              const total = Number(ratio[2]);
-              if (
-                Number.isInteger(current) &&
-                Number.isInteger(total) &&
-                total > 1 &&
-                total <= 48 &&
-                current >= 1 &&
-                current <= total &&
-                !(current === 1 && total === 1)
-              ) {
-                return {
-                  cuotaActual: current,
-                  cuotaTotal: total,
-                  installmentLabel: ratio[0],
-                  installments: total
-                };
-              }
-            }
-
-            const cuotaDe = normalized.match(/\bcuota\s+(\d{1,2})\s+(?:de|\/)\s+(\d{1,2})\b/);
-            if (cuotaDe) {
-              const current = Number(cuotaDe[1]);
-              const total = Number(cuotaDe[2]);
-              if (total > 1 && total <= 48 && current >= 1 && current <= total) {
-                return {
-                  cuotaActual: current,
-                  cuotaTotal: total,
-                  installmentLabel: cuotaDe[0],
-                  installments: total
-                };
-              }
-            }
-
-            // Support "3 de 12" when the text explicitly references cuotas.
-            if (normalized.includes("cuota") || normalized.includes("cuotas") || normalized.includes("en cuotas")) {
-              const deMatch = normalized.match(/\b(\d{1,2})\s+de\s+(\d{1,2})\b/);
-              if (deMatch) {
-                const current = Number(deMatch[1]);
-                const total = Number(deMatch[2]);
-                if (
-                  Number.isInteger(current) &&
-                  Number.isInteger(total) &&
-                  total > 1 &&
-                  total <= 48 &&
-                  current >= 1 &&
-                  current <= total
-                ) {
-                  return {
-                    cuotaActual: current,
-                    cuotaTotal: total,
-                    installmentLabel: deMatch[0],
-                    installments: total
-                  };
-                }
-              }
-            }
-
-            // Keyword-only fallback: mark as installment even if we can't infer n/m.
-            // This keeps the row visible under the "Cuotas" tab and shows a hint in the UI.
-            if (normalized.includes("en cuotas") || normalized.includes("compra en cuotas") || normalized.includes("compras en cuotas")) {
-              return {
-                cuotaActual: null,
-                cuotaTotal: null,
-                installmentLabel: "en cuotas",
-                installments: null
-              };
-            }
-
-            return null;
+            const detection = detectInstallmentsFromText(text);
+            if (!detection.isInstallment) return null;
+            return {
+              cuotaActual: detection.cuotaActual,
+              cuotaTotal: detection.cuotaTotal,
+              installmentLabel: detection.installmentLabel,
+              installments: detection.cuotaTotal
+            };
           };
 
           const classifyCreditCardKind = (text: string, direction: "debit" | "credit") => {
@@ -686,13 +609,46 @@ export async function previewImportFile(input: {
 
           // Build once per preview request (no globals): date+amount index for reconstructing missing merchants.
           const lineIndex = new Map<string, string>();
-          for (const line of lines) {
-            const dmy = extractDate(line);
-            const ymd = dmy ? toYmdFromDmy(dmy) : null;
-            if (!ymd) continue;
+          const amountIndex = new Map<number, string[]>();
+          const stitchPdfLines = (inputLines: string[]) => {
+            const out: string[] = [];
+            const hasDate = (value: string) => /\b\d{2}\/\d{2}\/\d{4}\b/.test(value);
+            const hasMoney = (value: string) => /-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/.test(value);
+            const hasRatio = (value: string) => /\b\d{1,2}\s*\/\s*\d{1,2}\b/.test(value);
 
-            // Index by all money-looking tokens on the line, not just the largest one.
-            // CMR lines often repeat amounts and include additional figures (e.g., cuota/total).
+            for (let i = 0; i < inputLines.length; i += 1) {
+              let line = inputLines[i] ?? "";
+              const next = inputLines[i + 1] ?? "";
+              const next2 = inputLines[i + 2] ?? "";
+              if (next) {
+                const shouldMerge =
+                  // Common PDF text extraction behavior: statement lines get split across newlines.
+                  (hasDate(line) && !hasMoney(line) && (hasMoney(next) || hasRatio(next))) ||
+                  // Some PDFs split into 3 lines: date-only, then merchant-only, then ratio+amount.
+                  (hasDate(line) && !hasMoney(line) && next2 && !hasMoney(next) && (hasMoney(next2) || hasRatio(next2))) ||
+                  (!hasMoney(line) && (hasMoney(next) || hasRatio(next)) && line.length <= 80) ||
+                  (hasRatio(next) && line.length <= 120);
+                if (shouldMerge) {
+                  if (hasDate(line) && !hasMoney(line) && next2 && !hasMoney(next) && (hasMoney(next2) || hasRatio(next2))) {
+                    line = `${line} ${next} ${next2}`.replace(/\s+/g, " ").trim();
+                    i += 2;
+                  } else {
+                    line = `${line} ${next}`.replace(/\s+/g, " ").trim();
+                    i += 1;
+                  }
+                }
+              }
+              if (line) out.push(line);
+            }
+
+            return out;
+          };
+
+          const statementLines = stitchPdfLines(lines);
+
+          // Index amounts from the full PDF lines even if the line lost its date after stitching.
+          // We use this as a best-effort fallback when we can't match by date+amount.
+          for (const line of statementLines) {
             const moneyLike = /-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/g;
             const tokens = Array.from(line.matchAll(moneyLike)).map((m) => m[0]);
             const amounts: number[] = [];
@@ -703,7 +659,36 @@ export async function previewImportFile(input: {
               }
             }
 
-            // Also include the legacy "best amount" as a backstop.
+            const best = extractAmount(line);
+            if (typeof best === "number" && Number.isFinite(best)) {
+              amounts.push(Math.round(Math.abs(best)));
+            }
+
+            for (const absAmt of Array.from(new Set(amounts))) {
+              const existing = amountIndex.get(absAmt);
+              if (!existing) {
+                amountIndex.set(absAmt, [line]);
+              } else if (existing.length < 6 && !existing.includes(line)) {
+                existing.push(line);
+              }
+            }
+          }
+
+          // Date+amount index: used when we have a reliable normalized date and amount.
+          for (const line of statementLines) {
+            const dmy = extractDate(line);
+            const ymd = dmy ? toYmdFromDmy(dmy) : null;
+            if (!ymd) continue;
+
+            const moneyLike = /-?\$?\(?\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?\)?/g;
+            const tokens = Array.from(line.matchAll(moneyLike)).map((m) => m[0]);
+            const amounts: number[] = [];
+            for (const token of tokens) {
+              const parsed = parseChileanAmountToken(token);
+              if (typeof parsed === "number" && Number.isFinite(parsed)) {
+                amounts.push(Math.round(Math.abs(parsed)));
+              }
+            }
             const best = extractAmount(line);
             if (typeof best === "number" && Number.isFinite(best)) {
               amounts.push(Math.round(Math.abs(best)));
@@ -718,22 +703,36 @@ export async function previewImportFile(input: {
           const rows = transactions
             .map((tx, index) => {
 
-              const normalizedDate = typeof tx.date === "string" ? normalizeAiDateToYmd(tx.date) : null;
+              const dateFromAi = typeof tx.date === "string" ? tx.date : null;
+              let normalizedDate = dateFromAi ? normalizeAiDateToYmd(dateFromAi) : null;
 
               const baseText = normalizeSpace(
                 (typeof tx.merchant === "string" && tx.merchant) ||
                   (typeof tx.descriptionRaw === "string" && tx.descriptionRaw) ||
                   ""
               );
+              const rawLineText = typeof tx.descriptionRaw === "string" ? normalizeSpace(tx.descriptionRaw) : "";
+              const baseTextForParsing =
+                rawLineText && (/\b\d{2}\/\d{2}\/\d{4}\b/.test(rawLineText) || /\d{1,3}(?:[.\s]\d{3})+/.test(rawLineText))
+                  ? rawLineText
+                  : baseText;
               const bestLineFromRaw =
-                baseText.includes("\n")
-                  ? baseText
+                baseTextForParsing.includes("\n")
+                  ? baseTextForParsing
                       .split(/\r?\n/)
                       .map((l) => normalizeSpace(l))
                       .filter(Boolean)
                       .find((l) => /(\d{2}\/\d{2}\/\d{4}).*\sT\s/.test(l) || /\d{1,3}(?:[.\s]\d{3})+/.test(l)) ??
-                    baseText
-                  : baseText;
+                    baseTextForParsing
+                  : baseTextForParsing;
+
+              // If Gemini didn't provide a date, recover it from the raw statement line.
+              let dateDmyFromText: string | null = null;
+              if (!normalizedDate) {
+                dateDmyFromText = extractDate(rawLineText || bestLineFromRaw) ?? null;
+                const ymd = dateDmyFromText ? toYmdFromDmy(dateDmyFromText) : null;
+                if (ymd) normalizedDate = ymd;
+              }
               const cleanedText = cleanMerchantForPreview(stripLeadingCity(bestLineFromRaw));
               let merchant = cleanedText.length > 0 ? cleanedText : "Movimiento";
 
@@ -772,25 +771,77 @@ export async function previewImportFile(input: {
               // our merchant cleaning removes them, so extract from the raw best line.
               // If Gemini didn't include the ratio in descriptionRaw, try to recover it from the
               // original PDF line using our date+amount index.
-              const installmentProbeTexts: string[] = [];
-              if (bestLineFromRaw) installmentProbeTexts.push(bestLineFromRaw);
-              if (typeof tx.descriptionRaw === "string" && tx.descriptionRaw.trim().length > 0) {
-                installmentProbeTexts.push(tx.descriptionRaw);
+              // Installments must be detected from the full PDF line whenever possible.
+              // Falabella/CMR often places the ratio (03/06, 10/12) far from the merchant name.
+              const absAmtKey = typeof amountRaw === "number" ? Math.round(Math.abs(amountRaw)) : null;
+              const matchedLine =
+                normalizedDate && absAmtKey != null ? lineIndex.get(`${normalizedDate}|${absAmtKey}`) ?? null : null;
+              const matchedLineByAmount =
+                !matchedLine && absAmtKey != null
+                  ? (() => {
+                      const candidates = amountIndex.get(absAmtKey) ?? [];
+                      if (candidates.length === 0) return null;
+                      if (candidates.length === 1) return candidates[0] ?? null;
+
+                      const merchantNeedle = normalizeLookupKey(merchant)
+                        .split(" ")
+                        .map((t) => t.trim())
+                        .filter((t) => t.length >= 3)
+                        .slice(0, 4);
+
+                      for (const line of candidates) {
+                        const lower = normalizeLookupKey(line);
+                        if (merchantNeedle.some((token) => lower.includes(token))) return line;
+                      }
+
+                      // If nothing matches the merchant, prefer a line that contains cuotas keywords/ratio.
+                      for (const line of candidates) {
+                        const lower = line.toLowerCase();
+                        if (lower.includes("cuota") || /\b\d{1,2}\s*\/\s*\d{1,2}\b/.test(lower)) return line;
+                      }
+
+                      return candidates[0] ?? null;
+                    })()
+                  : null;
+
+              const installmentCandidates = [
+                bestLineFromRaw,
+                rawLineText,
+                matchedLine,
+                matchedLineByAmount,
+                merchant,
+                typeof tx.descriptionRaw === "string" ? tx.descriptionRaw : null
+              ].filter((value): value is string => Boolean(value && value.trim()));
+
+              let installmentFromText: ReturnType<typeof extractInstallmentFromText> = null;
+              let installmentSource: string | null = null;
+              for (const candidate of installmentCandidates) {
+                const detected = extractInstallmentFromText(candidate);
+                if (detected) {
+                  installmentFromText = detected;
+                  installmentSource = candidate === bestLineFromRaw
+                    ? "bestLineFromRaw"
+                    : candidate === rawLineText
+                      ? "rawLineText"
+                      : candidate === matchedLine
+                        ? "matchedLine"
+                        : candidate === matchedLineByAmount
+                          ? "matchedLineByAmount"
+                        : candidate === merchant
+                          ? "merchant"
+                          : "descriptionRaw";
+                  break;
+                }
               }
 
-              let installmentFromText =
-                installmentProbeTexts.map((t) => extractInstallmentFromText(t)).find(Boolean) ?? null;
-              if (!installmentFromText && normalizedDate && typeof amountRaw === "number") {
-                const key = `${normalizedDate}|${Math.round(Math.abs(amountRaw))}`;
-                const matchedLine = lineIndex.get(key) ?? null;
-                if (matchedLine) {
-                  installmentFromText = extractInstallmentFromText(matchedLine);
-                }
+              if (process.env.DEBUG_IMPORT_PREVIEW === "true" && index < 6) {
+                console.log("[installments] candidates", installmentCandidates.slice(0, 5).map((c) => c.slice(0, 180)));
               }
 
               if (process.env.DEBUG_IMPORT_PREVIEW === "true" && installmentFromText) {
                 console.log("[installments] detected", {
-                  sourceText: String(installmentProbeTexts[0] ?? "").slice(0, 180),
+                  source: installmentSource,
+                  sourceText: String(installmentCandidates[0] ?? "").slice(0, 180),
                   installmentLabelRaw: installmentFromText.installmentLabel ?? null,
                   cuotaActual: installmentFromText.cuotaActual ?? null,
                   cuotaTotal: installmentFromText.cuotaTotal ?? null,
@@ -888,17 +939,14 @@ export async function previewImportFile(input: {
               if (process.env.DEBUG_IMPORT_PREVIEW === "true" && index < 5) {
                 console.log("[imports/preview] row debug", {
                   index: index + 1,
-                  dateRaw: typeof tx.date === "string" ? tx.date : null,
+                  dateRaw: dateFromAi ?? dateDmyFromText ?? null,
                   dateNormalized: normalizedDate,
                   merchantRaw: typeof tx.merchant === "string" ? tx.merchant : null,
                   amountRaw: typeof amountRaw === "number" ? amountRaw : null,
                   amountSource,
                   descriptionRaw: typeof tx.descriptionRaw === "string" ? tx.descriptionRaw.slice(0, 120) : null,
                   merchantFinal: merchant,
-                  installmentLabelRaw:
-                    typeof tx.descriptionRaw === "string"
-                      ? (tx.descriptionRaw.match(/\b\d{1,2}\s*\/\s*\d{1,2}\b/)?.[0] ?? null)
-                      : null,
+                  installmentLabelRaw,
                   cuotaActual,
                   cuotaTotal,
                   cuotasRestantes
@@ -907,7 +955,7 @@ export async function previewImportFile(input: {
 
               return {
                 // Prefer normalized YYYY-MM-DD when possible to improve downstream mapping.
-                fecha: normalizedDate ?? tx.date ?? null,
+                fecha: normalizedDate ?? dateFromAi ?? dateDmyFromText ?? null,
                 descripcion: merchant,
                 descripcionBase: merchant,
                 cargo: inferredDirection === "debit" && amount > 0 ? amount : undefined,
@@ -925,6 +973,8 @@ export async function previewImportFile(input: {
                 currentInstallment: cuotaActual,
                 totalInstallments: cuotaTotal,
                 remainingInstallments: typeof cuotasRestantes === "number" ? cuotasRestantes : null,
+                __aiDateRaw: dateFromAi ?? dateDmyFromText ?? null,
+                __aiDateNormalized: normalizedDate,
                 __aiKind: "pdf-ai",
                 __aiType: kindWithInstallment,
                 __aiNeedsReview: needsReview,
@@ -1529,6 +1579,184 @@ export async function commitImportedTransactions(input: {
     return ratio >= 0.8 ? best.id : null;
   })();
 
+  let statementAccountId: string | null = primaryAccountId;
+
+  // Step 1 (Falabella/CMR): persist credit card summary when committing a PDF import.
+  // No side-effects in preview; commit is the only moment we persist.
+  if (payload.importType === "credit" && payload.parser === "pdf" && payload.pdfMeta && typeof payload.pdfMeta === "object") {
+    try {
+      const meta = payload.pdfMeta as Record<string, unknown>;
+      const institution = typeof meta.institution === "string" ? meta.institution : "";
+      const brand = typeof meta.brand === "string" ? meta.brand : "";
+      const isFalabellaCmr =
+        institution.toLowerCase().includes("falabella") || brand.toLowerCase().includes("cmr");
+
+      if (isFalabellaCmr) {
+        const { createManualAccount, updateManualAccount, upsertCreditCardSummary } = await import(
+          "@/server/services/manual-accounts-service"
+        );
+        const { prisma } = await import("@/server/db/prisma");
+
+        const ensureCreditAccount = async (accountId: string) => {
+          const found = await prisma.account.findFirst({
+            where: { id: accountId, workspaceId: input.workspaceId, isActive: true }
+          });
+          if (!found) return null;
+          if (String(found.type) !== "TARJETA_CREDITO") return null;
+          return found;
+        };
+
+        let accountIdToUpdate: string | null = null;
+
+        // 1) Explicit accountId from the commit payload (highest priority).
+        if (payload.accountId) {
+          const explicit = await ensureCreditAccount(payload.accountId);
+          if (explicit) accountIdToUpdate = explicit.id;
+        }
+
+        // 2) Primary account inferred from rows (only if it's a credit card).
+        if (!accountIdToUpdate && primaryAccountId) {
+          const found = await ensureCreditAccount(primaryAccountId);
+          if (found) accountIdToUpdate = found.id;
+        }
+
+        // 3) Find a reasonable existing Falabella/CMR credit card in the workspace (avoid duplicates).
+        if (!accountIdToUpdate) {
+          const candidates = await prisma.account.findMany({
+            where: {
+              workspaceId: input.workspaceId,
+              isActive: true,
+              type: "TARJETA_CREDITO",
+              OR: [
+                { institution: { contains: "falabella", mode: "insensitive" } },
+                { name: { contains: "falabella", mode: "insensitive" } },
+                { name: { contains: "cmr", mode: "insensitive" } }
+              ]
+            },
+            select: { id: true, name: true, institution: true }
+          });
+          if (candidates.length === 1) {
+            accountIdToUpdate = candidates[0]!.id;
+          } else if (candidates.length > 1) {
+            const score = (c: { name: string; institution: string | null }) => {
+              const name = normalizeLookupKey(c.name);
+              const inst = normalizeLookupKey(c.institution ?? "");
+              let s = 0;
+              if (name.includes("cmr")) s += 2;
+              if (name.includes("falabella")) s += 2;
+              if (inst.includes("falabella")) s += 1;
+              return s;
+            };
+            const sorted = [...candidates].sort((a, b) => score(b) - score(a));
+            accountIdToUpdate = sorted[0]!.id;
+          }
+        }
+
+        // 4) Create automatically if none exists.
+        if (!accountIdToUpdate) {
+          const cardLabel = typeof meta.cardLabel === "string" && meta.cardLabel.trim()
+            ? meta.cardLabel.trim()
+            : "CMR Falabella";
+          const created = await createManualAccount({
+            workspaceId: input.workspaceId,
+            name: cardLabel,
+            bank: institution || "Banco Falabella",
+            type: "CREDITO",
+            creditLimit:
+              typeof meta.creditLimit === "number" && Number.isFinite(meta.creditLimit) ? (meta.creditLimit as number) : undefined,
+            closingDay:
+              typeof meta.closingDate === "string" ? Number(String(meta.closingDate).slice(-2)) : undefined,
+            paymentDay:
+              typeof meta.paymentDate === "string" ? Number(String(meta.paymentDate).slice(-2)) : undefined,
+            appearanceMode: "auto",
+            creditUsed:
+              typeof meta.creditUsed === "number" && Number.isFinite(meta.creditUsed) ? (meta.creditUsed as number) : undefined,
+            creditAvailable:
+              typeof meta.creditLimit === "number" &&
+              typeof meta.creditUsed === "number" &&
+              Number.isFinite(meta.creditLimit) &&
+              Number.isFinite(meta.creditUsed)
+                ? Math.max((meta.creditLimit as number) - (meta.creditUsed as number), 0)
+                : typeof meta.creditAvailable === "number" && Number.isFinite(meta.creditAvailable)
+                  ? (meta.creditAvailable as number)
+                  : undefined,
+            totalBilled:
+              typeof meta.totalBilled === "number" && Number.isFinite(meta.totalBilled) ? (meta.totalBilled as number) : undefined,
+            minimumDue:
+              typeof meta.minimumDue === "number" && Number.isFinite(meta.minimumDue) ? (meta.minimumDue as number) : undefined,
+            statementDate: typeof meta.closingDate === "string" ? (meta.closingDate as string) : undefined,
+            paymentDate: typeof meta.paymentDate === "string" ? (meta.paymentDate as string) : undefined
+          });
+          accountIdToUpdate = created.id;
+        }
+
+        if (accountIdToUpdate) {
+          statementAccountId = accountIdToUpdate;
+
+          const cupoTotal =
+            typeof meta.creditLimit === "number" && Number.isFinite(meta.creditLimit) ? (meta.creditLimit as number) : null;
+          const cupoUtilizado =
+            typeof meta.creditUsed === "number" && Number.isFinite(meta.creditUsed) ? (meta.creditUsed as number) : null;
+          const cupoDisponiblePdf =
+            typeof meta.creditAvailable === "number" && Number.isFinite(meta.creditAvailable)
+              ? (meta.creditAvailable as number)
+              : null;
+          const cupoDisponible =
+            typeof cupoTotal === "number" && typeof cupoUtilizado === "number"
+              ? Math.max(cupoTotal - cupoUtilizado, 0)
+              : cupoDisponiblePdf;
+
+          const creditLimit =
+            typeof meta.creditLimit === "number" && Number.isFinite(meta.creditLimit) ? (meta.creditLimit as number) : undefined;
+          const closingDay =
+            typeof meta.closingDate === "string" ? Number(String(meta.closingDate).slice(-2)) : undefined;
+          const paymentDay =
+            typeof meta.paymentDate === "string" ? Number(String(meta.paymentDate).slice(-2)) : undefined;
+
+          await updateManualAccount({
+            workspaceId: input.workspaceId,
+            accountId: accountIdToUpdate,
+            bank: institution || "Banco Falabella",
+            type: "CREDITO",
+            creditLimit,
+            closingDay: Number.isFinite(closingDay) ? closingDay : undefined,
+            paymentDay: Number.isFinite(paymentDay) ? paymentDay : undefined,
+            appearanceMode: "auto",
+            creditUsed: cupoUtilizado,
+            creditAvailable: cupoDisponible,
+            totalBilled:
+              typeof meta.totalBilled === "number" && Number.isFinite(meta.totalBilled) ? (meta.totalBilled as number) : null,
+            minimumDue:
+              typeof meta.minimumDue === "number" && Number.isFinite(meta.minimumDue) ? (meta.minimumDue as number) : null,
+            statementDate: typeof meta.closingDate === "string" ? (meta.closingDate as string) : null,
+            paymentDate: typeof meta.paymentDate === "string" ? (meta.paymentDate as string) : null
+          });
+
+          await upsertCreditCardSummary({
+            workspaceId: input.workspaceId,
+            accountId: accountIdToUpdate,
+            summary: {
+              cupoTotal,
+              cupoUtilizado,
+              cupoDisponible,
+              montoFacturado:
+                typeof meta.totalBilled === "number" && Number.isFinite(meta.totalBilled) ? (meta.totalBilled as number) : null,
+              montoMinimo:
+                typeof meta.minimumDue === "number" && Number.isFinite(meta.minimumDue) ? (meta.minimumDue as number) : null,
+              fechaPago: typeof meta.paymentDate === "string" ? (meta.paymentDate as string) : null,
+              fechaFacturacion: typeof meta.closingDate === "string" ? (meta.closingDate as string) : null
+            }
+          });
+        }
+      }
+    } catch (error) {
+      console.error("commitImportedTransactions credit card summary persist failed; continuing", {
+        workspaceId: input.workspaceId,
+        error: error instanceof Error ? error.message : error
+      });
+    }
+  }
+
   const candidateFingerprints = [...new Set(preparedRows.map((row) => row.duplicateFingerprint))];
 
   const batch = await prisma.importBatch.create({
@@ -1622,7 +1850,45 @@ export async function commitImportedTransactions(input: {
                         nextInstallmentDate: row.nextInstallmentDate ?? null,
                         debtNote: row.debtNote ?? null
                       }
-                      : null
+                      : null,
+                  creditCardMeta: {
+                    esCompraEnCuotas: row.esCompraEnCuotas ?? row.isInstallmentPurchase ?? null,
+                    cuotaActual:
+                      typeof row.cuotaActual === "number"
+                        ? row.cuotaActual
+                        : typeof row.currentInstallment === "number"
+                          ? row.currentInstallment
+                          : null,
+                    cuotaTotal:
+                      typeof row.cuotaTotal === "number"
+                        ? row.cuotaTotal
+                        : typeof row.totalInstallments === "number"
+                          ? row.totalInstallments
+                          : null,
+                    cuotasRestantes:
+                      typeof row.cuotasRestantes === "number"
+                        ? row.cuotasRestantes
+                        : typeof row.remainingInstallments === "number"
+                          ? row.remainingInstallments
+                          : null,
+                    installmentLabelRaw: row.installmentLabelRaw ?? null,
+                    installmentLabel: row.installmentLabel ?? null,
+                    installments: row.installments ?? null,
+                    montoCuota:
+                      typeof row.montoCuota === "number" && Number.isFinite(row.montoCuota) ? row.montoCuota : null,
+                    montoTotalCompra:
+                      typeof row.montoTotalCompra === "number" && Number.isFinite(row.montoTotalCompra)
+                        ? row.montoTotalCompra
+                        : null,
+                    installmentAmount:
+                      typeof row.installmentAmount === "number" && Number.isFinite(row.installmentAmount)
+                        ? row.installmentAmount
+                        : null,
+                    totalPurchaseAmount:
+                      typeof row.totalPurchaseAmount === "number" && Number.isFinite(row.totalPurchaseAmount)
+                        ? row.totalPurchaseAmount
+                        : null
+                  }
                 }
               }
             },
@@ -1713,7 +1979,7 @@ export async function commitImportedTransactions(input: {
                   appliedTemplateId: payload.appliedTemplateId ?? null,
                   meta: (payload.pdfMeta ?? null) as unknown as Prisma.InputJsonValue,
                   warnings: payload.pdfWarnings ?? [],
-                  primaryAccountId
+                  primaryAccountId: statementAccountId
                 }
                 : null,
             creditCardStatement:
@@ -1726,7 +1992,7 @@ export async function commitImportedTransactions(input: {
 
                   const statement = {
                     kind: "falabella-cmr",
-                    accountId: primaryAccountId,
+                    accountId: statementAccountId,
                     fileName: payload.fileName,
                     periodStart: typeof meta.billingPeriodStart === "string" ? meta.billingPeriodStart : null,
                     periodEnd: typeof meta.billingPeriodEnd === "string" ? meta.billingPeriodEnd : null,

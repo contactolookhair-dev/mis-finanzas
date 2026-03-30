@@ -4,6 +4,7 @@ import { toAmountNumber } from "@/server/lib/amounts";
 import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 
 const ACCOUNT_META_KEY = "manualAccountMeta";
+const CREDIT_CARD_SUMMARY_KEY = "creditCardSummaryByAccountId";
 
 type AccountMeta = {
   color?: string;
@@ -12,9 +13,31 @@ type AccountMeta = {
   creditLimit?: number;
   closingDay?: number;
   paymentDay?: number;
+
+  // Credit card operational snapshot (kept on the account meta so the account is usable without
+  // relying on import batches).
+  creditUsed?: number;
+  creditAvailable?: number;
+  totalBilled?: number;
+  minimumDue?: number;
+  statementDate?: string; // YYYY-MM-DD
+  paymentDate?: string; // YYYY-MM-DD
 };
 
 type AccountMetaMap = Record<string, AccountMeta>;
+
+export type CreditCardSummary = {
+  cupoTotal: number | null;
+  cupoUtilizado: number | null;
+  cupoDisponible: number | null;
+  montoFacturado: number | null;
+  montoMinimo: number | null;
+  fechaPago: string | null; // YYYY-MM-DD
+  fechaFacturacion: string | null; // YYYY-MM-DD
+  updatedAt: string; // ISO
+};
+
+type CreditCardSummaryMap = Record<string, CreditCardSummary>;
 
 function readAccountMeta(raw: unknown): AccountMetaMap {
   if (!raw || typeof raw !== "object") return {};
@@ -45,7 +68,55 @@ function readAccountMeta(raw: unknown): AccountMetaMap {
       paymentDay:
         typeof candidate.paymentDay === "number" && Number.isFinite(candidate.paymentDay)
           ? candidate.paymentDay
-          : undefined
+          : undefined,
+      creditUsed:
+        typeof candidate.creditUsed === "number" && Number.isFinite(candidate.creditUsed)
+          ? candidate.creditUsed
+          : undefined,
+      creditAvailable:
+        typeof candidate.creditAvailable === "number" && Number.isFinite(candidate.creditAvailable)
+          ? candidate.creditAvailable
+          : undefined,
+      totalBilled:
+        typeof candidate.totalBilled === "number" && Number.isFinite(candidate.totalBilled)
+          ? candidate.totalBilled
+          : undefined,
+      minimumDue:
+        typeof candidate.minimumDue === "number" && Number.isFinite(candidate.minimumDue)
+          ? candidate.minimumDue
+          : undefined,
+      statementDate: typeof candidate.statementDate === "string" ? candidate.statementDate : undefined,
+      paymentDate: typeof candidate.paymentDate === "string" ? candidate.paymentDate : undefined
+    };
+  });
+
+  return parsed;
+}
+
+function readCreditCardSummaryMap(raw: unknown): CreditCardSummaryMap {
+  if (!raw || typeof raw !== "object") return {};
+  const map = raw as Record<string, unknown>;
+  const parsed: CreditCardSummaryMap = {};
+
+  Object.entries(map).forEach(([accountId, value]) => {
+    if (!value || typeof value !== "object") return;
+    const candidate = value as Record<string, unknown>;
+
+    const num = (key: string) =>
+      typeof candidate[key] === "number" && Number.isFinite(candidate[key]) ? (candidate[key] as number) : null;
+    const str = (key: string) => (typeof candidate[key] === "string" ? (candidate[key] as string) : null);
+
+    const updatedAt = str("updatedAt") ?? new Date().toISOString();
+
+    parsed[accountId] = {
+      cupoTotal: num("cupoTotal"),
+      cupoUtilizado: num("cupoUtilizado"),
+      cupoDisponible: num("cupoDisponible"),
+      montoFacturado: num("montoFacturado"),
+      montoMinimo: num("montoMinimo"),
+      fechaPago: str("fechaPago"),
+      fechaFacturacion: str("fechaFacturacion"),
+      updatedAt
     };
   });
 
@@ -96,6 +167,43 @@ async function upsertAccountMeta(workspaceId: string, accountId: string, meta: A
 async function getAccountMetaMap(workspaceId: string) {
   const importSettings = await getSettingsImportMap(workspaceId);
   return readAccountMeta(importSettings[ACCOUNT_META_KEY]);
+}
+
+export async function upsertCreditCardSummary(input: {
+  workspaceId: string;
+  accountId: string;
+  summary: Omit<CreditCardSummary, "updatedAt"> & { updatedAt?: string };
+}) {
+  const importSettings = await getSettingsImportMap(input.workspaceId);
+  const all = readCreditCardSummaryMap(importSettings[CREDIT_CARD_SUMMARY_KEY]);
+
+  all[input.accountId] = {
+    ...all[input.accountId],
+    ...input.summary,
+    updatedAt: input.summary.updatedAt ?? new Date().toISOString()
+  } as CreditCardSummary;
+
+  await prisma.appSettings.upsert({
+    where: { workspaceId: input.workspaceId },
+    create: {
+      workspaceId: input.workspaceId,
+      dashboardModules: [],
+      enabledModules: [],
+      suggestedAiQuestions: [],
+      transactionLabels: {},
+      importSettings: {
+        allowedFormats: ["csv", "xlsx", "pdf"],
+        ...importSettings,
+        [CREDIT_CARD_SUMMARY_KEY]: all
+      }
+    },
+    update: {
+      importSettings: {
+        ...importSettings,
+        [CREDIT_CARD_SUMMARY_KEY]: all
+      }
+    }
+  });
 }
 
 function normalizeAccountType(type: "CREDITO" | "DEBITO" | "EFECTIVO") {
@@ -200,7 +308,15 @@ export async function listManualAccountsWithBalances(workspaceId: string) {
       appearanceMode: metaMap[account.id]?.appearanceMode ?? "manual",
       creditLimit: metaMap[account.id]?.creditLimit ?? null,
       closingDay: metaMap[account.id]?.closingDay ?? null,
-      paymentDay: metaMap[account.id]?.paymentDay ?? null
+      paymentDay: metaMap[account.id]?.paymentDay ?? null,
+
+      // Credit card operational snapshot (if available). These DO NOT represent "cash balance".
+      creditUsed: metaMap[account.id]?.creditUsed ?? null,
+      creditAvailable: metaMap[account.id]?.creditAvailable ?? null,
+      totalBilled: metaMap[account.id]?.totalBilled ?? null,
+      minimumDue: metaMap[account.id]?.minimumDue ?? null,
+      statementDate: metaMap[account.id]?.statementDate ?? null,
+      paymentDate: metaMap[account.id]?.paymentDate ?? null
     };
   });
 }
@@ -217,6 +333,12 @@ export async function createManualAccount(input: {
   creditLimit?: number;
   closingDay?: number;
   paymentDay?: number;
+  creditUsed?: number;
+  creditAvailable?: number;
+  totalBilled?: number;
+  minimumDue?: number;
+  statementDate?: string;
+  paymentDate?: string;
 }) {
   const created = await prisma.account.create({
     data: {
@@ -259,6 +381,24 @@ export async function createManualAccount(input: {
   if (typeof input.paymentDay === "number" && Number.isFinite(input.paymentDay) && input.paymentDay >= 1) {
     metaPatch.paymentDay = input.paymentDay;
   }
+  if (typeof input.creditUsed === "number" && Number.isFinite(input.creditUsed) && input.creditUsed >= 0) {
+    metaPatch.creditUsed = input.creditUsed;
+  }
+  if (typeof input.creditAvailable === "number" && Number.isFinite(input.creditAvailable) && input.creditAvailable >= 0) {
+    metaPatch.creditAvailable = input.creditAvailable;
+  }
+  if (typeof input.totalBilled === "number" && Number.isFinite(input.totalBilled) && input.totalBilled >= 0) {
+    metaPatch.totalBilled = input.totalBilled;
+  }
+  if (typeof input.minimumDue === "number" && Number.isFinite(input.minimumDue) && input.minimumDue >= 0) {
+    metaPatch.minimumDue = input.minimumDue;
+  }
+  if (typeof input.statementDate === "string" && input.statementDate.trim()) {
+    metaPatch.statementDate = input.statementDate.trim();
+  }
+  if (typeof input.paymentDate === "string" && input.paymentDate.trim()) {
+    metaPatch.paymentDate = input.paymentDate.trim();
+  }
   if (Object.keys(metaPatch).length) {
     await upsertAccountMeta(input.workspaceId, created.id, metaPatch);
   }
@@ -279,6 +419,12 @@ export async function updateManualAccount(input: {
   creditLimit?: number;
   closingDay?: number;
   paymentDay?: number;
+  creditUsed?: number | null;
+  creditAvailable?: number | null;
+  totalBilled?: number | null;
+  minimumDue?: number | null;
+  statementDate?: string | null;
+  paymentDate?: string | null;
 }) {
   const account = await prisma.account.findFirst({
     where: { id: input.accountId, workspaceId: input.workspaceId }
@@ -302,6 +448,12 @@ export async function updateManualAccount(input: {
   if (input.creditLimit !== undefined) metaPatch.creditLimit = input.creditLimit;
   if (input.closingDay !== undefined) metaPatch.closingDay = input.closingDay;
   if (input.paymentDay !== undefined) metaPatch.paymentDay = input.paymentDay;
+  if (input.creditUsed !== undefined) metaPatch.creditUsed = input.creditUsed ?? undefined;
+  if (input.creditAvailable !== undefined) metaPatch.creditAvailable = input.creditAvailable ?? undefined;
+  if (input.totalBilled !== undefined) metaPatch.totalBilled = input.totalBilled ?? undefined;
+  if (input.minimumDue !== undefined) metaPatch.minimumDue = input.minimumDue ?? undefined;
+  if (input.statementDate !== undefined) metaPatch.statementDate = input.statementDate ?? undefined;
+  if (input.paymentDate !== undefined) metaPatch.paymentDate = input.paymentDate ?? undefined;
   if (Object.keys(metaPatch).length) {
     await upsertAccountMeta(input.workspaceId, account.id, metaPatch);
   }
