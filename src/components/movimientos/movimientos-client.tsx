@@ -432,6 +432,12 @@ function MovementRow({
         ? "Compra tarjeta"
         : "Pago tarjeta"
       : null;
+  const installmentLabel =
+    transaction.isInstallmentPurchase === true
+      ? typeof transaction.cuotaActual === "number" && typeof transaction.cuotaTotal === "number"
+        ? `Cuota ${transaction.cuotaActual}/${transaction.cuotaTotal}`
+        : "En cuotas"
+      : null;
 
   return (
     <SurfaceCard
@@ -446,6 +452,11 @@ function MovementRow({
             {creditMovementLabel ? (
               <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                 {creditMovementLabel}
+              </span>
+            ) : null}
+            {installmentLabel ? (
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                {installmentLabel}
               </span>
             ) : null}
             <span className={`text-lg font-semibold ${transaction.amount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>

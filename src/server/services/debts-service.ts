@@ -17,6 +17,7 @@ export type CompanyDebtItem = {
   status: "PENDIENTE" | "ABONANDO" | "PAGADO";
   entries: Array<{
     id: string;
+    transactionId: string | null;
     amount: number;
     status: string;
     reimbursedAt: string | null;
@@ -48,6 +49,12 @@ export type PersonDebtItem = {
   installmentStatusLabel: string;
   installmentDaysUntilDue: number | null;
   notes: string | null;
+  // Optional enrichment when this debt originated from a credit-card transaction with installments.
+  creditInstallmentAmount?: number | null;
+  creditPurchaseTotalAmount?: number | null;
+  creditInstallmentCurrent?: number | null;
+  creditInstallmentTotal?: number | null;
+  creditInstallmentsRemaining?: number | null;
   payments: Array<{
     id: string;
     amount: number;
@@ -56,11 +63,62 @@ export type PersonDebtItem = {
   }>;
 };
 
+function extractSourceTransactionIdFromNotes(notes: string | null | undefined) {
+  if (!notes) return null;
+  const match = notes.match(/\bauto:source-tx:([a-z0-9_]+)\b/i);
+  return match ? match[1] : null;
+}
+
+function extractCreditCardInstallments(metadata: unknown) {
+  const raw = metadata as any;
+  const source = raw?.manual?.creditCardMeta ?? raw?.import?.creditCardMeta ?? null;
+  if (!source) return null;
+
+  const installmentCurrent =
+    typeof source.cuotaActual === "number"
+      ? source.cuotaActual
+      : typeof source.currentInstallment === "number"
+        ? source.currentInstallment
+        : null;
+  const installmentTotal =
+    typeof source.cuotaTotal === "number"
+      ? source.cuotaTotal
+      : typeof source.totalInstallments === "number"
+        ? source.totalInstallments
+        : null;
+  const hasInstallments =
+    (typeof installmentTotal === "number" && Number.isFinite(installmentTotal) && installmentTotal > 1) ||
+    source.esCompraEnCuotas === true ||
+    source.isInstallmentPurchase === true;
+  if (!hasInstallments) return null;
+
+  const purchaseTotalAmount =
+    typeof source.totalPurchaseAmount === "number" && Number.isFinite(source.totalPurchaseAmount)
+      ? source.totalPurchaseAmount
+      : typeof source.montoTotalCompra === "number" && Number.isFinite(source.montoTotalCompra)
+        ? source.montoTotalCompra
+        : null;
+
+  const rawInstallmentAmount =
+    typeof source.installmentAmount === "number" && Number.isFinite(source.installmentAmount)
+      ? source.installmentAmount
+      : typeof source.montoCuota === "number" && Number.isFinite(source.montoCuota)
+        ? source.montoCuota
+        : null;
+
+  return {
+    installmentCurrent,
+    installmentTotal,
+    purchaseTotalAmount,
+    rawInstallmentAmount
+  };
+}
+
 export async function getDebtsSnapshot(workspaceId: string) {
   const [reimbursements, debtors] = await Promise.all([
     prisma.reimbursement.findMany({
       where: { workspaceId },
-      include: { businessUnit: true }
+      include: { businessUnit: true, transaction: { select: { id: true, metadata: true, amount: true } } }
     }),
     prisma.debtor.findMany({
       where: { workspaceId },
@@ -93,6 +151,7 @@ export async function getDebtsSnapshot(workspaceId: string) {
     }
     current.entries.push({
       id: item.id,
+      transactionId: item.transactionId ?? null,
       amount,
       status: item.status,
       reimbursedAt: item.reimbursedAt?.toISOString() ?? null,
@@ -104,6 +163,38 @@ export async function getDebtsSnapshot(workspaceId: string) {
       current.pendingAmount <= 0 ? "PAGADO" : current.paidAmount > 0 ? "ABONANDO" : "PENDIENTE";
     companiesMap.set(key, current);
   });
+
+  // For "Me deben" debts originating from a credit-card transaction, enrich with installment metadata.
+  // This is best-effort and does not mutate DB.
+  const debtorSourceTxIds = [...new Set(debtors.map((d) => extractSourceTransactionIdFromNotes(d.notes)).filter(Boolean))] as string[];
+  const recentTransactions = await prisma.transaction.findMany({
+    where: { workspaceId, type: "EGRESO" },
+    orderBy: [{ date: "desc" }],
+    take: 800,
+    select: { id: true, description: true, date: true, amount: true, metadata: true }
+  });
+
+  const txById = new Map(recentTransactions.map((tx) => [tx.id, tx]));
+
+  const normalizeText = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/[^\p{L}\p{N}\s-]/gu, "")
+      .trim();
+
+  const txByAbsAmount = new Map<number, typeof recentTransactions>();
+  for (const tx of recentTransactions) {
+    const abs = Math.abs(toAmountNumber(tx.amount));
+    if (!Number.isFinite(abs) || abs <= 0) continue;
+    const key = Math.round(abs);
+    const existing = txByAbsAmount.get(key);
+    if (existing) {
+      existing.push(tx);
+    } else {
+      txByAbsAmount.set(key, [tx]);
+    }
+  }
 
   const people = debtors.map<PersonDebtItem>((debtor) => {
     const paymentSum = debtor.payments.reduce((acc, payment) => acc + toAmountNumber(payment.amount), 0);
@@ -126,6 +217,66 @@ export async function getDebtsSnapshot(workspaceId: string) {
       nextInstallmentDate: installmentPlan.nextInstallmentDate,
       status: debtor.status
     });
+
+    const sourceTxId = extractSourceTransactionIdFromNotes(debtor.notes);
+    const directTx = sourceTxId ? txById.get(sourceTxId) ?? null : null;
+    const normalizedReason = normalizeText(debtor.reason);
+    const amountKey = Math.round(Math.abs(totalAmount));
+    const candidates = txByAbsAmount.get(amountKey) ?? [];
+    const bestCandidate =
+      directTx ??
+      candidates.find((tx) => {
+        const normalizedDesc = normalizeText(tx.description);
+        return normalizedDesc.includes(normalizedReason) || normalizedReason.includes(normalizedDesc);
+      }) ??
+      candidates.find((tx) => Boolean(extractCreditCardInstallments(tx.metadata))) ??
+      (candidates[0] ?? null);
+
+    const txMeta = bestCandidate ? extractCreditCardInstallments(bestCandidate.metadata) : null;
+    const txAbsAmount = bestCandidate ? Math.abs(toAmountNumber(bestCandidate.amount)) : null;
+    const purchaseTotalAmount =
+      txMeta?.purchaseTotalAmount != null
+        ? txMeta.purchaseTotalAmount
+        : typeof txAbsAmount === "number" && Number.isFinite(txAbsAmount)
+          ? txAbsAmount
+          : null;
+    const installmentTotal =
+      typeof txMeta?.installmentTotal === "number" && Number.isFinite(txMeta.installmentTotal)
+        ? txMeta.installmentTotal
+        : null;
+    const installmentCurrent =
+      typeof txMeta?.installmentCurrent === "number" && Number.isFinite(txMeta.installmentCurrent)
+        ? txMeta.installmentCurrent
+        : null;
+    const rawInstallmentAmount =
+      typeof txMeta?.rawInstallmentAmount === "number" && Number.isFinite(txMeta.rawInstallmentAmount)
+        ? txMeta.rawInstallmentAmount
+        : null;
+    const looksLikePerInstallment =
+      typeof purchaseTotalAmount === "number" &&
+      Number.isFinite(purchaseTotalAmount) &&
+      typeof installmentTotal === "number" &&
+      Number.isFinite(installmentTotal) &&
+      installmentTotal > 1 &&
+      typeof rawInstallmentAmount === "number" &&
+      Number.isFinite(rawInstallmentAmount)
+        ? rawInstallmentAmount > 0 && rawInstallmentAmount < purchaseTotalAmount
+        : false;
+    const creditInstallmentAmount =
+      looksLikePerInstallment
+        ? rawInstallmentAmount
+        : typeof purchaseTotalAmount === "number" &&
+            Number.isFinite(purchaseTotalAmount) &&
+            typeof installmentTotal === "number" &&
+            Number.isFinite(installmentTotal) &&
+            installmentTotal > 0
+          ? Math.round(purchaseTotalAmount / installmentTotal)
+          : null;
+    const creditInstallmentsRemaining =
+      typeof installmentCurrent === "number" && typeof installmentTotal === "number"
+        ? Math.max(0, installmentTotal - installmentCurrent)
+        : null;
+
     return {
       id: debtor.id,
       name: debtor.name,
@@ -149,6 +300,15 @@ export async function getDebtsSnapshot(workspaceId: string) {
       installmentStatusLabel: installmentHealth.label,
       installmentDaysUntilDue: installmentHealth.daysUntilDue,
       notes: debtor.notes ?? null,
+      ...(installmentTotal && installmentTotal > 1
+        ? {
+            creditInstallmentAmount,
+            creditPurchaseTotalAmount: purchaseTotalAmount,
+            creditInstallmentCurrent: installmentCurrent,
+            creditInstallmentTotal: installmentTotal,
+            creditInstallmentsRemaining
+          }
+        : {}),
       payments: debtor.payments
         .slice()
         .sort((left, right) => right.paidAt.getTime() - left.paidAt.getTime())

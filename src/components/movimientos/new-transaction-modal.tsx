@@ -9,6 +9,7 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 import { Skeleton } from "@/components/ui/states";
 import { StatPill } from "@/components/ui/stat-pill";
 import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
+import { formatCurrency } from "@/lib/formatters/currency";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
 
 type AccountItem = {
@@ -32,6 +33,9 @@ type DebtorPerson = {
   id: string;
   name: string;
   totalAmount: number;
+  paidAmount?: number;
+  pendingAmount?: number;
+  status?: "PENDIENTE" | "ABONANDO" | "PAGADO" | "ATRASADO";
   notes: string | null;
 };
 
@@ -103,6 +107,12 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const [installmentValue, setInstallmentValue] = useState("");
   const [nextInstallmentDate, setNextInstallmentDate] = useState("");
 
+  // Payment method is separate from classification (personal/negocio/prestado).
+  const [paymentMode, setPaymentMode] = useState<"single" | "installments">("single");
+  const [purchaseInstallmentTotal, setPurchaseInstallmentTotal] = useState("");
+  const [purchaseInstallmentCurrent, setPurchaseInstallmentCurrent] = useState("");
+  const [purchaseInstallmentError, setPurchaseInstallmentError] = useState<string | null>(null);
+
   const [creditImpactType, setCreditImpactType] = useState<CreditImpactType>(getDefaultCreditImpact("GASTO"));
   const [creditImpactDirty, setCreditImpactDirty] = useState(false);
 
@@ -128,6 +138,12 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     [selectedAccount]
   );
 
+  const businessUnitsForSpend = useMemo(() => {
+    const units = dashboardSnapshot?.references.businessUnits ?? [];
+    // Only show business units intended for "Negocio" classification.
+    return units.filter((unit) => String(unit.type) === "NEGOCIO");
+  }, [dashboardSnapshot]);
+
   useEffect(() => {
     if (selectedAccount?.type !== "CREDITO") {
       setCreditImpactType("consume_cupo");
@@ -142,6 +158,18 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   useEffect(() => {
     setCreditImpactDirty(false);
   }, [selectedAccount?.id]);
+
+  // Avoid double "installments" sources of truth:
+  // If the purchase itself is registered as installments (paymentMode === "installments"),
+  // do not allow the debt block to also define an independent installment plan.
+  useEffect(() => {
+    if (paymentMode !== "installments") return;
+    if (installmentsEnabled) setInstallmentsEnabled(false);
+    // Clear debt-installment inputs (only used when the person pays back in installments).
+    if (installmentCount) setInstallmentCount("");
+    if (installmentValue) setInstallmentValue("");
+    if (nextInstallmentDate) setNextInstallmentDate("");
+  }, [paymentMode, installmentsEnabled, installmentCount, installmentValue, nextInstallmentDate]);
 
   function resetForm() {
     setKind("GASTO");
@@ -164,6 +192,10 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     setInstallmentCount("");
     setInstallmentValue("");
     setNextInstallmentDate("");
+    setPaymentMode("single");
+    setPurchaseInstallmentTotal("");
+    setPurchaseInstallmentCurrent("");
+    setPurchaseInstallmentError(null);
     setError(null);
   }
 
@@ -228,7 +260,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     void loadCatalogs();
   }, [open, accountId]);
 
-  async function upsertPersonDebt() {
+  async function upsertPersonDebt(sourceTransactionId?: string) {
     if (owedDebtorMode === "EXISTING" && owedDebtorId) {
       const selectedDebtor = debtors.find((item) => item.id === owedDebtorId);
       if (!selectedDebtor) throw new Error("No se encontró la persona seleccionada.");
@@ -238,7 +270,12 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           totalAmount: Math.max(1, selectedDebtor.totalAmount + resolvedOwedAmount),
-          notes: owedNote || selectedDebtor.notes || null
+          // If a previously-settled debt gets new amount added, it must become pending again.
+          status: "PENDIENTE",
+          notes:
+            [owedNote?.trim(), selectedDebtor.notes, sourceTransactionId ? `auto:source-tx:${sourceTransactionId}` : null]
+              .filter(Boolean)
+              .join(" · ") || null
         })
       });
       const patchPayload = (await patchResponse.json()) as { message?: string };
@@ -265,16 +302,56 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
         paidInstallments: 0,
         installmentFrequency: "MENSUAL",
         nextInstallmentDate: installmentsEnabled ? (nextInstallmentDate || null) : null,
-        notes: owedNote || null
+        notes:
+          [owedNote?.trim(), sourceTransactionId ? `auto:source-tx:${sourceTransactionId}` : null]
+            .filter(Boolean)
+            .join(" · ") || null
       })
     });
     const createPayload = (await createResponse.json()) as { message?: string };
     if (!createResponse.ok) throw new Error(createPayload.message ?? "No se pudo crear la deuda.");
   }
 
+  async function createBusinessUnitFromPrompt() {
+    const name = window.prompt("Nombre del negocio (ej: Look Hair, Detalles Chile):");
+    const trimmed = (name ?? "").trim();
+    if (!trimmed) return null;
+
+    const response = await fetch("/api/business-units", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: trimmed, type: "NEGOCIO" })
+    });
+
+    const payload = (await response.json()) as {
+      item?: { id: string; name: string; type: string };
+      message?: string;
+    };
+    if (!response.ok || !payload.item) {
+      throw new Error(payload.message ?? "No se pudo crear el negocio.");
+    }
+
+    // Update local snapshot so the new unit appears in selects immediately.
+    setDashboardSnapshot((prev) => {
+      if (!prev) return prev;
+      const existing = prev.references.businessUnits ?? [];
+      if (existing.some((u) => u.id === payload.item!.id)) return prev;
+      return {
+        ...prev,
+        references: {
+          ...prev.references,
+          businessUnits: [...existing, { id: payload.item!.id, name: payload.item!.name, type: payload.item!.type as any }]
+        }
+      };
+    });
+
+    return payload.item;
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    setPurchaseInstallmentError(null);
 
     if (!accountId) {
       setError("Selecciona una cuenta.");
@@ -290,9 +367,32 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     }
 
     const isCreditCardPurchase = kind === "GASTO" && selectedAccount?.type === "CREDITO";
-    if (isCreditCardPurchase && classification === "NEGOCIO" && !businessUnitId) {
+    // Business expenses must always be linked to a business unit so they can show up in "Me deben"
+    // as a reimbursement (gasto empresarial pagado con fondos personales), regardless of account type.
+    if (kind === "GASTO" && classification === "NEGOCIO" && !businessUnitId) {
       setError("Selecciona la unidad de negocio para esta compra.");
       return;
+    }
+
+    if (isCreditCardPurchase && paymentMode === "installments") {
+      const total = Number(purchaseInstallmentTotal || 0);
+      const current = Number(purchaseInstallmentCurrent || 0);
+      if (!Number.isFinite(total) || total < 2) {
+        setPurchaseInstallmentError("Ingresa cuotas totales (mínimo 2).");
+        return;
+      }
+      if (total > 48) {
+        setPurchaseInstallmentError("Por seguridad, el total de cuotas no puede ser mayor a 48.");
+        return;
+      }
+      if (!Number.isFinite(current) || current < 1) {
+        setPurchaseInstallmentError("Ingresa la cuota actual (mínimo 1).");
+        return;
+      }
+      if (current > total) {
+        setPurchaseInstallmentError("La cuota actual no puede ser mayor al total.");
+        return;
+      }
     }
     if (isCreditCardPurchase && classification === "PRESTADO") {
       if (!isOwed || owedByType !== "PERSONA") {
@@ -331,6 +431,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
       const isCompanyDebt = isOwed && owedByType === "EMPRESA";
       const isBusinessSpend = classification === "NEGOCIO";
       const isLentSpend = classification === "PRESTADO";
+      const isOwedSpend = isOwed && (owedByType === "EMPRESA" || owedByType === "PERSONA");
       const transactionType = kind === "INGRESO" ? "INGRESO" : "EGRESO";
       const baseNote = kind === "TRANSFERENCIA" ? "Transferencia manual" : "";
       const classificationNote =
@@ -364,16 +465,28 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
           financialOrigin: isCompanyDebt || isBusinessSpend ? "EMPRESA" : "PERSONAL",
           businessUnitId: isCompanyDebt ? owedBusinessUnitId : isBusinessSpend ? (businessUnitId || null) : null,
           isBusinessPaidPersonally: (isCompanyDebt || isBusinessSpend) && transactionType === "EGRESO",
-          isReimbursable: (isCompanyDebt || isLentSpend) && transactionType === "EGRESO",
+          // If someone owes you this spend (person or company), it must not be treated as an "owner debt" payable.
+          // This flag is used downstream to avoid auto-generating items in "Debo pagar".
+          isReimbursable: (isOwedSpend || isLentSpend) && transactionType === "EGRESO",
           notes: mergedNotes || undefined,
-          creditImpactType: selectedAccount?.type === "CREDITO" ? creditImpactType : undefined
+          creditImpactType: selectedAccount?.type === "CREDITO" ? creditImpactType : undefined,
+          isInstallmentPurchase: isCreditCardPurchase && paymentMode === "installments",
+          cuotaActual:
+            isCreditCardPurchase && paymentMode === "installments"
+              ? Math.max(1, Math.floor(Number(purchaseInstallmentCurrent || 0)))
+              : null,
+          cuotaTotal:
+            isCreditCardPurchase && paymentMode === "installments"
+              ? Math.max(2, Math.floor(Number(purchaseInstallmentTotal || 0)))
+              : null
         })
       });
       const payload = (await response.json()) as { message?: string };
       if (!response.ok) throw new Error(payload.message ?? "No se pudo registrar la transacción.");
 
       if (isOwed && owedByType === "PERSONA") {
-        await upsertPersonDebt();
+        const createdId = (payload as any)?.item?.id as string | undefined;
+        await upsertPersonDebt(createdId);
       }
 
       savePrefs({
@@ -395,6 +508,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   if (!open) return null;
 
   const isCreditCardPurchase = kind === "GASTO" && selectedAccount?.type === "CREDITO";
+  const isInstallmentPurchase = isCreditCardPurchase && paymentMode === "installments";
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
@@ -501,17 +615,34 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
               </div>
 
               {classification === "NEGOCIO" ? (
-                <label className="space-y-2">
-                  <span className={fieldLabelClass}>Unidad de negocio</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={fieldLabelClass}>Unidad de negocio</span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="h-8 rounded-full px-3 text-xs"
+                      onClick={async () => {
+                        try {
+                          const created = await createBusinessUnitFromPrompt();
+                          if (created?.id) setBusinessUnitId(created.id);
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "No se pudo crear el negocio.");
+                        }
+                      }}
+                    >
+                      Crear negocio
+                    </Button>
+                  </div>
                   <Select value={businessUnitId} onChange={(event) => setBusinessUnitId(event.target.value)}>
                     <option value="">Selecciona negocio</option>
-                    {dashboardSnapshot?.references.businessUnits.map((unit) => (
+                    {businessUnitsForSpend.map((unit) => (
                       <option key={unit.id} value={unit.id}>
                         {unit.name}
                       </option>
                     ))}
                   </Select>
-                </label>
+                </div>
               ) : null}
             </SurfaceCard>
           ) : null}
@@ -535,6 +666,106 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
                   </option>
                 ))}
               </Select>
+            </SurfaceCard>
+          ) : null}
+
+          {isCreditCardPurchase ? (
+            <SurfaceCard variant="soft" padding="sm" className="space-y-3 interactive-lift">
+              <div className="space-y-1">
+                <p className={fieldLabelClass}>Forma de pago</p>
+                <p className="text-sm text-slate-500">
+                  La clasificación (personal/negocio/prestado) es distinta de la financiación (pago único o cuotas).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMode("single");
+                    setPurchaseInstallmentError(null);
+                  }}
+                  className={`tap-feedback h-10 rounded-xl text-xs font-semibold transition ${
+                    paymentMode === "single"
+                      ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
+                      : "text-slate-500"
+                  }`}
+                >
+                  Pago único
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMode("installments");
+                    if (!purchaseInstallmentTotal) setPurchaseInstallmentTotal("12");
+                    if (!purchaseInstallmentCurrent) setPurchaseInstallmentCurrent("1");
+                  }}
+                  className={`tap-feedback h-10 rounded-xl text-xs font-semibold transition ${
+                    paymentMode === "installments"
+                      ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
+                      : "text-slate-500"
+                  }`}
+                >
+                  En cuotas
+                </button>
+              </div>
+
+              {paymentMode === "installments" ? (
+                <div className="space-y-2">
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    <label className="space-y-2">
+                      <span className={fieldLabelClass}>Cuotas totales</span>
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={2}
+                        max={48}
+                        value={purchaseInstallmentTotal}
+                        onChange={(event) => setPurchaseInstallmentTotal(event.target.value)}
+                        placeholder="Ej: 12"
+                      />
+                    </label>
+                    <label className="space-y-2">
+                      <span className={fieldLabelClass}>Cuota actual</span>
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        value={purchaseInstallmentCurrent}
+                        onChange={(event) => setPurchaseInstallmentCurrent(event.target.value)}
+                        placeholder="Ej: 1"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-3 text-xs text-slate-600">
+                    <p className="font-semibold text-slate-800">
+                      {(() => {
+                        const total = Math.floor(Number(purchaseInstallmentTotal || 0));
+                        const current = Math.floor(Number(purchaseInstallmentCurrent || 0));
+                        if (!Number.isFinite(total) || !Number.isFinite(current) || total <= 0 || current <= 0) {
+                          return "Cuotas: por confirmar";
+                        }
+                        const remaining = Math.max(total - current, 0);
+                        return `Cuota ${current} de ${total} · Te quedan ${remaining} cuotas`;
+                      })()}
+                    </p>
+                    <p className="mt-1">
+                      Monto registrado:{" "}
+                      <span className="font-semibold">
+                        {Number.isFinite(resolvedAmount) && resolvedAmount > 0
+                          ? resolvedAmount.toLocaleString("es-CL")
+                          : "0"}
+                      </span>{" "}
+                      (valor de esta cuota/movimiento)
+                    </p>
+                  </div>
+
+                  {purchaseInstallmentError ? (
+                    <p className="text-xs font-semibold text-rose-600">{purchaseInstallmentError}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </SurfaceCard>
           ) : null}
 
@@ -638,40 +869,98 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
                 </label>
 
                 <label className="space-y-2">
-                  <span className={fieldLabelClass}>Monto adeudado</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={fieldLabelClass}>
+                      {isInstallmentPurchase && owedByType === "PERSONA"
+                        ? "Monto que te debe de esta cuota"
+                        : "Monto adeudado"}
+                    </span>
+                    {isInstallmentPurchase && owedByType === "PERSONA" ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-8 rounded-full px-3 text-xs"
+                        onClick={() => setOwedAmount(String(Math.max(1, resolvedAmount)))}
+                      >
+                        Debe la cuota completa
+                      </Button>
+                    ) : null}
+                  </div>
                   <Input
                     type="number"
-                    placeholder="Monto adeudado"
+                    placeholder={
+                      isInstallmentPurchase && owedByType === "PERSONA"
+                        ? "Ej: 184456"
+                        : "Monto adeudado"
+                    }
                     value={owedAmount}
                     onChange={(event) => setOwedAmount(event.target.value)}
                   />
+                  {isInstallmentPurchase && owedByType === "PERSONA" ? (
+                    <div className="rounded-2xl border border-white/80 bg-white/85 px-3 py-2 text-xs text-slate-600">
+                      <p className="font-semibold text-slate-800">
+                        Esta deuda se asociará a la cuota actual del movimiento.
+                      </p>
+                      <p className="mt-0.5 text-slate-500">
+                        Cuota actual registrada:{" "}
+                        <span className="font-semibold text-slate-800">{formatCurrency(Math.abs(resolvedAmount || 0))}</span>
+                      </p>
+                    </div>
+                  ) : null}
                 </label>
 
                 {owedByType === "EMPRESA" ? (
-                  <label className="space-y-2 sm:col-span-2">
-                    <span className={fieldLabelClass}>Empresa que debe</span>
+                  <div className="space-y-2 sm:col-span-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={fieldLabelClass}>Empresa que debe</span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="h-8 rounded-full px-3 text-xs"
+                        onClick={async () => {
+                          try {
+                            const created = await createBusinessUnitFromPrompt();
+                            if (created?.id) setOwedBusinessUnitId(created.id);
+                          } catch (err) {
+                            setError(err instanceof Error ? err.message : "No se pudo crear el negocio.");
+                          }
+                        }}
+                      >
+                        Crear empresa
+                      </Button>
+                    </div>
                     <Select
                       value={owedBusinessUnitId}
                       onChange={(event) => setOwedBusinessUnitId(event.target.value)}
                     >
                       <option value="">Selecciona empresa</option>
-                      {dashboardSnapshot?.references.businessUnits.map((unit) => (
+                      {businessUnitsForSpend.map((unit) => (
                         <option key={unit.id} value={unit.id}>
                           {unit.name}
                         </option>
                       ))}
                     </Select>
-                  </label>
+                  </div>
                 ) : (
                   <>
                     <label className="space-y-2">
                       <span className={fieldLabelClass}>Modo</span>
                       <Select
                         value={owedDebtorMode}
-                        onChange={(event) => setOwedDebtorMode(event.target.value as "EXISTING" | "NEW")}
+                        onChange={(event) => {
+                          const next = event.target.value as "EXISTING" | "NEW";
+                          setOwedDebtorMode(next);
+                          if (next === "EXISTING") {
+                            setOwedDebtorName("");
+                          } else {
+                            setOwedDebtorId("");
+                          }
+                        }}
                       >
-                        <option value="NEW">Crear persona</option>
-                        <option value="EXISTING">Usar persona existente</option>
+                        <option value="EXISTING" disabled={debtors.length === 0}>
+                          Seleccionar persona existente
+                        </option>
+                        <option value="NEW">Crear persona nueva</option>
                       </Select>
                     </label>
                     {owedDebtorMode === "EXISTING" ? (
@@ -701,35 +990,44 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
 
                 {isOwed && owedByType === "PERSONA" ? (
                   <div className="sm:col-span-2 space-y-2">
-                    <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/85 px-4 py-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">¿En cuotas?</p>
-                        <p className="text-xs text-slate-500">Opcional: registra el cobro como deuda en cuotas.</p>
+                    {isInstallmentPurchase ? (
+                      <div className="rounded-2xl border border-white/80 bg-white/85 px-4 py-3 text-xs text-slate-600">
+                        <p className="text-sm font-semibold text-slate-900">Compra ya registrada en cuotas</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Esta compra ya está registrada en cuotas. La deuda se asociará a la cuota actual del movimiento.
+                        </p>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={installmentsEnabled}
-                        onChange={(event) => {
-                          const checked = event.target.checked;
-                          setInstallmentsEnabled(checked);
-                          if (checked && !installmentCount) setInstallmentCount("3");
-                          if (checked && !installmentValue && Number(amount)) {
-                            const count = Number(installmentCount || 3);
-                            setInstallmentValue(String(Math.ceil(Number(amount) / Math.max(1, count))));
-                          }
-                          if (checked && !nextInstallmentDate) {
-                            const base = new Date(`${date}T12:00:00`);
-                            base.setMonth(base.getMonth() + 1);
-                            const y = base.getFullYear();
-                            const m = `${base.getMonth() + 1}`.padStart(2, "0");
-                            const d = `${base.getDate()}`.padStart(2, "0");
-                            setNextInstallmentDate(`${y}-${m}-${d}`);
-                          }
-                        }}
-                      />
-                    </label>
+                    ) : (
+                      <label className="flex items-center justify-between gap-3 rounded-2xl border border-white/80 bg-white/85 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">¿En cuotas?</p>
+                          <p className="text-xs text-slate-500">Opcional: registra el cobro como deuda en cuotas.</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={installmentsEnabled}
+                          onChange={(event) => {
+                            const checked = event.target.checked;
+                            setInstallmentsEnabled(checked);
+                            if (checked && !installmentCount) setInstallmentCount("3");
+                            if (checked && !installmentValue && Number(amount)) {
+                              const count = Number(installmentCount || 3);
+                              setInstallmentValue(String(Math.ceil(Number(amount) / Math.max(1, count))));
+                            }
+                            if (checked && !nextInstallmentDate) {
+                              const base = new Date(`${date}T12:00:00`);
+                              base.setMonth(base.getMonth() + 1);
+                              const y = base.getFullYear();
+                              const m = `${base.getMonth() + 1}`.padStart(2, "0");
+                              const d = `${base.getDate()}`.padStart(2, "0");
+                              setNextInstallmentDate(`${y}-${m}-${d}`);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
 
-                    {installmentsEnabled ? (
+                    {installmentsEnabled && !isInstallmentPurchase ? (
                       <div className="grid gap-2.5 sm:grid-cols-3">
                         <label className="space-y-2">
                           <span className={fieldLabelClass}>Total cuotas</span>

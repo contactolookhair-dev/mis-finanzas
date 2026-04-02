@@ -9,6 +9,14 @@ export type PayableItem = {
   notes: string | null;
   createdAt?: string;
   updatedAt?: string;
+
+  // Optional installment context (when the payable was auto-generated from a credit-card transaction).
+  isInstallmentPurchase?: boolean;
+  installmentCurrent?: number | null;
+  installmentTotal?: number | null;
+  installmentsRemaining?: number | null;
+  installmentAmount?: number | null; // amount to pay now (this installment)
+  purchaseTotalAmount?: number | null; // total of the purchase (best-effort)
 };
 
 export function derivePayableStatus(item: PayableItem, todayISO: string): PayableStatus {

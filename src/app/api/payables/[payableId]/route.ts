@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db/prisma";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
+import { extractOwnerDebtMarkerFromNotes } from "@/server/repositories/payable-repository";
 
 const DEV_MODE = process.env.ENABLE_DEV_AUTH_LOGIN === "true";
 
@@ -41,6 +42,14 @@ export async function PATCH(
       return NextResponse.json({ message: "Pendiente no encontrado." }, { status: 404 });
     }
 
+    const ownerDebtMarker = extractOwnerDebtMarkerFromNotes(existing.notes);
+    const nextNotes = (() => {
+      if (payload.notes === undefined) return undefined;
+      if (!ownerDebtMarker) return payload.notes;
+      const userNotes = typeof payload.notes === "string" ? payload.notes.trim() : "";
+      return userNotes ? `${ownerDebtMarker} · ${userNotes}` : ownerDebtMarker;
+    })();
+
     await prisma.payable.update({
       where: { id: existing.id },
       data: {
@@ -52,7 +61,7 @@ export async function PATCH(
           : payload.paidAt === null
             ? null
             : undefined,
-        notes: payload.notes
+        notes: nextNotes
       }
     });
 
@@ -101,4 +110,3 @@ export async function DELETE(
     return NextResponse.json({ message: "No se pudo eliminar el pendiente." }, { status: 500 });
   }
 }
-

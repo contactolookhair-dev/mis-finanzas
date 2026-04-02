@@ -50,6 +50,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Self-heal: if a transaction was deleted (older bug), reimbursements could become orphaned with transactionId = null
+    // but still remain visible in "Me deben". Those items are always auto-generated, so it's safe to remove them.
+    await prisma.reimbursement.deleteMany({
+      where: {
+        workspaceId: context.workspaceId,
+        transactionId: null,
+        notes: {
+          contains: "Auto-generado desde transacción"
+        }
+      }
+    });
+
     const snapshot = await getDebtsSnapshot(context.workspaceId);
     return NextResponse.json(snapshot);
   } catch {

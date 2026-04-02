@@ -9,6 +9,13 @@ const querySchema = z.object({
   kind: z.enum(["person", "company"])
 });
 
+const bodySchema = z
+  .object({
+    // Accept either a full ISO datetime or a YYYY-MM-DD date.
+    paidAt: z.string().trim().min(1).optional()
+  })
+  .optional();
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { debtorId: string } }
@@ -25,6 +32,23 @@ export async function POST(
     const query = querySchema.parse({
       kind: request.nextUrl.searchParams.get("kind") ?? undefined
     });
+
+    let paidAtOverride: Date | null = null;
+    try {
+      const rawBody = await request.json();
+      const body = bodySchema?.parse(rawBody);
+      if (body?.paidAt) {
+        const paidAt = body.paidAt;
+        // Date-only string: interpret as UTC midnight.
+        const value = /^\d{4}-\d{2}-\d{2}$/.test(paidAt) ? `${paidAt}T00:00:00.000Z` : paidAt;
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) {
+          paidAtOverride = parsed;
+        }
+      }
+    } catch {
+      // no-op: body is optional
+    }
 
     if (query.kind === "person") {
       const debtor = await prisma.debtor.findFirst({
@@ -46,7 +70,7 @@ export async function POST(
             data: {
               debtorId: debtor.id,
               amount: pendingAmount,
-              paidAt: new Date(),
+              paidAt: paidAtOverride ?? new Date(),
               notes: "Cierre manual de deuda"
             }
           });
@@ -74,7 +98,7 @@ export async function POST(
       },
       data: {
         status: ReimbursementStatus.REEMBOLSADO,
-        reimbursedAt: new Date()
+        reimbursedAt: paidAtOverride ?? new Date()
       }
     });
 

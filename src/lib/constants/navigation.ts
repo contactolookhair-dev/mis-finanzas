@@ -12,6 +12,7 @@ export const navigationItems = [
   { href: "/cuentas", label: "Cuentas", icon: Landmark },
   { href: "/movimientos", label: "Movimientos", icon: CreditCard },
   { href: "/pendientes", label: "Pendientes", icon: HandCoins },
+  { href: "/prestamos", label: "Préstamos", icon: HandCoins },
   { href: "/resumen", label: "Resumen", icon: Wallet },
   { href: "/configuracion", label: "Admin", icon: Coins, hidden: true },
   { href: "/ia", label: "IA", icon: Coins, hidden: true },

@@ -6,6 +6,8 @@ import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 import { updateTransactionWithAutomation } from "@/server/services/transaction-service";
 import { buildDuplicateFingerprint } from "@/server/services/import/import-fingerprint";
 import { toAmountNumber } from "@/server/lib/amounts";
+import { deleteReimbursementByTransactionId } from "@/server/repositories/reimbursement-repository";
+import { deleteOwnerDebtPayableForTransaction } from "@/server/repositories/payable-repository";
 
 const patchSchema = z.object({
   date: z.string().min(1).optional(),
@@ -28,6 +30,116 @@ function toDateAtNoon(ymd: string) {
   return new Date(`${ymd}T12:00:00`);
 }
 
+function sourceTxMarker(transactionId: string) {
+  return `auto:source-tx:${transactionId}`;
+}
+
+function extractCreditCardInstallments(metadata: unknown) {
+  const raw = metadata as any;
+  const source = raw?.manual?.creditCardMeta ?? raw?.import?.creditCardMeta ?? null;
+  if (!source) return null;
+
+  const isInstallmentPurchase =
+    source.esCompraEnCuotas === true ||
+    source.isInstallmentPurchase === true ||
+    (typeof source.cuotaTotal === "number" && source.cuotaTotal > 1) ||
+    (typeof source.totalInstallments === "number" && source.totalInstallments > 1);
+  if (!isInstallmentPurchase) return null;
+
+  const cuotaActual =
+    typeof source.cuotaActual === "number"
+      ? source.cuotaActual
+      : typeof source.currentInstallment === "number"
+        ? source.currentInstallment
+        : null;
+  const cuotaTotal =
+    typeof source.cuotaTotal === "number"
+      ? source.cuotaTotal
+      : typeof source.totalInstallments === "number"
+        ? source.totalInstallments
+        : null;
+  const cuotasRestantes =
+    typeof source.cuotasRestantes === "number"
+      ? source.cuotasRestantes
+      : typeof source.remainingInstallments === "number"
+        ? source.remainingInstallments
+        : typeof cuotaActual === "number" && typeof cuotaTotal === "number"
+          ? Math.max(0, cuotaTotal - cuotaActual)
+          : null;
+
+  const installmentLabelRaw =
+    typeof source.installmentLabelRaw === "string"
+      ? source.installmentLabelRaw
+      : typeof cuotaActual === "number" && typeof cuotaTotal === "number"
+        ? `${cuotaActual}/${cuotaTotal}`
+        : "en cuotas";
+
+  return {
+    isInstallmentPurchase: true,
+    cuotaActual,
+    cuotaTotal,
+    cuotasRestantes,
+    installmentLabelRaw
+  };
+}
+
+export async function GET(_request: NextRequest, { params }: { params: { transactionId: string } }) {
+  const context = await getWorkspaceContextFromRequest(_request);
+  if (!context.workspaceId || !context.userKey) {
+    return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
+  }
+
+  const tx = await prisma.transaction.findFirst({
+    where: { id: params.transactionId, workspaceId: context.workspaceId },
+    select: {
+      id: true,
+      date: true,
+      description: true,
+      amount: true,
+      type: true,
+      accountId: true,
+      categoryId: true,
+      businessUnitId: true,
+      financialOrigin: true,
+      isReimbursable: true,
+      reviewStatus: true,
+      notes: true,
+      creditImpactType: true,
+      metadata: true,
+      account: { select: { name: true } },
+      category: { select: { name: true } },
+      businessUnit: { select: { name: true } }
+    }
+  });
+
+  if (!tx) {
+    return NextResponse.json({ message: "Movimiento no encontrado." }, { status: 404 });
+  }
+
+  const installments = extractCreditCardInstallments(tx.metadata);
+
+  return NextResponse.json({
+    item: {
+      id: tx.id,
+      date: tx.date.toISOString(),
+      description: tx.description,
+      amount: toAmountNumber(tx.amount),
+      type: tx.type,
+      accountId: tx.accountId ?? null,
+      account: tx.account?.name ?? "Cuenta",
+      categoryId: tx.categoryId ?? null,
+      category: tx.category?.name ?? "Sin categoría",
+      businessUnit: tx.businessUnit?.name ?? "",
+      origin: tx.financialOrigin,
+      reimbursable: Boolean(tx.isReimbursable),
+      reviewStatus: tx.reviewStatus,
+      notes: tx.notes ?? null,
+      creditImpactType: tx.creditImpactType ?? "consume_cupo",
+      ...(installments ?? {})
+    }
+  });
+}
+
 export async function DELETE(_request: NextRequest, { params }: { params: { transactionId: string } }) {
   const context = await getWorkspaceContextFromRequest(_request);
   if (!context.workspaceId || !context.userKey) {
@@ -47,7 +159,22 @@ export async function DELETE(_request: NextRequest, { params }: { params: { tran
     return NextResponse.json({ message: "No se puede eliminar un saldo base técnico." }, { status: 400 });
   }
 
-  await prisma.transaction.delete({ where: { id: transaction.id } });
+  // Keep "Me deben" and "Debo pagar" consistent:
+  // if a transaction was the source of any auto-generated items, delete them together.
+  await prisma.$transaction(async (db) => {
+    await deleteReimbursementByTransactionId(transaction.id, db);
+    await deleteOwnerDebtPayableForTransaction(transaction.workspaceId, transaction.id, db);
+    await db.debtor.deleteMany({
+      where: {
+        workspaceId: transaction.workspaceId,
+        notes: {
+          contains: sourceTxMarker(transaction.id)
+        }
+      }
+    });
+
+    await db.transaction.delete({ where: { id: transaction.id } });
+  });
   return NextResponse.json({ deleted: transaction.id });
 }
 

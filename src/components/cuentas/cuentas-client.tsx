@@ -57,6 +57,15 @@ type AccountItem = {
   creditLimit: number | null;
   closingDay: number | null;
   paymentDay: number | null;
+
+  // Credit card operational snapshot (typically sourced from the latest statement import).
+  // These are optional so new/empty credit cards can still render.
+  creditUsed?: number | null;
+  creditAvailable?: number | null;
+  totalBilled?: number | null;
+  minimumDue?: number | null;
+  statementDate?: string | null;
+  paymentDate?: string | null;
 };
 
 type AccountFormState = {
@@ -740,11 +749,10 @@ function AccountDetailModal({
     const insurance = totals.insurance ?? 0;
 
     const spent = purchasesNormal + purchasesInstallments + cashAdvances;
-    const billed =
-      selectedStatement.summary.totalBilled === null || selectedStatement.summary.totalBilled === undefined
-        ? spent + interest + fees + insurance
-        : selectedStatement.summary.totalBilled;
-    const remaining = Math.max(0, billed - paymentsOnly);
+    // Source of truth: statement summary (pdfMeta). Do NOT infer billed from movements.
+    const billed = selectedStatement.summary.totalBilled ?? null;
+    const remaining = billed === null ? null : Math.max(0, billed - paymentsOnly);
+    const overpaid = billed === null ? null : Math.max(0, paymentsOnly - billed);
 
     return {
       purchasesNormal,
@@ -757,7 +765,8 @@ function AccountDetailModal({
       refunds,
       spent,
       billed,
-      remaining
+      remaining,
+      overpaid
     };
   }, [selectedStatement]);
 
@@ -782,11 +791,10 @@ function AccountDetailModal({
     const insurance = totals.insurance ?? 0;
 
     const spent = purchasesNormal + purchasesInstallments + cashAdvances;
-    const billed =
-      previousStatement.summary.totalBilled === null || previousStatement.summary.totalBilled === undefined
-        ? spent + interest + fees + insurance
-        : previousStatement.summary.totalBilled;
-    const remaining = Math.max(0, billed - paymentsOnly);
+    // Source of truth: statement summary (pdfMeta). Do NOT infer billed from movements.
+    const billed = previousStatement.summary.totalBilled ?? null;
+    const remaining = billed === null ? null : Math.max(0, billed - paymentsOnly);
+    const overpaid = billed === null ? null : Math.max(0, paymentsOnly - billed);
 
     return {
       purchasesNormal,
@@ -799,7 +807,8 @@ function AccountDetailModal({
       refunds,
       spent,
       billed,
-      remaining
+      remaining,
+      overpaid
     };
   }, [previousStatement]);
 
@@ -894,7 +903,7 @@ function AccountDetailModal({
     }
 
     const minimum = selectedStatement?.summary.minimumPayment ?? null;
-    const billed = selectedStatementBreakdown?.billed ?? (selectedStatement?.summary.totalBilled ?? null);
+    const billed = selectedStatement?.summary.totalBilled ?? null;
     const paid = selectedStatementBreakdown?.paymentsOnly ?? null;
     const coveredMinimum =
       minimum != null && paid != null ? paid >= minimum : null;
@@ -1075,7 +1084,12 @@ function AccountDetailModal({
   const Icon = visual.icon;
   const credit =
     account.type === "CREDITO"
-      ? computeCreditCardMetrics({ ...account, balance: account.creditBalance })
+      ? (() => {
+        const used = typeof account.creditUsed === "number" && Number.isFinite(account.creditUsed) ? account.creditUsed : null;
+        // Prefer statement-derived used limit for "debt", fallback to historical movement balance.
+        const balanceSource = used !== null ? -used : account.creditBalance;
+        return computeCreditCardMetrics({ ...account, balance: balanceSource });
+      })()
       : null;
   const balanceTone =
     account.type === "CREDITO"
@@ -1658,10 +1672,12 @@ function AccountDetailModal({
                         <div className="mt-2 grid gap-2 sm:grid-cols-3">
                           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3">
                             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-                              Gastado
+                              Total facturado
                             </p>
                             <p className="mt-1 text-base font-semibold text-rose-700">
-                              {formatCurrency(selectedStatementBreakdown.spent)}
+                              {selectedStatementBreakdown.billed === null
+                                ? "—"
+                                : formatCurrency(selectedStatementBreakdown.billed)}
                             </p>
                           </div>
                           <div className="rounded-2xl border border-slate-200/70 bg-white/90 p-3">
@@ -1677,8 +1693,15 @@ function AccountDetailModal({
                               Falta por pagar
                             </p>
                             <p className="mt-1 text-base font-semibold text-slate-900">
-                              {formatCurrency(selectedStatementBreakdown.remaining)}
+                              {selectedStatementBreakdown.remaining === null
+                                ? "—"
+                                : formatCurrency(selectedStatementBreakdown.remaining)}
                             </p>
+                            {selectedStatementBreakdown.overpaid != null && selectedStatementBreakdown.overpaid > 0 ? (
+                              <p className="mt-1 text-[11px] text-slate-500">
+                                Saldo a favor: {formatCurrency(selectedStatementBreakdown.overpaid)}
+                              </p>
+                            ) : null}
                             {selectedStatement?.summary.minimumPayment != null ? (
                               <p className="mt-1 text-[11px] text-slate-500">
                                 Mínimo: {formatCurrency(selectedStatement.summary.minimumPayment)}
@@ -2201,6 +2224,35 @@ export function CuentasClient() {
     }
   }, []);
 
+  const resetAllCreditCards = useCallback(async () => {
+    const ok = window.confirm(
+      "Esto borrará la información importada de estados de cuenta de todas tus tarjetas (resúmenes y snapshots) Y además eliminará los movimientos de tus tarjetas de crédito. No afecta cuentas débito/efectivo. ¿Continuar?"
+    );
+    if (!ok) return;
+
+    try {
+      setSaving(true);
+      setSuccess(null);
+      setError(null);
+      const response = await fetch("/api/accounts/credit/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deleteTransactions: true })
+      });
+      const body = (await response.json()) as { success?: boolean; message?: string };
+      if (!response.ok || body.success === false) {
+        throw new Error(body.message ?? "No se pudo restablecer la información de tarjetas.");
+      }
+      setSuccess("Información de tarjetas restablecida. Importa un nuevo estado de cuenta para reconstruirla.");
+      await loadAccounts();
+      await loadCreditHealth();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo restablecer la información de tarjetas.");
+    } finally {
+      setSaving(false);
+    }
+  }, [loadAccounts, loadCreditHealth]);
+
   useEffect(() => {
     void loadAccounts();
     void loadCreditHealth();
@@ -2295,6 +2347,27 @@ export function CuentasClient() {
           </div>
         }
       />
+
+      {accounts.some((a) => a.type === "CREDITO") ? (
+        <SurfaceCard variant="soft" padding="sm" className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Tarjetas</p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">Comenzar de cero</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Borra resúmenes importados y elimina movimientos de tarjetas (solo crédito).
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            className="h-10 rounded-2xl border-rose-200/80 bg-rose-50/80 text-rose-700 hover:bg-rose-50"
+            onClick={resetAllCreditCards}
+            disabled={saving}
+          >
+            Restablecer tarjetas
+          </Button>
+        </SurfaceCard>
+      ) : null}
 
       {creditHealthLoading ? (
         <SurfaceCard variant="soft" padding="sm" className="flex items-center justify-between gap-3">
@@ -2433,10 +2506,14 @@ export function CuentasClient() {
             {sortedAccounts.map((account) => {
               const visual = resolveAccountVisual(account);
               const Icon = visual.icon;
-                const credit =
-                  account.type === "CREDITO"
-                    ? computeCreditCardMetrics({ ...account, balance: account.creditBalance })
-                    : null;
+              const credit =
+                account.type === "CREDITO"
+                  ? (() => {
+                    const used = typeof account.creditUsed === "number" && Number.isFinite(account.creditUsed) ? account.creditUsed : null;
+                    const balanceSource = used !== null ? -used : account.creditBalance;
+                    return computeCreditCardMetrics({ ...account, balance: balanceSource });
+                  })()
+                  : null;
               const balanceTone =
                 account.type === "CREDITO"
                   ? credit && credit.debt > 0

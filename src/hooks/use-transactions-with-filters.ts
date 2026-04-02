@@ -19,6 +19,13 @@ export type TransactionRow = {
   reviewStatus: "PENDIENTE" | "REVISADO" | "OBSERVADO";
   notes?: string | null;
   creditImpactType?: "consume_cupo" | "no_consume_cupo" | "pago_tarjeta" | "ajuste_manual";
+
+  // Optional credit-card installment context (stored in Transaction.metadata).
+  isInstallmentPurchase?: boolean;
+  cuotaActual?: number | null;
+  cuotaTotal?: number | null;
+  cuotasRestantes?: number | null;
+  installmentLabelRaw?: string | null;
 };
 
 type FilterRange = "today" | "week" | "month";

@@ -75,6 +75,29 @@ enum ExpenseFrequency {
   ANUAL
 }
 
+enum LoanType {
+  LENT
+  BORROWED
+}
+
+enum LoanCounterpartyType {
+  PERSON
+  COMPANY
+  CUSTOM
+}
+
+enum LoanStatus {
+  ACTIVE
+  PAID
+  OVERDUE
+}
+
+enum LoanInterestType {
+  FIXED
+  MONTHLY_PERCENT
+  ANNUAL_PERCENT
+}
+
 enum RuleMatchField {
   DESCRIPCION
   NOTAS
@@ -125,6 +148,7 @@ model Workspace {
   variableExpenses  VariableExpense[]
   debtors           Debtor[]
   payables          Payable[]
+  loans             Loan[]
   reimbursements    Reimbursement[]
   appSettings       AppSettings[]
   userSettings      UserSettings[]
@@ -200,6 +224,7 @@ model BusinessUnit {
   fixedExpenses       FixedExpense[]
   variableExpenses    VariableExpense[]
   reimbursements      Reimbursement[]
+  loans               Loan[]
   classificationRules ClassificationRule[]
   workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdAt           DateTime             @default(now())
@@ -223,6 +248,7 @@ model Account {
   fixedExpenses         FixedExpense[]
   variableExpenses      VariableExpense[]
   reimbursementsPaid    Reimbursement[]   @relation("ReimbursementPersonalAccount")
+  loanSources           Loan[]             @relation("LoanSourceAccount")
   createdAt             DateTime          @default(now())
   updatedAt             DateTime          @updatedAt
   workspace             Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -442,6 +468,47 @@ model Payable {
 
   @@index([workspaceId, dueDate])
   @@index([workspaceId, paidAt])
+}
+
+model Loan {
+  id               String              @id @default(cuid())
+  workspaceId      String
+  loanType         LoanType
+  counterpartyType LoanCounterpartyType
+  counterpartyName String
+  businessUnitId   String?
+  sourceAccountId  String?
+  amountTotal      Decimal             @db.Decimal(14, 2)
+  amountPaid       Decimal             @db.Decimal(14, 2) @default(0)
+  amountPending    Decimal             @db.Decimal(14, 2)
+  startDate        DateTime
+  dueDate          DateTime?
+  status           LoanStatus          @default(ACTIVE)
+  description      String?
+  hasInterest      Boolean             @default(false)
+  interestType     LoanInterestType?
+  interestValue    Decimal?            @db.Decimal(14, 6)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  workspace        Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  businessUnit     BusinessUnit?        @relation(fields: [businessUnitId], references: [id])
+  sourceAccount    Account?             @relation("LoanSourceAccount", fields: [sourceAccountId], references: [id])
+  payments         LoanPayment[]
+
+  @@index([workspaceId, loanType, status])
+  @@index([workspaceId, counterpartyName])
+}
+
+model LoanPayment {
+  id        String   @id @default(cuid())
+  loanId    String
+  amount    Decimal  @db.Decimal(14, 2)
+  paidAt    DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+  loan      Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId, paidAt])
 }
 
 model Reimbursement {

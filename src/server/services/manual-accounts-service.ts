@@ -206,6 +206,80 @@ export async function upsertCreditCardSummary(input: {
   });
 }
 
+export async function resetWorkspaceCreditCardSnapshots(workspaceId: string) {
+  const [importSettings, creditAccounts] = await Promise.all([
+    getSettingsImportMap(workspaceId),
+    prisma.account.findMany({
+      where: { workspaceId, type: AccountType.TARJETA_CREDITO, isActive: true },
+      select: { id: true }
+    })
+  ]);
+
+  const allMeta = readAccountMeta(importSettings[ACCOUNT_META_KEY]);
+  const nextMeta: AccountMetaMap = { ...allMeta };
+
+  let accountsTouched = 0;
+  let accountsWithSnapshot = 0;
+
+  for (const account of creditAccounts) {
+    const current = nextMeta[account.id];
+    if (!current) continue;
+
+    const hadSnapshot =
+      current.creditUsed !== undefined ||
+      current.creditAvailable !== undefined ||
+      current.totalBilled !== undefined ||
+      current.minimumDue !== undefined ||
+      current.statementDate !== undefined ||
+      current.paymentDate !== undefined;
+    if (hadSnapshot) accountsWithSnapshot += 1;
+
+    // Keep user-defined configuration (creditLimit/closingDay/paymentDay, appearance, etc.).
+    const {
+      creditUsed,
+      creditAvailable,
+      totalBilled,
+      minimumDue,
+      statementDate,
+      paymentDate,
+      ...rest
+    } = current;
+
+    nextMeta[account.id] = rest;
+    accountsTouched += 1;
+  }
+
+  await prisma.appSettings.upsert({
+    where: { workspaceId },
+    create: {
+      workspaceId,
+      dashboardModules: [],
+      enabledModules: [],
+      suggestedAiQuestions: [],
+      transactionLabels: {},
+      importSettings: {
+        allowedFormats: ["csv", "xlsx", "pdf"],
+        ...importSettings,
+        [ACCOUNT_META_KEY]: nextMeta,
+        [CREDIT_CARD_SUMMARY_KEY]: {}
+      }
+    },
+    update: {
+      importSettings: {
+        ...importSettings,
+        [ACCOUNT_META_KEY]: nextMeta,
+        [CREDIT_CARD_SUMMARY_KEY]: {}
+      }
+    }
+  });
+
+  return {
+    creditAccounts: creditAccounts.length,
+    accountsTouched,
+    accountsWithSnapshot
+  };
+}
+
 function normalizeAccountType(type: "CREDITO" | "DEBITO" | "EFECTIVO") {
   if (type === "CREDITO") return AccountType.TARJETA_CREDITO;
   if (type === "DEBITO") return AccountType.TARJETA_DEBITO;

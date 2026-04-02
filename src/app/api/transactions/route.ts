@@ -39,7 +39,22 @@ const createTransactionSchema = z.object({
   creditImpactType: z
     .enum(["consume_cupo", "no_consume_cupo", "pago_tarjeta", "ajuste_manual"])
     .optional()
-    .default("consume_cupo")
+    .default("consume_cupo"),
+  // Credit card purchases: installments are a separate dimension from classification (personal/negocio/prestado).
+  isInstallmentPurchase: z.boolean().optional().default(false),
+  cuotaActual: z.coerce.number().int().positive().nullable().optional(),
+  cuotaTotal: z.coerce.number().int().positive().nullable().optional(),
+  owed: z
+    .object({
+      isOwed: z.boolean(),
+      byType: z.enum(["PERSONA", "EMPRESA"]),
+      amount: z.coerce.number().positive().optional().nullable(),
+      debtorId: z.string().optional().nullable(),
+      debtorName: z.string().optional().nullable(),
+      businessUnitId: z.string().optional().nullable()
+    })
+    .optional()
+    .nullable()
 });
 
 function toStartDate(value?: string) {
@@ -48,6 +63,45 @@ function toStartDate(value?: string) {
 
 function toEndDate(value?: string) {
   return value ? new Date(`${value}T23:59:59.999`) : undefined;
+}
+
+function extractCreditCardInstallments(metadata: unknown) {
+  const raw = metadata as any;
+  const source = raw?.manual?.creditCardMeta ?? raw?.import?.creditCardMeta ?? null;
+  if (!source) return null;
+
+  const isInstallmentPurchase = source.esCompraEnCuotas === true || source.isInstallmentPurchase === true;
+  if (!isInstallmentPurchase) return null;
+
+  const cuotaActual =
+    typeof source.cuotaActual === "number"
+      ? source.cuotaActual
+      : typeof source.currentInstallment === "number"
+        ? source.currentInstallment
+        : null;
+  const cuotaTotal =
+    typeof source.cuotaTotal === "number"
+      ? source.cuotaTotal
+      : typeof source.totalInstallments === "number"
+        ? source.totalInstallments
+        : null;
+  const cuotasRestantes =
+    typeof source.cuotasRestantes === "number"
+      ? source.cuotasRestantes
+      : typeof source.remainingInstallments === "number"
+        ? source.remainingInstallments
+        : typeof cuotaActual === "number" && typeof cuotaTotal === "number"
+          ? Math.max(0, cuotaTotal - cuotaActual)
+          : null;
+  const installmentLabelRaw = typeof source.installmentLabelRaw === "string" ? source.installmentLabelRaw : null;
+
+  return {
+    isInstallmentPurchase: true,
+    cuotaActual,
+    cuotaTotal,
+    cuotasRestantes,
+    installmentLabelRaw
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -113,7 +167,8 @@ export async function GET(request: NextRequest) {
         businessUnit: item.businessUnit?.name ?? "Sin asignar",
         origin: item.financialOrigin,
         reimbursable: item.isReimbursable,
-        reviewStatus: item.reviewStatus
+        reviewStatus: item.reviewStatus,
+        ...(extractCreditCardInstallments(item.metadata) ?? {})
       })),
       pageInfo: result.pageInfo
     });
@@ -158,6 +213,39 @@ export async function POST(request: NextRequest) {
       description: input.description
     });
 
+    const manualMeta: Record<string, unknown> = {};
+    if (input.isInstallmentPurchase) {
+      manualMeta.creditCardMeta = {
+        esCompraEnCuotas: true,
+        cuotaActual: typeof input.cuotaActual === "number" ? input.cuotaActual : null,
+        cuotaTotal: typeof input.cuotaTotal === "number" ? input.cuotaTotal : null,
+        cuotasRestantes:
+          typeof input.cuotaActual === "number" && typeof input.cuotaTotal === "number"
+            ? Math.max(0, input.cuotaTotal - input.cuotaActual)
+            : null,
+        installmentLabelRaw:
+          typeof input.cuotaActual === "number" && typeof input.cuotaTotal === "number"
+            ? `${input.cuotaActual}/${input.cuotaTotal}`
+            : "en cuotas",
+        installmentAmount: Math.abs(input.amount)
+      };
+    }
+    if (input.owed?.isOwed) {
+      manualMeta.owed = {
+        isOwed: true,
+        byType: input.owed.byType,
+        amount: typeof input.owed.amount === "number" && Number.isFinite(input.owed.amount) ? input.owed.amount : null,
+        debtorId: input.owed.debtorId ?? null,
+        debtorName: input.owed.debtorName ?? null,
+        businessUnitId: input.owed.businessUnitId ?? null
+      };
+    }
+    // Prisma JSON types are strict; cast our structured meta to a JsonObject-compatible value.
+    const metadata =
+      Object.keys(manualMeta).length > 0
+        ? ({ manual: manualMeta } as unknown as Prisma.InputJsonValue)
+        : undefined;
+
     const created = await createTransactionWithAutomation({
       workspaceId: context.workspaceId,
       date,
@@ -174,7 +262,8 @@ export async function POST(request: NextRequest) {
       isBusinessPaidPersonally: input.isBusinessPaidPersonally,
       reviewStatus: input.reviewStatus,
       creditImpactType: input.creditImpactType,
-      duplicateFingerprint
+      duplicateFingerprint,
+      ...(metadata ? { metadata } : {})
     });
 
     return NextResponse.json({

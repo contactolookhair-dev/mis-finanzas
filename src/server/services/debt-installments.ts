@@ -55,14 +55,25 @@ export function inferPaidInstallmentsFromAmount(
 
 export function buildDebtInstallmentPlan(source: DebtInstallmentSource) {
   const totalInstallments = Math.max(0, source.installmentCount);
-  const installmentValue = Math.max(0, toAmountNumber(source.installmentValue));
-  const enabled = source.isInstallmentDebt && totalInstallments > 0 && installmentValue > 0;
+  const totalAmount = toAmountNumber(source.totalAmount);
+  const rawInstallmentValue = Math.max(0, toAmountNumber(source.installmentValue));
+
+  // Some older flows stored installmentCount but left installmentValue empty/0.
+  // If we have a total and a count, infer a per-installment value so the UI can show "cuota".
+  const inferredInstallmentValue =
+    totalInstallments > 1 && rawInstallmentValue <= 0 && totalAmount > 0
+      ? Math.round(totalAmount / totalInstallments)
+      : rawInstallmentValue;
+
+  const installmentValue = Math.max(0, inferredInstallmentValue);
+
+  // Enable installments if explicitly marked OR if the count indicates it's clearly an installment plan.
+  const enabled = (source.isInstallmentDebt || totalInstallments > 1) && totalInstallments > 1 && installmentValue > 0;
   const paidInstallments = enabled
     ? Math.min(totalInstallments, Math.max(0, source.paidInstallments))
     : 0;
   const pendingInstallments = enabled ? Math.max(0, totalInstallments - paidInstallments) : 0;
   const paidAmount = toAmountNumber(source.paidAmount);
-  const totalAmount = toAmountNumber(source.totalAmount);
   const remainingAmount = Math.max(0, totalAmount - paidAmount);
   const progressPercent =
     enabled && totalInstallments > 0 ? Math.min(100, (paidInstallments / totalInstallments) * 100) : 0;

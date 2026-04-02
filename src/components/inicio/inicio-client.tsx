@@ -62,6 +62,14 @@ type AccountItem = {
   creditLimit: number | null;
   closingDay: number | null;
   paymentDay: number | null;
+
+  // Optional statement-derived snapshot for credit cards.
+  creditUsed?: number | null;
+  creditAvailable?: number | null;
+  totalBilled?: number | null;
+  minimumDue?: number | null;
+  statementDate?: string | null;
+  paymentDate?: string | null;
 };
 
 type AccountsPayload = {
@@ -1299,7 +1307,11 @@ export function InicioClient() {
     const appearance = resolveAccountAppearance(account);
     const credit =
       account.type === "CREDITO"
-        ? computeCreditCardMetrics({ ...account, balance: account.creditBalance })
+        ? (() => {
+          const used = typeof account.creditUsed === "number" && Number.isFinite(account.creditUsed) ? account.creditUsed : null;
+          const balanceSource = used !== null ? -used : account.creditBalance;
+          return computeCreditCardMetrics({ ...account, balance: balanceSource });
+        })()
         : null;
     const primaryAmount = account.type === "CREDITO" && credit ? credit.debt : account.balance;
     const primaryTone =

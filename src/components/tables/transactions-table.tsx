@@ -22,6 +22,9 @@ type TransactionRow = {
   origin: "PERSONAL" | "EMPRESA";
   reimbursable: boolean;
   reviewStatus: "PENDIENTE" | "REVISADO" | "OBSERVADO";
+  isInstallmentPurchase?: boolean;
+  cuotaActual?: number | null;
+  cuotaTotal?: number | null;
 };
 
 type TransactionsPayload = {
@@ -137,6 +140,12 @@ export function TransactionsTable() {
           const AccountIcon = getAccountIcon(transaction.account);
           const matchedAccount = accountByName.get(transaction.account.trim().toLowerCase()) ?? null;
           const appearance = matchedAccount ? resolveAccountAppearance(matchedAccount) : null;
+          const installmentLabel =
+            transaction.isInstallmentPurchase === true
+              ? typeof transaction.cuotaActual === "number" && typeof transaction.cuotaTotal === "number"
+                ? `Cuota ${transaction.cuotaActual}/${transaction.cuotaTotal}`
+                : "En cuotas"
+              : null;
           return (
             <SurfaceCard
               key={transaction.id}
@@ -154,6 +163,11 @@ export function TransactionsTable() {
                       <CategoryIcon className="h-3.5 w-3.5" />
                       {transaction.category}
                     </span>
+                    {installmentLabel ? (
+                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 font-semibold text-slate-700">
+                        {installmentLabel}
+                      </span>
+                    ) : null}
                     {appearance ? (
                       <span
                         className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white/90 px-2 py-0.5 font-semibold text-slate-700"
