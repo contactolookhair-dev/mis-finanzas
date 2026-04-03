@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { CheckCircle2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -123,6 +123,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
   const resolvedAmount = useMemo(() => Number(amount || 0), [amount]);
   const resolvedOwedAmount = useMemo(
@@ -197,6 +198,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     setPurchaseInstallmentCurrent("");
     setPurchaseInstallmentError(null);
     setError(null);
+    setSuccessNotice(null);
   }
 
   function loadPrefs() {
@@ -352,6 +354,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
     event.preventDefault();
     setError(null);
     setPurchaseInstallmentError(null);
+    setSuccessNotice(null);
 
     if (!accountId) {
       setError("Selecciona una cuenta.");
@@ -496,8 +499,9 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
       });
 
       resetForm();
-      onOpenChange(false);
       onSuccess?.();
+      setSuccessNotice("Perfecto, el ingreso quedó registrado.");
+      window.setTimeout(() => setSuccessNotice(null), 2500);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "No se pudo guardar la transacción.");
     } finally {
@@ -551,6 +555,47 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
         </div>
 
         <form className="space-y-4" onSubmit={handleSubmit}>
+          <SurfaceCard variant="soft" padding="sm" className="space-y-3 interactive-lift">
+            <div className="space-y-1">
+              <p className={fieldLabelClass}>Cuenta o tarjeta</p>
+              <p className="text-sm text-slate-500">Primero selecciona desde dónde se hará el movimiento.</p>
+            </div>
+
+            <label className="space-y-2">
+              <span className={fieldLabelClass}>Cuenta</span>
+              <Select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+                <option value="">Selecciona cuenta</option>
+                {accounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {`${resolveAccountAppearance(account).glyph} ${account.name} · ${account.bank}`}
+                  </option>
+                ))}
+              </Select>
+              {selectedAccountAppearance ? (
+                <div
+                  className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700"
+                  style={{ borderColor: selectedAccountAppearance.accentColor }}
+                >
+                  <span
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-sm"
+                    style={{
+                      color: selectedAccountAppearance.accentColor,
+                      backgroundColor: selectedAccountAppearance.accentBackground
+                    }}
+                  >
+                    {selectedAccountAppearance.glyph}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate">{selectedAccountAppearance.bankLabel}</p>
+                    <p className="text-[11px] font-medium text-slate-500">
+                      Apariencia {selectedAccountAppearance.appearanceMode === "auto" ? "automática" : "manual"}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </label>
+          </SurfaceCard>
+
           <SurfaceCard variant="highlight" padding="sm" className="space-y-3">
             <label className="block space-y-2">
               <span className={fieldLabelClass}>Monto</span>
@@ -790,40 +835,6 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
               </label>
 
               <label className="space-y-2">
-                <span className={fieldLabelClass}>Cuenta</span>
-                <Select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-                  <option value="">Selecciona cuenta</option>
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {`${resolveAccountAppearance(account).glyph} ${account.name} · ${account.bank}`}
-                    </option>
-                  ))}
-                </Select>
-                {selectedAccountAppearance ? (
-                  <div
-                    className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700"
-                    style={{ borderColor: selectedAccountAppearance.accentColor }}
-                  >
-                    <span
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-sm"
-                      style={{
-                        color: selectedAccountAppearance.accentColor,
-                        backgroundColor: selectedAccountAppearance.accentBackground
-                      }}
-                    >
-                      {selectedAccountAppearance.glyph}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate">{selectedAccountAppearance.bankLabel}</p>
-                      <p className="text-[11px] font-medium text-slate-500">
-                        Apariencia {selectedAccountAppearance.appearanceMode === "auto" ? "automática" : "manual"}
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
-              </label>
-
-              <label className="space-y-2">
                 <span className={fieldLabelClass}>Fecha</span>
                 <Input
                   type="date"
@@ -842,6 +853,20 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
               </label>
             </div>
           </SurfaceCard>
+
+          {successNotice ? (
+            <SurfaceCard variant="soft" padding="sm" className="interactive-lift">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                  <CheckCircle2 className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">{successNotice}</p>
+                  <p className="mt-1 text-xs text-slate-500">Puedes seguir registrando otro movimiento si quieres.</p>
+                </div>
+              </div>
+            </SurfaceCard>
+          ) : null}
 
           <SurfaceCard
             variant={isOwed ? "highlight" : "soft"}
