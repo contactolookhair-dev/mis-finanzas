@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Info, Plus, Wallet2 } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, Info, Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
@@ -48,6 +48,7 @@ import {
 
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
+const PRIVACY_HIDE_TOTAL_KEY = "mis-finanzas.privacy.hide-total.v1";
 
 type AccountItem = {
   id: string;
@@ -126,6 +127,7 @@ export function InicioClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openModal, setOpenModal] = useState(false);
+  const [hideTotal, setHideTotal] = useState(false);
   const todayKey = keyByDate(new Date());
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [calculatorInput, setCalculatorInput] = useState("");
@@ -168,6 +170,15 @@ export function InicioClient() {
     aiFinancial: "standard",
     globalAlerts: "standard"
   });
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PRIVACY_HIDE_TOTAL_KEY);
+      setHideTotal(raw === "true");
+    } catch {
+      // no-op
+    }
+  }, []);
 
   const monthGrid = useMemo(() => buildMonthGrid(new Date()), []);
   const movementDateKeys = useMemo(
@@ -1527,13 +1538,34 @@ export function InicioClient() {
           }`}
         />
         <div className="relative">
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Saldo total</p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Saldo total</p>
+            <button
+              type="button"
+              onClick={() => {
+                setHideTotal((prev) => {
+                  const next = !prev;
+                  try {
+                    window.localStorage.setItem(PRIVACY_HIDE_TOTAL_KEY, next ? "true" : "false");
+                  } catch {
+                    // no-op
+                  }
+                  return next;
+                });
+              }}
+              className="tap-feedback inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+              aria-label={hideTotal ? "Mostrar saldo total" : "Ocultar saldo total"}
+              title={hideTotal ? "Mostrar" : "Ocultar"}
+            >
+              {hideTotal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           <p
             className={`mt-2 text-4xl font-semibold tracking-tight sm:text-[44px] ${
-              availableTotal >= 0 ? "text-emerald-600" : "text-rose-600"
+              hideTotal ? "text-slate-400" : availableTotal >= 0 ? "text-emerald-600" : "text-rose-600"
             }`}
           >
-            {loading ? "..." : formatCurrency(availableTotal)}
+            {hideTotal ? "••••••" : loading ? "..." : formatCurrency(availableTotal)}
           </p>
           <p className="mt-2 text-xs text-slate-500">Suma real de todas tus cuentas registradas.</p>
         </div>
