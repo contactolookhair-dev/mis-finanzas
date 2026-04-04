@@ -1,6 +1,7 @@
 generator client {
   provider = "prisma-client-js"
   output   = "../src/server/db/auth-prisma-client"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -65,4 +66,3 @@ model VerificationToken {
   @@unique([identifier, token])
   @@map("AuthVerificationToken")
 }
-
