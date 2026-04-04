@@ -29,6 +29,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<AuthSessionResponse | null>(null);
+  const [switching, setSwitching] = useState(false);
 
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState("");
@@ -91,17 +92,31 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   async function refreshSessionAndUI() {
     const s = await fetchAuthSession();
     setSession(s);
-    startTransition(() => router.refresh());
+    const currentUrl =
+      typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+        : "/";
+    startTransition(() => {
+      router.refresh();
+      // Replacing the same URL helps remount client trees that otherwise keep stale in-memory state.
+      router.replace(currentUrl);
+    });
   }
 
   async function switchWorkspace(workspaceId: string) {
     if (!session || session.authenticated !== true) return;
     if (workspaceId === activeWorkspaceId) {
       setOpen(false);
+      setCreating(false);
+      setError(null);
       return;
     }
 
+    // Close menu immediately so the UI doesn't feel "stuck" while we switch contexts.
+    setOpen(false);
+    setCreating(false);
     setError(null);
+    setSwitching(true);
     const response = await fetch("/api/auth/workspace", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -111,11 +126,12 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     const payload = (await response.json().catch(() => null)) as { message?: string } | null;
     if (!response.ok) {
       setError(payload?.message ?? "No se pudo cambiar workspace.");
+      setSwitching(false);
       return;
     }
 
     await refreshSessionAndUI();
-    setOpen(false);
+    setSwitching(false);
   }
 
   async function createWorkspace() {
@@ -151,6 +167,7 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
         aria-haspopup="menu"
         aria-expanded={open}
         title={activeWorkspaceName}
+        disabled={switching}
       >
         <StatPill tone="neutral" className="px-2.5 py-1 text-[10px]">
           {loading ? "…" : badgeText}

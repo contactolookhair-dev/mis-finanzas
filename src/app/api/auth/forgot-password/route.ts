@@ -63,6 +63,8 @@ export async function POST(request: NextRequest) {
     const payload = schema.parse(json);
     const email = normalizeEmail(payload.email);
 
+    console.log("[forgot-password] request received", { email });
+
     // Always respond 200 to avoid leaking if the email exists.
     const generic = NextResponse.json({
       message: "Si el email existe, te enviaremos un link para restablecer tu contraseña."
@@ -72,8 +74,10 @@ export async function POST(request: NextRequest) {
       where: { email },
       select: { id: true, email: true }
     });
+    console.log("[forgot-password] user lookup", { found: !!user });
     if (!user?.email) return generic;
 
+    console.log("[forgot-password] creating token");
     const rawToken = crypto.randomBytes(32).toString("hex");
     const hashed = tokenHash(rawToken);
     const expires = new Date(Date.now() + 60 * 60 * 1000);
@@ -90,6 +94,7 @@ export async function POST(request: NextRequest) {
         expires
       }
     });
+    console.log("[forgot-password] token created");
 
     const resetUrl = `${getBaseUrl(request)}/reset-password?token=${encodeURIComponent(rawToken)}`;
     const resendKey = process.env.RESEND_API_KEY ?? "";
@@ -105,20 +110,27 @@ export async function POST(request: NextRequest) {
       return generic;
     }
 
-    const { data, error } = await resend.emails.send({
-      from,
-      to: email,
-      subject: "Restablecer tu contraseña (Mis Finanzas)",
-      html: buildHtmlEmail({ resetUrl })
-    });
-    if (error) {
-      console.error("[forgot-password] resend error", { email, error });
-    } else {
-      console.log("[forgot-password] resend sent", { email, id: data?.id ?? null });
+    console.log("[forgot-password] sending email", { email });
+
+    try {
+      const { data, error } = await resend.emails.send({
+        from,
+        to: email,
+        subject: "Restablecer tu contraseña (Mis Finanzas)",
+        html: buildHtmlEmail({ resetUrl })
+      });
+      if (error) {
+        console.error("[forgot-password] resend error", error);
+      } else {
+        console.log("[forgot-password] resend success", data);
+      }
+    } catch (e) {
+      console.error("[forgot-password] resend crash", e);
     }
 
     return generic;
   } catch (error) {
+    console.error("[forgot-password] ERROR", error);
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { message: "Datos inválidos.", issues: error.issues },
