@@ -95,6 +95,15 @@ export default function LoginPage() {
         </form>
 
         <p className="text-sm text-neutral-600">
+          <a
+            href="/forgot-password"
+            className="font-semibold text-slate-900 underline underline-offset-4"
+          >
+            ¿Olvidaste tu contraseña?
+          </a>
+        </p>
+
+        <p className="text-sm text-neutral-600">
           ¿No tienes cuenta?{" "}
           <a href="/register" className="font-semibold text-slate-900 underline underline-offset-4">
             Crear cuenta
@@ -104,4 +113,3 @@ export default function LoginPage() {
     </div>
   );
 }
-
