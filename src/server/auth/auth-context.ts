@@ -1,13 +1,17 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/server/db/prisma";
-import { getAuthSessionFromRequest } from "@/server/auth/session";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/server/auth/nextauth-options";
 import { hasPermission, type PermissionAction } from "@/server/permissions/permissions";
+import { ensurePersonalWorkspaceForUser } from "@/server/tenant/ensure-personal-workspace-for-user";
 
 export type AuthContext = {
   userKey: string;
   workspaceId: string;
   role: "OWNER" | "ADMIN" | "EDITOR" | "VIEWER";
 };
+
+export const ACTIVE_WORKSPACE_COOKIE = "mf_active_workspace_id";
 
 async function resolveWorkspaceMembership(input: {
   userKey: string;
@@ -31,17 +35,38 @@ async function resolveWorkspaceMembership(input: {
 }
 
 export async function getAuthContextOrNull(request: NextRequest) {
-  const session = await getAuthSessionFromRequest(request);
-  if (!session) return null;
+  const session = await getServerSession(authOptions);
+  const userKey = session?.user?.id;
+  if (!userKey) return null;
+
+  const activeWorkspaceId = request.cookies.get(ACTIVE_WORKSPACE_COOKIE)?.value ?? null;
 
   const membership = await resolveWorkspaceMembership({
-    userKey: session.userKey,
-    activeWorkspaceId: session.activeWorkspaceId
+    userKey,
+    activeWorkspaceId
   });
-  if (!membership) return null;
+  if (!membership) {
+    // Create/claim workspace lazily if needed.
+    await ensurePersonalWorkspaceForUser({
+      userKey,
+      displayName: session?.user?.name ?? session?.user?.email ?? null
+    });
+
+    const after = await resolveWorkspaceMembership({
+      userKey,
+      activeWorkspaceId
+    });
+    if (!after) return null;
+
+    return {
+      userKey,
+      workspaceId: after.workspaceId,
+      role: after.role
+    } satisfies AuthContext;
+  }
 
   return {
-    userKey: session.userKey,
+    userKey,
     workspaceId: membership.workspaceId,
     role: membership.role
   } satisfies AuthContext;

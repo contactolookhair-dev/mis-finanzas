@@ -10,7 +10,7 @@ export type WorkspaceContext = {
   source: "forced-personal" | "session" | "dev-headers" | "dev-auth-bypass" | "public" | "none";
 };
 
-const FORCE_PERSONAL_WORKSPACE = process.env.FORCE_PERSONAL_WORKSPACE !== "false";
+const FORCE_PERSONAL_WORKSPACE = process.env.FORCE_PERSONAL_WORKSPACE === "true";
 
 async function ensurePersonalWorkspace() {
   return prisma.workspace.upsert({

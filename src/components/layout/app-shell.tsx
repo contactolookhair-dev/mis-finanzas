@@ -15,6 +15,8 @@ import { NewTransactionModal } from "@/components/movimientos/new-transaction-mo
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { useCallback, useState } from "react";
+import { UserMenu } from "@/components/auth/user-menu";
+import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -91,9 +93,8 @@ function AppShellFrame({ children }: { children: ReactNode }) {
                 >
                   {metric ? metric.value : "—"}
                 </p>
-                <StatPill tone="neutral" className="hidden px-2.5 py-1 text-[10px] sm:inline-flex">
-                  Personal
-                </StatPill>
+                <WorkspaceSwitcher />
+                <UserMenu className="ml-1" />
               </div>
             </div>
           </header>

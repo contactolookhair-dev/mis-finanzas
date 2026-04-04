@@ -41,6 +41,7 @@ import {
 } from "@/lib/accounts/credit-card-statement-actions";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
+import { WorkspaceZeroState } from "@/components/workspace/workspace-zero-state";
 
 const fieldLabelClass = "text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500";
 
@@ -2155,6 +2156,13 @@ export function CuentasClient() {
     setIsUpsertOpen(true);
   }
 
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      openCreate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function openEdit(account: AccountItem) {
     setEditingId(account.id);
     const creditDebt = account.type === "CREDITO" ? Math.max(0, -account.balance) : account.balance;
@@ -2493,12 +2501,12 @@ export function CuentasClient() {
           />
         ) : null}
         {!loading && !error && accounts.length === 0 ? (
-          <EmptyStateCard
-            icon={WalletCards}
+          <WorkspaceZeroState
             title="Comienza agregando tu primera cuenta"
-            description="Registra tu billetera, banco o tarjeta para empezar a anotar movimientos."
-            actionLabel="Agregar cuenta"
-            onAction={openCreate}
+            description="Registra tu billetera, banco o tarjeta. Luego puedes registrar movimientos o importar tu historial."
+            onCreateAccount={openCreate}
+            onCreateMovement={() => (window.location.href = "/movimientos?new=1")}
+            onImport={() => (window.location.href = "/importaciones")}
           />
         ) : null}
         {sortedAccounts.length ? (

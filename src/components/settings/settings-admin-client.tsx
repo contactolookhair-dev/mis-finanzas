@@ -26,6 +26,7 @@ import { Select } from "@/components/ui/select";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { EmptyStateCard, ErrorStateCard, SkeletonCard } from "@/components/ui/states";
 import { StatPill } from "@/components/ui/stat-pill";
+import { signOut } from "next-auth/react";
 
 type SettingsSnapshot = {
   appSettings: AppSettingsPayload;
@@ -499,6 +500,13 @@ export function SettingsAdminClient() {
         </div>
         <Button variant="secondary" className="rounded-full" onClick={loadSettings} disabled={isSaving}>
           Recargar settings
+        </Button>
+        <Button
+          variant="secondary"
+          className="rounded-full"
+          onClick={() => signOut({ callbackUrl: "/login" })}
+        >
+          Cerrar sesión
         </Button>
         {error ? (
           <SurfaceCard variant="soft" padding="sm" className="border-rose-200/80 bg-rose-50/80 text-rose-700">

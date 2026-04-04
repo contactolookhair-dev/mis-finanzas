@@ -1,13 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/server/db/prisma";
-import { getAuthSessionFromRequest } from "@/server/auth/session";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
 import { hasPermission } from "@/server/permissions/permissions";
 import { isPublicMode } from "@/server/auth/public-mode";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/server/auth/nextauth-options";
 
 export async function GET(request: NextRequest) {
-  const session = await getAuthSessionFromRequest(request);
-  if (!session) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
     if (isPublicMode()) {
       const context = await getWorkspaceContextFromRequest(request);
       if (!context.workspaceId || !context.role) {
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
   const context = await getWorkspaceContextFromRequest(request);
   const memberships = await prisma.workspaceMember.findMany({
     where: {
-      userKey: session.userKey,
+      userKey: session.user.id,
       isActive: true
     },
     include: {
@@ -87,8 +88,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     authenticated: true,
     user: {
-      userKey: session.userKey,
-      displayName: session.displayName
+      userKey: session.user.id,
+      displayName: session.user.name ?? session.user.email ?? null
     },
     activeWorkspace: activeMembership
       ? {

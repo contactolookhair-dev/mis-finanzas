@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Eye, EyeOff, Info, Plus, Wallet2 } from "lucide-react";
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
-import { OnboardingBanner } from "@/components/onboarding/onboarding-banner";
+import { WorkspaceOnboarding } from "@/components/onboarding/workspace-onboarding";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
 import { MobileHomeStack } from "@/components/inicio/mobile-home-stack";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,7 @@ import {
   type InicioWidgetId,
   type WidgetSize
 } from "@/components/inicio/widgets/dashboard-widget-registry";
+import { WorkspaceZeroState } from "@/components/workspace/workspace-zero-state";
 
 const CALCULATOR_STORAGE_KEY = "mis-finanzas.mobile-calculator.v1";
 const INICIO_WIDGET_STORAGE_KEY = "mis-finanzas.inicio.widgets.v1";
@@ -127,6 +128,7 @@ export function InicioClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openModal, setOpenModal] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState<boolean | null>(null);
   const [hideTotal, setHideTotal] = useState(false);
   const todayKey = keyByDate(new Date());
   const [selectedDate, setSelectedDate] = useState(todayKey);
@@ -1521,11 +1523,22 @@ export function InicioClient() {
         onOpenTransaction={() => setOpenModal(true)}
       />
 
-      <OnboardingBanner
+      <WorkspaceOnboarding
         accountsCount={accounts.length}
         movementsCount={movements.length}
-        insightsReady={onboardingInsightReady}
+        onOpenNewMovement={() => setOpenModal(true)}
+        onDismissedChange={({ dismissed }) => setOnboardingDismissed(dismissed)}
       />
+
+      {accounts.length === 0 && movements.length === 0 && onboardingDismissed === true ? (
+        <WorkspaceZeroState
+          title="Aún no hay datos en este workspace"
+          description="Crea tu primera cuenta, registra un movimiento o importa tus datos para empezar."
+          onCreateAccount={() => (window.location.href = "/cuentas")}
+          onCreateMovement={() => setOpenModal(true)}
+          onImport={() => (window.location.href = "/importaciones")}
+        />
+      ) : null}
 
       {error ? (
         <ErrorStateCard title="No se pudo cargar la vista" description={error} onRetry={() => void loadData()} />

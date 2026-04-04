@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ import {
   useTransactionsWithFilters
 } from "@/hooks/use-transactions-with-filters";
 import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
+import { WorkspaceZeroState } from "@/components/workspace/workspace-zero-state";
 
 const QUICK_RANGE_LABELS: Record<string, string> = {
   today: "Hoy",
@@ -87,6 +88,13 @@ export function MovimientosClient() {
     [rows]
   );
   const hasRows = rows.length > 0;
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") === "1") {
+      setOpenModal(true);
+    }
+  }, []);
 
   return (
     <div className="space-y-5 pb-16">
@@ -207,12 +215,22 @@ export function MovimientosClient() {
       ) : error ? (
         <ErrorStateCard title="No se pudieron cargar los movimientos" details={error} onRetry={refresh} />
       ) : !hasRows ? (
-        <EmptyStateCard
-          title="Sin movimientos"
-          description="Registra un gasto o ingreso para que esta pantalla muestre tu actividad."
-          actionLabel="Crear movimiento"
-          onAction={() => setOpenModal(true)}
-        />
+        accounts.length === 0 ? (
+          <WorkspaceZeroState
+            title="Aún no hay datos en este workspace"
+            description="Crea tu primera cuenta, registra un movimiento o importa tus datos para empezar."
+            onCreateAccount={() => (window.location.href = "/cuentas")}
+            onCreateMovement={() => setOpenModal(true)}
+            onImport={() => (window.location.href = "/importaciones")}
+          />
+        ) : (
+          <EmptyStateCard
+            title="Sin movimientos"
+            description="Registra un gasto o ingreso para que esta pantalla muestre tu actividad."
+            actionLabel="Crear movimiento"
+            onAction={() => setOpenModal(true)}
+          />
+        )
       ) : (
         <div className="grid gap-3">
           <div className="grid gap-2 sm:grid-cols-3">

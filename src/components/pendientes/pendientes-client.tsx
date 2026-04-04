@@ -22,6 +22,7 @@ import { SurfaceCard } from "@/components/ui/surface-card";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
 import { cn } from "@/lib/utils";
+import { WorkspaceZeroState } from "@/components/workspace/workspace-zero-state";
 import {
   derivePayableStatus,
   sumPayables,
@@ -242,6 +243,14 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
 
   const todayISO = useMemo(() => todayISODate(), []);
   const meDebenTotal = debts?.totals.pendingTotal ?? 0;
+  const isWorkspaceBrandNew =
+    !loadingAccounts &&
+    !loadingDebts &&
+    !loadingPayables &&
+    accounts.length === 0 &&
+    (debts?.people ?? []).length === 0 &&
+    payables.length === 0 &&
+    creditHealth.length === 0;
 
   const creditHealthByAccountId = useMemo(() => {
     return new Map(creditHealth.map((item) => [item.accountId, item]));
@@ -714,6 +723,14 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
         title="Pendientes"
         description="Controla lo que te deben y lo que debes pagar en una sola vista."
       />
+
+      {isWorkspaceBrandNew ? (
+        <WorkspaceZeroState
+          onCreateAccount={() => (window.location.href = "/cuentas")}
+          onCreateMovement={() => (window.location.href = "/movimientos?new=1")}
+          onImport={() => (window.location.href = "/importaciones")}
+        />
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <SurfaceCard className="p-4">

@@ -1,9 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/server/db/prisma";
-import { getAuthSessionFromRequest } from "@/server/auth/session";
 import { isDevAuthBypassEnabled } from "@/server/auth/public-mode";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/server/auth/nextauth-options";
+import { ACTIVE_WORKSPACE_COOKIE } from "@/server/auth/auth-context";
 
 const switchWorkspaceSchema = z.object({
   workspaceId: z.string().min(3)
@@ -16,12 +18,13 @@ export async function PATCH(request: NextRequest) {
       console.log("DEV MODE:", isDev);
     }
 
-    const session = await getAuthSessionFromRequest(request);
-    if (!isDev && !session) {
+    const session = await getServerSession(authOptions);
+    const userKey = session?.user?.id ?? null;
+    if (!isDev && !userKey) {
       return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
     }
 
-    if (isDev && !session) {
+    if (isDev && !userKey) {
       const context = await getWorkspaceContextFromRequest(request);
       if (!context.workspaceId) {
         return NextResponse.json(
@@ -38,16 +41,14 @@ export async function PATCH(request: NextRequest) {
 
     const json = await request.json();
     const payload = switchWorkspaceSchema.parse(json);
-    const authSession = session;
-
-    if (!authSession) {
+    if (!userKey) {
       return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
     }
 
     const membership = await prisma.workspaceMember.findFirst({
       where: {
         workspaceId: payload.workspaceId,
-        userKey: authSession.userKey,
+        userKey,
         isActive: true
       }
     });
@@ -58,12 +59,15 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    await prisma.authSession.update({
-      where: { id: authSession.id },
-      data: { activeWorkspaceId: payload.workspaceId }
+    const response = NextResponse.json({ message: "Workspace activo actualizado." });
+    response.cookies.set(ACTIVE_WORKSPACE_COOKIE, payload.workspaceId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 180
     });
-
-    return NextResponse.json({ message: "Workspace activo actualizado." });
+    return response;
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
