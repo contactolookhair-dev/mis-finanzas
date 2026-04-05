@@ -50,6 +50,7 @@ type DebtorPerson = {
   installmentStatus: "AL_DIA" | "PROXIMA" | "VENCIDA" | "PAGADA";
   installmentStatusLabel: string;
   installmentDaysUntilDue: number | null;
+  notes: string | null;
 
   // Optional enrichment when the debt originated from a credit-card transaction with installments.
   creditInstallmentAmount?: number | null;
@@ -572,6 +573,25 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
     } finally {
       setEditTxLoading(false);
     }
+  }
+
+  function extractSourceTransactionIdFromNotes(notes?: string | null) {
+    if (!notes) return null;
+    const match = notes.match(/\bauto:source-tx:([a-z0-9_]+)\b/i);
+    return match ? match[1] : null;
+  }
+
+  async function deleteSourceTransaction(transactionId: string) {
+    const ok = window.confirm("Eliminar este movimiento? Esto también eliminará el pendiente asociado.");
+    if (!ok) return;
+
+    const response = await fetch(`/api/transactions/${transactionId}`, { method: "DELETE" });
+    const payload = (await response.json()) as { message?: string };
+    if (!response.ok) {
+      window.alert(payload.message ?? "No se pudo eliminar el movimiento.");
+      return;
+    }
+    await loadDebts();
   }
 
   async function deleteCompanyEntry(entry: { id: string; transactionId: string | null }) {
@@ -1098,6 +1118,7 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
                     <div className="mt-4 space-y-2">
                       {visibleItems.map((person) => {
                         const rowStatusChip = toneForInstallmentStatus(person.installmentStatus);
+                        const sourceTransactionId = extractSourceTransactionIdFromNotes(person.notes);
                         const hasCreditInstallments =
                           typeof person.creditInstallmentTotal === "number" &&
                           Number.isFinite(person.creditInstallmentTotal) &&
@@ -1211,6 +1232,18 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
                             </div>
 
                             <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                              {sourceTransactionId ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  className="h-9 rounded-2xl px-3 text-sm"
+                                  disabled={editTxLoading || loadingCategories}
+                                  onClick={() => void openEditTransaction(sourceTransactionId)}
+                                >
+                                  <PencilLine className="mr-2 h-4 w-4" />
+                                  Editar
+                                </Button>
+                              ) : null}
                               <Button
                                 type="button"
                                 variant="secondary"
@@ -1238,9 +1271,13 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
                               </Button>
                               <Button
                                 type="button"
-                                variant="ghost"
-                                className="h-9 rounded-2xl px-3 text-sm text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                                variant="secondary"
+                                className="h-9 rounded-2xl px-3 text-sm text-rose-600 hover:text-rose-700"
                                 onClick={() => {
+                                  if (sourceTransactionId) {
+                                    void deleteSourceTransaction(sourceTransactionId);
+                                    return;
+                                  }
                                   setSelectedDebtorId(person.id);
                                   setDeleteConfirmOpen(true);
                                 }}
