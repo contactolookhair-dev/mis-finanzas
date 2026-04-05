@@ -995,16 +995,27 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
         const selected = state.personId ? people.find((p) => p.id === state.personId) : null;
         const isDraft = (state.personId ?? "").startsWith("draft-person:");
         const isDemo = (state.personId ?? "").startsWith("demo-person:");
+        const sourceMarker = createdTransactionId ? `auto:source-tx:${createdTransactionId}` : null;
+
+        const isInstallmentDebt =
+          selectedAccount?.type === "CREDITO" &&
+          state.movementType === "GASTO" &&
+          state.paymentMode === "installments";
+        const installmentTotal = Math.max(0, Math.floor(Number(state.cuotaTotal || 0)));
+        const installmentCurrent = Math.max(0, Math.floor(Number(state.cuotaActual || 0)));
+        const canUseInstallments =
+          isInstallmentDebt && Number.isFinite(installmentTotal) && installmentTotal > 1;
+        const purchaseTotalAmount = canUseInstallments ? Math.max(1, owedAmount * installmentTotal) : owedAmount;
 
         if (state.personId && !isDraft && !isDemo && selected) {
           const patchRes = await fetch(`/api/debts/${state.personId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              totalAmount: Math.max(1, selected.totalAmount + owedAmount),
+              totalAmount: Math.max(1, selected.totalAmount + purchaseTotalAmount),
               status: "PENDIENTE",
               notes:
-                [selected.notes, createdTransactionId ? `auto:source-tx:${createdTransactionId}` : null]
+                [selected.notes, sourceMarker, state.note.trim() || null]
                   .filter(Boolean)
                   .join(" · ") || null
             })
@@ -1020,21 +1031,35 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
             body: JSON.stringify({
               name: state.personName.trim(),
               reason: description.trim() || "Movimiento",
-              totalAmount: owedAmount,
+              totalAmount: purchaseTotalAmount,
               startDate: today,
               estimatedPayDate: null,
-              isInstallmentDebt: false,
-              installmentCount: 0,
-              installmentValue: 0,
-              paidInstallments: 0,
+              isInstallmentDebt: canUseInstallments,
+              installmentCount: canUseInstallments ? installmentTotal : 0,
+              installmentValue: canUseInstallments ? Math.max(0, owedAmount) : 0,
+              paidInstallments: canUseInstallments ? Math.max(0, Math.min(installmentTotal, installmentCurrent - 1)) : 0,
               installmentFrequency: "MENSUAL",
               nextInstallmentDate: null,
-              notes: createdTransactionId ? `auto:source-tx:${createdTransactionId}` : null
+              notes: [sourceMarker, state.note.trim() || null].filter(Boolean).join(" · ") || null
             })
           });
           const createPayload = (await createRes.json()) as { message?: string; id?: string };
           if (!createRes.ok) {
             throw new Error(createPayload.message ?? "No se pudo crear la deuda de la persona.");
+          }
+
+          // If we created a brand new debtor, swap the draft/demo id so future updates don't duplicate.
+          if (createPayload.id) {
+            const createdId = createPayload.id;
+            setPeople((prev) =>
+              prev.some((p) => p.id === createdId)
+                ? prev
+                : [{ id: createdId, name: state.personName!.trim(), totalAmount: purchaseTotalAmount, notes: null }, ...prev]
+            );
+            setState((s) => ({
+              ...s,
+              personId: createdId
+            }));
           }
         }
       }

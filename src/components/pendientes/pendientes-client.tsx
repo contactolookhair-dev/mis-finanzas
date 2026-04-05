@@ -555,6 +555,19 @@ export function PendientesClient({ initialTab }: { initialTab?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    function handleInvalidate() {
+      void loadDebts();
+      void loadPayables();
+      void loadAccounts();
+      void loadCreditHealth();
+    }
+
+    window.addEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+    return () => window.removeEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function openEditTransaction(transactionId: string) {
     try {
       setEditTxError(null);
