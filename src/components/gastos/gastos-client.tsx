@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
 import { TransactionsTable } from "@/components/tables/transactions-table";
 import { Button } from "@/components/ui/button";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -39,7 +39,7 @@ export function GastosClient() {
 
       <TransactionsTable key={tableKey} />
 
-      <NewTransactionModal
+      <TransactionEntryModal
         open={openModal}
         onOpenChange={setOpenModal}
         onSuccess={() => setTableKey((value) => value + 1)}

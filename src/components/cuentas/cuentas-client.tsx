@@ -39,7 +39,7 @@ import {
   generateCreditCardStatementActions,
   type CreditCardStatementAction
 } from "@/lib/accounts/credit-card-statement-actions";
-import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
 import { BASE_TRANSACTION_MARKER } from "@/lib/constants/transactions";
 import { WorkspaceZeroState } from "@/components/workspace/workspace-zero-state";
 
@@ -2780,7 +2780,7 @@ export function CuentasClient() {
         }}
       />
 
-      <NewTransactionModal
+      <TransactionEntryModal
         open={transactionModalOpen}
         onOpenChange={setTransactionModalOpen}
         onSuccess={() => void loadAccounts()}

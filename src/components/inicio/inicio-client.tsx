@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Eye, EyeOff, Info, Plus, Wallet2 } from "lucide-react";
-import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
 import { WorkspaceOnboarding } from "@/components/onboarding/workspace-onboarding";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
 import { MobileHomeStack } from "@/components/inicio/mobile-home-stack";
@@ -1753,7 +1753,7 @@ export function InicioClient() {
         return element ? <div key={id}>{element}</div> : null;
       })}
 
-      <NewTransactionModal
+      <TransactionEntryModal
         open={openModal}
         onOpenChange={setOpenModal}
         onSuccess={() => {

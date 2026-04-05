@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/select";
 import { SectionHeader } from "@/components/ui/section-header";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { SkeletonCard, ErrorStateCard, EmptyStateCard } from "@/components/ui/states";
-import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
 import { EditTransactionModal } from "@/components/movimientos/edit-transaction-modal";
 import { formatCurrency } from "@/lib/formatters/currency";
 import { formatDate } from "@/lib/formatters/date";
@@ -384,7 +384,7 @@ export function MovimientosClient() {
         </div>
       ) : null}
 
-      <NewTransactionModal
+      <TransactionEntryModal
         open={openModal}
         onOpenChange={setOpenModal}
         onSuccess={() => {

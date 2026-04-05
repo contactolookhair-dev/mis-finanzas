@@ -10,7 +10,7 @@ import { FinancialHealthCenter } from "@/components/health/financial-health-cent
 import { InsightList } from "@/components/dashboard/insight-list";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { ExportActions } from "@/components/exports/export-actions";
-import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1378,7 +1378,7 @@ export function DashboardClient() {
         Agregar gasto
       </Button>
 
-      <NewTransactionModal
+      <TransactionEntryModal
         open={transactionModalOpen}
         onOpenChange={setTransactionModalOpen}
         onSuccess={() => setRefreshKey((value) => value + 1)}

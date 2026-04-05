@@ -11,7 +11,7 @@ import { PageContainer } from "@/components/ui/page-container";
 import { StatPill } from "@/components/ui/stat-pill";
 import { DashboardHeaderLoader } from "@/components/layout/dashboard-header-loader";
 import { DashboardHeaderProvider, useDashboardHeader } from "@/components/layout/dashboard-header-context";
-import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
+import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { useCallback, useEffect, useState } from "react";
@@ -278,7 +278,7 @@ function AppShellFrame({ children }: { children: ReactNode }) {
           </Button>
         </div>
 
-        <NewTransactionModal
+        <TransactionEntryModal
           open={transactionOpen}
           onOpenChange={setTransactionOpen}
           onSuccess={() => {
