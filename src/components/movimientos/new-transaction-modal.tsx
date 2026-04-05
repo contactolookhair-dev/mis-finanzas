@@ -86,6 +86,8 @@ const textareaClass =
   "min-h-[92px] w-full rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-sm outline-none focus:border-violet-400";
 
 export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
+  useLockBodyScroll(open);
+
   const [kind, setKind] = useState<TransactionKind>("GASTO");
   const [classification, setClassification] = useState<"PERSONAL" | "NEGOCIO" | "PRESTADO">("PERSONAL");
   const [amount, setAmount] = useState("");
@@ -511,8 +513,6 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   }
 
   if (!open) return null;
-
-  useLockBodyScroll(open);
 
   const isCreditCardPurchase = kind === "GASTO" && selectedAccount?.type === "CREDITO";
   const isInstallmentPurchase = isCreditCardPurchase && paymentMode === "installments";

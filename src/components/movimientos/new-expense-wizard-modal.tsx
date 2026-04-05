@@ -14,10 +14,11 @@ type Props = {
 };
 
 export function NewExpenseWizardModal({ open, onOpenChange, onSuccess }: Props) {
+  useLockBodyScroll(open);
+
   if (!open) return null;
 
   const demoMode = isNewExpenseWizardDemoMode();
-  useLockBodyScroll(open);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
