@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calculator, Plus } from "lucide-react";
+import { AlertTriangle, Calculator, CheckCircle2, Plus } from "lucide-react";
 import { navigationItems } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -14,9 +14,10 @@ import { DashboardHeaderProvider, useDashboardHeader } from "@/components/layout
 import { NewTransactionModal } from "@/components/movimientos/new-transaction-modal";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
 import { SurfaceCard } from "@/components/ui/surface-card";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { UserMenu } from "@/components/auth/user-menu";
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
+import { useWorkspaceStore } from "@/shared/stores/workspace-store";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -37,6 +38,12 @@ function AppShellFrame({ children }: { children: ReactNode }) {
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [calculatorInput, setCalculatorInput] = useState("");
   const [calculatorResult, setCalculatorResult] = useState<number | null>(null);
+  const [workspaceSwitching, setWorkspaceSwitching] = useState(false);
+  const [workspaceToast, setWorkspaceToast] = useState<{
+    tone: "success" | "danger";
+    message: string;
+    workspaceName?: string | null;
+  } | null>(null);
 
   const evaluateExpression = useCallback((value: string) => {
     if (!value.trim()) return null;
@@ -74,10 +81,93 @@ function AppShellFrame({ children }: { children: ReactNode }) {
         ? "text-emerald-600"
         : "text-slate-900";
 
+  useEffect(() => {
+    function onWorkspaceSwitch(event: Event) {
+      const detail = (event as CustomEvent).detail as
+        | { status: "start" | "success" | "error"; workspaceName?: string | null }
+        | undefined;
+      if (!detail) return;
+
+      if (detail.status === "start") {
+        setWorkspaceSwitching(true);
+        return;
+      }
+
+      setWorkspaceSwitching(false);
+      if (detail.status === "success") {
+        setWorkspaceToast({
+          tone: "success",
+          message: "Perfil cambiado",
+          workspaceName: detail.workspaceName ?? null
+        });
+      } else if (detail.status === "error") {
+        setWorkspaceToast({
+          tone: "danger",
+          message: "No se pudo cambiar"
+        });
+      }
+    }
+
+    window.addEventListener("mis-finanzas:workspace-switch", onWorkspaceSwitch as EventListener);
+    return () => {
+      window.removeEventListener("mis-finanzas:workspace-switch", onWorkspaceSwitch as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceToast) return;
+    const timer = window.setTimeout(() => setWorkspaceToast(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [workspaceToast]);
+
   return (
     <div className="min-h-screen">
       <DashboardHeaderLoader />
       <div className="screen-shell">
+        {workspaceSwitching ? (
+          <div className="fixed left-0 right-0 top-0 z-[90] h-1 bg-gradient-to-r from-slate-900 via-primary to-emerald-500 animate-pulse" />
+        ) : null}
+
+        {workspaceToast ? (
+          <div className="fixed left-1/2 top-4 z-[91] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 sm:top-6">
+            <SurfaceCard
+              variant="soft"
+              padding="sm"
+              className={cn(
+                "animate-fade-up border shadow-[0_18px_40px_rgba(15,23,42,0.12)]",
+                workspaceToast.tone === "success"
+                  ? "border-emerald-200/80 bg-emerald-50/80 text-emerald-700"
+                  : "border-rose-200/80 bg-rose-50/80 text-rose-700"
+              )}
+            >
+              <div className="flex items-start gap-2.5">
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-8 w-8 items-center justify-center rounded-2xl ring-1 ring-white/60",
+                    workspaceToast.tone === "success"
+                      ? "bg-emerald-100/80 text-emerald-700"
+                      : "bg-rose-100/80 text-rose-700"
+                  )}
+                >
+                  {workspaceToast.tone === "success" ? (
+                    <CheckCircle2 className="h-4 w-4" strokeWidth={2.2} />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4" strokeWidth={2.2} />
+                  )}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{workspaceToast.message}</p>
+                  {workspaceToast.tone === "success" && workspaceToast.workspaceName ? (
+                    <p className="truncate text-xs text-emerald-700/80">
+                      {workspaceToast.workspaceName}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </SurfaceCard>
+          </div>
+        ) : null}
+
         <div className="lg:pl-[120px]">
           <header className="glass-surface sticky top-2 z-20 mb-4 rounded-[18px] px-3.5 py-2.5 ring-1 ring-white/35 sm:top-3 sm:mb-5 sm:px-4 sm:py-3">
             <div className="flex items-center justify-between gap-3">
@@ -99,8 +189,30 @@ function AppShellFrame({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          <main className="pb-24 sm:pb-28">
-            <PageContainer size="wide">{children}</PageContainer>
+          <main
+            className={cn(
+              "relative pb-24 transition-[opacity,transform,filter] duration-200 ease-out sm:pb-28",
+              workspaceSwitching && "opacity-45 pointer-events-none select-none translate-y-[1px] blur-[0.25px]"
+            )}
+            aria-busy={workspaceSwitching}
+          >
+            {workspaceSwitching ? (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 overflow-hidden rounded-[26px]"
+              >
+                <div className="absolute inset-0 bg-white/20 backdrop-blur-[1px]" />
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-70 animate-shimmer" />
+              </div>
+            ) : null}
+            {workspaceSwitching ? (
+              <div aria-hidden className="pointer-events-none absolute inset-0">
+                <WorkspaceSwitchSkeleton />
+              </div>
+            ) : null}
+            <PageContainer size="wide">
+              <WorkspaceReactiveBoundary>{children}</WorkspaceReactiveBoundary>
+            </PageContainer>
           </main>
         </div>
 
@@ -214,4 +326,62 @@ function AppShellFrame({ children }: { children: ReactNode }) {
       </div>
     </div>
   );
+}
+
+function WorkspaceSwitchSkeleton() {
+  return (
+    <div className="p-4 sm:p-6">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-4 grid gap-3 sm:mb-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="rounded-[22px] border border-white/70 bg-white/60 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur">
+            <div className="h-3 w-24 rounded-full bg-slate-200/80 animate-shimmer" />
+            <div className="mt-3 h-8 w-40 rounded-2xl bg-slate-200/80 animate-shimmer" />
+            <div className="mt-4 h-3 w-28 rounded-full bg-slate-200/70 animate-shimmer" />
+          </div>
+          <div className="rounded-[22px] border border-white/70 bg-white/60 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur">
+            <div className="h-3 w-28 rounded-full bg-slate-200/80 animate-shimmer" />
+            <div className="mt-3 h-8 w-36 rounded-2xl bg-slate-200/80 animate-shimmer" />
+            <div className="mt-4 h-3 w-24 rounded-full bg-slate-200/70 animate-shimmer" />
+          </div>
+          <div className="hidden rounded-[22px] border border-white/70 bg-white/60 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur lg:block">
+            <div className="h-3 w-20 rounded-full bg-slate-200/80 animate-shimmer" />
+            <div className="mt-3 h-8 w-44 rounded-2xl bg-slate-200/80 animate-shimmer" />
+            <div className="mt-4 h-3 w-32 rounded-full bg-slate-200/70 animate-shimmer" />
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[22px] border border-white/70 bg-white/55 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
+            <div className="flex items-center justify-between">
+              <div className="h-3 w-24 rounded-full bg-slate-200/80 animate-shimmer" />
+              <div className="h-6 w-20 rounded-full bg-slate-200/70 animate-shimmer" />
+            </div>
+            <div className="mt-4 space-y-2.5">
+              <div className="h-3 w-5/6 rounded-full bg-slate-200/70 animate-shimmer" />
+              <div className="h-3 w-2/3 rounded-full bg-slate-200/70 animate-shimmer" />
+              <div className="h-3 w-3/4 rounded-full bg-slate-200/70 animate-shimmer" />
+            </div>
+          </div>
+          <div className="rounded-[22px] border border-white/70 bg-white/55 p-4 shadow-[0_18px_40px_rgba(15,23,42,0.05)] backdrop-blur">
+            <div className="flex items-center justify-between">
+              <div className="h-3 w-28 rounded-full bg-slate-200/80 animate-shimmer" />
+              <div className="h-6 w-16 rounded-full bg-slate-200/70 animate-shimmer" />
+            </div>
+            <div className="mt-4 space-y-2.5">
+              <div className="h-3 w-4/5 rounded-full bg-slate-200/70 animate-shimmer" />
+              <div className="h-3 w-2/3 rounded-full bg-slate-200/70 animate-shimmer" />
+              <div className="h-3 w-3/5 rounded-full bg-slate-200/70 animate-shimmer" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceReactiveBoundary({ children }: { children: ReactNode }) {
+  const workspaceId = useWorkspaceStore((state) => state.workspaceId);
+  // Force remount of client trees that fetch via /api (cookie-based workspace) when the active workspace changes.
+  // This makes the app feel reactive without requiring router.refresh().
+  return <div key={workspaceId ?? "no-workspace"}>{children}</div>;
 }
