@@ -7,6 +7,7 @@ import { ChevronDown, LogOut, Settings2, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SurfaceCard } from "@/components/ui/surface-card";
+import { fetchAuthSession } from "@/shared/lib/auth-session-client";
 
 function buildInitials(input?: string | null) {
   const value = String(input ?? "").trim();
@@ -27,6 +28,7 @@ export function UserMenu({ className }: { className?: string }) {
   const initials = useMemo(() => buildInitials(label), [label]);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const [canViewSettings, setCanViewSettings] = useState(false);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
@@ -46,6 +48,24 @@ export function UserMenu({ className }: { className?: string }) {
     return () => {
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onEscape);
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    async function loadPermissions() {
+      try {
+        const s = await fetchAuthSession();
+        if (!alive) return;
+        setCanViewSettings(Boolean(s.authenticated === true ? s.permissions?.canViewSettings : false));
+      } catch {
+        if (!alive) return;
+        setCanViewSettings(false);
+      }
+    }
+    void loadPermissions();
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -111,14 +131,16 @@ export function UserMenu({ className }: { className?: string }) {
                 <User className="h-4 w-4" strokeWidth={1.9} />
                 Perfil
               </Link>
-              <Link
-                href="/configuracion"
-                className="flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                onClick={() => setOpen(false)}
-              >
-                <Settings2 className="h-4 w-4" strokeWidth={1.9} />
-                Configuración
-              </Link>
+              {canViewSettings ? (
+                <Link
+                  href="/configuracion"
+                  className="flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => setOpen(false)}
+                >
+                  <Settings2 className="h-4 w-4" strokeWidth={1.9} />
+                  Configuración
+                </Link>
+              ) : null}
             </div>
 
             <Button
@@ -135,4 +157,3 @@ export function UserMenu({ className }: { className?: string }) {
     </div>
   );
 }
-

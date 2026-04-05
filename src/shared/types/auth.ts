@@ -16,6 +16,7 @@ export type SessionMembership = {
   workspaceId: string;
   workspaceName: string;
   workspaceSlug: string;
+  workspaceAvatarUrl?: string | null;
   role: WorkspaceRole;
 };
 
@@ -33,6 +34,7 @@ export type AuthSessionResponse =
         workspaceId: string;
         workspaceName: string;
         workspaceSlug: string;
+        workspaceAvatarUrl?: string | null;
         role: WorkspaceRole;
       } | null;
       permissions: SessionPermissions | null;

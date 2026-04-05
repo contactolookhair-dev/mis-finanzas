@@ -11,6 +11,7 @@ import { StatPill } from "@/components/ui/stat-pill";
 import { resolveAccountAppearance } from "@/lib/accounts/account-appearance";
 import { formatCurrency } from "@/lib/formatters/currency";
 import type { DashboardSnapshot } from "@/shared/types/dashboard";
+import { useLockBodyScroll } from "@/hooks/use-lock-body-scroll";
 
 type AccountItem = {
   id: string;
@@ -511,12 +512,14 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
 
   if (!open) return null;
 
+  useLockBodyScroll(open);
+
   const isCreditCardPurchase = kind === "GASTO" && selectedAccount?.type === "CREDITO";
   const isInstallmentPurchase = isCreditCardPurchase && paymentMode === "installments";
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/42 p-0 sm:items-center sm:p-4">
-      <div className="glass-surface safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(248,250,252,0.9)_100%)] p-4 animate-fade-up ring-1 ring-white/35 sm:max-w-2xl sm:rounded-[32px] sm:p-6">
+      <div className="glass-surface safe-pb w-full max-h-[92vh] overflow-y-auto rounded-t-[30px] bg-[linear-gradient(180deg,rgba(255,255,255,0.92)_0%,rgba(248,250,252,0.9)_100%)] p-4 animate-modal-sheet ring-1 ring-white/35 sm:max-w-2xl sm:rounded-[32px] sm:p-6">
         <div className="mb-4 flex items-center justify-between">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.2em] text-violet-500">Nueva transacción</p>

@@ -6,7 +6,8 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        "h-11 w-full rounded-2xl border border-border bg-white/90 px-4 text-sm outline-none transition placeholder:text-neutral-400 focus:border-primary",
+        // iOS Safari zooms inputs below 16px font-size. Keep 16px on mobile, preserve compact desktop type.
+        "h-11 w-full rounded-2xl border border-border bg-white/90 px-4 text-[16px] outline-none transition placeholder:text-neutral-400 focus:border-primary sm:text-sm",
         props.className
       )}
     />

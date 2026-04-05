@@ -2241,7 +2241,13 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
         ) : null}
 
         {!saved && step.key !== "welcome" ? (
-          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            className={cn(
+              "mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between",
+              // Mobile: keep primary action always visible like a native bottom bar.
+              "sticky bottom-0 z-10 -mx-4 px-4 pb-4 pt-3 bg-[linear-gradient(180deg,rgba(248,250,252,0)_0%,rgba(248,250,252,0.88)_38%,rgba(248,250,252,0.94)_100%)] backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-0"
+            )}
+          >
             <Button
               variant="secondary"
               className="h-11 rounded-full"
@@ -2255,7 +2261,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               {step.key === "review" ? (
                 <Button
-                  className="h-11 rounded-full bg-gradient-to-r from-primary to-violet-600 text-white shadow-[0_18px_40px_rgba(37,99,235,0.18)] ring-1 ring-white/30 hover:brightness-105"
+                  className="h-12 rounded-full bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-[0_22px_46px_rgba(16,185,129,0.22)] ring-1 ring-white/30 hover:brightness-105 sm:h-11"
                   onClick={saveTransaction}
                   disabled={saving || !isReadyToConfirm}
                 >
@@ -2263,7 +2269,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
                   <ChevronRight className="ml-1.5 h-4 w-4" strokeWidth={2.2} />
                 </Button>
               ) : (
-                <Button className="h-11 rounded-full" onClick={next} disabled={!canGoNext() || saving}>
+                <Button className="h-12 rounded-full sm:h-11" onClick={next} disabled={!canGoNext() || saving}>
                   Continuar
                   <ChevronRight className="ml-1.5 h-4 w-4" strokeWidth={2.2} />
                 </Button>

@@ -119,6 +119,17 @@ h4 {
   }
 }
 
+@keyframes modal-sheet-in {
+  0% {
+    transform: translateY(18px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 .text-number-glow {
   animation: count-pop 400ms ease-out;
   text-shadow: 0 0 22px rgba(14, 165, 233, 0.18);
@@ -130,6 +141,10 @@ h4 {
 
 .animate-fade-up {
   animation: fade-up 320ms ease-out;
+}
+
+.animate-modal-sheet {
+  animation: modal-sheet-in 240ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
 .tap-feedback {
@@ -177,6 +192,7 @@ h4 {
   .text-number-glow,
   .animate-shimmer,
   .animate-fade-up,
+  .animate-modal-sheet,
   .tap-feedback,
   .interactive-lift {
     animation: none !important;

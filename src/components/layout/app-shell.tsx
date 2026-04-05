@@ -97,9 +97,14 @@ function AppShellFrame({ children }: { children: ReactNode }) {
       if (detail.status === "success") {
         setWorkspaceToast({
           tone: "success",
-          message: "Perfil cambiado",
+          message: "Bienvenido al perfil de",
           workspaceName: detail.workspaceName ?? null
         });
+        try {
+          window.dispatchEvent(new Event("mis-finanzas:accounts-changed"));
+        } catch {
+          // noop
+        }
       } else if (detail.status === "error") {
         setWorkspaceToast({
           tone: "danger",
@@ -380,8 +385,8 @@ function WorkspaceSwitchSkeleton() {
 }
 
 function WorkspaceReactiveBoundary({ children }: { children: ReactNode }) {
-  const workspaceId = useWorkspaceStore((state) => state.workspaceId);
+  const workspaceVersion = useWorkspaceStore((state) => state.workspaceVersion);
   // Force remount of client trees that fetch via /api (cookie-based workspace) when the active workspace changes.
   // This makes the app feel reactive without requiring router.refresh().
-  return <div key={workspaceId ?? "no-workspace"}>{children}</div>;
+  return <div key={`ws-v${workspaceVersion}`}>{children}</div>;
 }

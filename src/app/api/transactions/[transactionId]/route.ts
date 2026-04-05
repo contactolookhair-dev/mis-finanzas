@@ -34,6 +34,15 @@ function sourceTxMarker(transactionId: string) {
   return `auto:source-tx:${transactionId}`;
 }
 
+function removeMarkerFromNotes(input: string, marker: string) {
+  const parts = input
+    .split("·")
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .filter((p) => p !== marker);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 function extractCreditCardInstallments(metadata: unknown) {
   const raw = metadata as any;
   const source = raw?.manual?.creditCardMeta ?? raw?.import?.creditCardMeta ?? null;
@@ -164,14 +173,29 @@ export async function DELETE(_request: NextRequest, { params }: { params: { tran
   await prisma.$transaction(async (db) => {
     await deleteReimbursementByTransactionId(transaction.id, db);
     await deleteOwnerDebtPayableForTransaction(transaction.workspaceId, transaction.id, db);
-    await db.debtor.deleteMany({
+
+    // IMPORTANT:
+    // Person debts (Debtor) can aggregate multiple movements. Deleting one movement must NOT delete the whole debt,
+    // otherwise users lose unrelated pending amounts (e.g. MacBook) when removing an old source transaction.
+    // We only "unlink" the source marker from notes.
+    const marker = sourceTxMarker(transaction.id);
+    const linkedDebtors = await db.debtor.findMany({
       where: {
         workspaceId: transaction.workspaceId,
         notes: {
-          contains: sourceTxMarker(transaction.id)
+          contains: marker
         }
-      }
+      },
+      select: { id: true, notes: true }
     });
+
+    for (const debtor of linkedDebtors) {
+      const nextNotes = debtor.notes ? removeMarkerFromNotes(debtor.notes, marker) : null;
+      await db.debtor.update({
+        where: { id: debtor.id },
+        data: { notes: nextNotes }
+      });
+    }
 
     await db.transaction.delete({ where: { id: transaction.id } });
   });

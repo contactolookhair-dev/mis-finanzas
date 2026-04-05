@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, startTransition } from "react";
+import { useEffect, useRef, useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Loader2, Plus } from "lucide-react";
 import type { AuthSessionResponse } from "@/shared/types/auth";
@@ -23,10 +23,40 @@ type CreateWorkspaceResponse =
   | { message: string; workspaceId: string; workspaceName: string; workspaceSlug: string }
   | { message?: string };
 
+function WorkspaceAvatar({
+  name,
+  avatarUrl,
+  size = "sm"
+}: {
+  name: string;
+  avatarUrl: string | null;
+  size?: "sm" | "md";
+}) {
+  const initials = initialsFromWorkspace(name);
+  const sizeClass = size === "md" ? "h-9 w-9 rounded-2xl text-[11px]" : "h-7 w-7 rounded-xl text-[10px]";
+  return (
+    <span
+      className={cn(
+        "relative grid shrink-0 place-items-center overflow-hidden bg-slate-900/90 font-semibold text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)] ring-1 ring-white/45",
+        sizeClass
+      )}
+      aria-hidden
+    >
+      {avatarUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+      ) : (
+        initials
+      )}
+    </span>
+  );
+}
+
 export function WorkspaceSwitcher({ className }: { className?: string }) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const setWorkspace = useWorkspaceStore((state) => state.setWorkspace);
+  const confirmWorkspace = useWorkspaceStore((state) => state.confirmWorkspace);
 
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -45,14 +75,18 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   const activeWorkspaceId =
     session?.authenticated === true ? session.activeWorkspace?.workspaceId ?? null : null;
 
-  const memberships =
-    session?.authenticated === true ? session.memberships ?? [] : [];
+  const memberships = session?.authenticated === true ? session.memberships ?? [] : [];
+
+  const activeWorkspaceAvatarUrl =
+    session?.authenticated === true ? session.activeWorkspace?.workspaceAvatarUrl ?? null : null;
 
   const displayedWorkspaceName = optimisticWorkspace?.name ?? activeWorkspaceName;
   const displayedWorkspaceId = optimisticWorkspace?.id ?? activeWorkspaceId;
+  const displayedWorkspaceAvatarUrl = optimisticWorkspace
+    ? memberships.find((m) => m.workspaceId === optimisticWorkspace.id)?.workspaceAvatarUrl ?? null
+    : activeWorkspaceAvatarUrl;
 
   const hasMultiple = memberships.length > 1;
-  const badgeText = useMemo(() => initialsFromWorkspace(displayedWorkspaceName), [displayedWorkspaceName]);
 
   useEffect(() => {
     async function load() {
@@ -61,9 +95,10 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
         const s = await fetchAuthSession();
         setSession(s);
         if (s.authenticated === true && s.activeWorkspace) {
-          setWorkspace({
+          confirmWorkspace({
             workspaceId: s.activeWorkspace.workspaceId,
-            workspaceName: s.activeWorkspace.workspaceName
+            workspaceName: s.activeWorkspace.workspaceName,
+            workspaceAvatarUrl: (s.activeWorkspace as any).workspaceAvatarUrl ?? null
           });
         }
       } catch {
@@ -103,29 +138,31 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
   }, []);
 
   async function refreshSessionAndUI() {
-    // We want the app to be reactive without relying on router.refresh().
-    // Keep this as a fallback for any Server Components that may still be cached.
-    const shouldUseRouterRefreshFallback = false;
-
     const s = await fetchAuthSession();
     setSession(s);
     setOptimisticWorkspace(null);
     if (s.authenticated === true && s.activeWorkspace) {
-      setWorkspace({
+      confirmWorkspace({
         workspaceId: s.activeWorkspace.workspaceId,
-        workspaceName: s.activeWorkspace.workspaceName
+        workspaceName: s.activeWorkspace.workspaceName,
+        workspaceAvatarUrl: (s.activeWorkspace as any).workspaceAvatarUrl ?? null
       });
+    }
+    try {
+      window.dispatchEvent(new Event("mis-finanzas:accounts-changed"));
+    } catch {
+      // noop
     }
     const currentUrl =
       typeof window !== "undefined"
         ? `${window.location.pathname}${window.location.search}${window.location.hash}`
         : "/";
     startTransition(() => {
-      if (shouldUseRouterRefreshFallback) {
-        router.refresh();
-        // Replacing the same URL helps remount client trees that otherwise keep stale in-memory state.
-        router.replace(currentUrl);
-      }
+      // Some pages still depend on Server Components that read the workspace cookie.
+      // A refresh makes the change feel immediate and avoids stale UI without user actions.
+      router.refresh();
+      // Replacing the same URL helps remount client trees that otherwise keep stale in-memory state.
+      router.replace(currentUrl);
     });
   }
 
@@ -141,7 +178,11 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
     const target = memberships.find((m) => m.workspaceId === workspaceId) ?? null;
     if (target?.workspaceName) {
       setOptimisticWorkspace({ id: workspaceId, name: target.workspaceName });
-      setWorkspace({ workspaceId, workspaceName: target.workspaceName });
+      setWorkspace({
+        workspaceId,
+        workspaceName: target.workspaceName,
+        workspaceAvatarUrl: (target as any).workspaceAvatarUrl ?? null
+      });
     } else {
       setOptimisticWorkspace({ id: workspaceId, name: "Cambiando…" });
       setWorkspace({ workspaceId, workspaceName: "Cambiando…" });
@@ -236,9 +277,13 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
         title={displayedWorkspaceName}
         disabled={switching}
       >
-        <StatPill tone="neutral" className="px-2.5 py-1 text-[10px]">
-          {loading ? "…" : badgeText}
-        </StatPill>
+        {loading ? (
+          <StatPill tone="neutral" className="px-2.5 py-1 text-[10px]">
+            …
+          </StatPill>
+        ) : (
+          <WorkspaceAvatar name={displayedWorkspaceName} avatarUrl={displayedWorkspaceAvatarUrl} />
+        )}
         <span className="hidden max-w-[160px] truncate text-sm font-semibold text-slate-900 sm:inline">
           {loading ? "Cargando…" : displayedWorkspaceName}
         </span>
@@ -281,13 +326,16 @@ export function WorkspaceSwitcher({ className }: { className?: string }) {
                     }}
                     disabled={switching}
                   >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
-                        {m.workspaceName}
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        Rol: {m.role}
-                      </p>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <WorkspaceAvatar
+                        name={m.workspaceName}
+                        avatarUrl={m.workspaceAvatarUrl ?? null}
+                        size="md"
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{m.workspaceName}</p>
+                        <p className="truncate text-xs text-slate-500">Rol: {m.role}</p>
+                      </div>
                     </div>
                     {isSwitchingThis ? (
                       <StatPill

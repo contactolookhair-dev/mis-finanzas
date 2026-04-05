@@ -6,6 +6,16 @@ import { isPublicMode } from "@/server/auth/public-mode";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/server/auth/nextauth-options";
 
+const WORKSPACE_PROFILE_KEY = "workspaceProfile";
+
+function readWorkspaceAvatarUrl(importSettings: unknown): string | null {
+  if (!importSettings || typeof importSettings !== "object") return null;
+  const raw = (importSettings as Record<string, unknown>)[WORKSPACE_PROFILE_KEY];
+  if (!raw || typeof raw !== "object") return null;
+  const url = (raw as Record<string, unknown>).avatarUrl;
+  return typeof url === "string" && url.trim() ? url.trim() : null;
+}
+
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -34,6 +44,7 @@ export async function GET(request: NextRequest) {
           workspaceId: workspace.id,
           workspaceName: workspace.name,
           workspaceSlug: workspace.slug,
+          workspaceAvatarUrl: null,
           role: context.role
         },
         permissions: {
@@ -52,6 +63,7 @@ export async function GET(request: NextRequest) {
             workspaceId: workspace.id,
             workspaceName: workspace.name,
             workspaceSlug: workspace.slug,
+            workspaceAvatarUrl: null,
             role: context.role
           }
         ]
@@ -78,12 +90,30 @@ export async function GET(request: NextRequest) {
     },
     orderBy: { createdAt: "asc" }
   });
+
+  const workspaceIds = memberships.map((member) => member.workspaceId);
+  const appSettingsRows = workspaceIds.length
+    ? await prisma.appSettings.findMany({
+        where: { workspaceId: { in: workspaceIds } },
+        select: { workspaceId: true, importSettings: true }
+      })
+    : [];
+
+  const avatarByWorkspaceId = new Map<string, string | null>();
+  for (const row of appSettingsRows) {
+    avatarByWorkspaceId.set(row.workspaceId, readWorkspaceAvatarUrl(row.importSettings));
+  }
+
   const activeMembership =
     context.workspaceId && context.role
       ? memberships.find(
           (member) => member.workspaceId === context.workspaceId && member.role === context.role
         ) ?? null
       : null;
+
+  const activeWorkspaceAvatarUrl = activeMembership
+    ? avatarByWorkspaceId.get(activeMembership.workspaceId) ?? null
+    : null;
 
   return NextResponse.json({
     authenticated: true,
@@ -96,6 +126,7 @@ export async function GET(request: NextRequest) {
           workspaceId: activeMembership.workspaceId,
           workspaceName: activeMembership.workspace.name,
           workspaceSlug: activeMembership.workspace.slug,
+          workspaceAvatarUrl: activeWorkspaceAvatarUrl,
           role: activeMembership.role
         }
       : null,
@@ -116,6 +147,7 @@ export async function GET(request: NextRequest) {
       workspaceId: member.workspaceId,
       workspaceName: member.workspace.name,
       workspaceSlug: member.workspace.slug,
+      workspaceAvatarUrl: avatarByWorkspaceId.get(member.workspaceId) ?? null,
       role: member.role
     }))
   });
