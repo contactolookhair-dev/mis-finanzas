@@ -58,6 +58,7 @@ type WizardState = {
   creditInstallmentTargetType: CreditInstallmentTargetType | null;
   creditInstallmentTargetId: string | null;
   creditInstallmentTargetName: string | null;
+  creditInstallmentDebtId: string | null;
   creditImpactType: CreditImpactType | null;
   paymentMode: PaymentMode;
   cuotaActual: string;
@@ -68,7 +69,6 @@ type WizardState = {
 type StepKey =
   | "welcome"
   | "account"
-  | "amount"
   | "type"
   | "creditExpenseImpact"
   | "creditExpensePayment"
@@ -79,6 +79,8 @@ type StepKey =
   | "creditPayIntent"
   | "creditPayWhat"
   | "creditInstallmentTarget"
+  | "creditInstallmentPick"
+  | "amount"
   | "category"
   | "note"
   | "review";
@@ -102,6 +104,7 @@ const STEP_TITLES: Record<StepKey, string> = {
   creditPayIntent: "¿Este dinero lo estás usando para pagar la tarjeta?",
   creditPayWhat: "¿Qué quieres pagar?",
   creditInstallmentTarget: "¿A quién corresponde esta cuota?",
+  creditInstallmentPick: "Selecciona la cuota",
   category: "¿En qué categoría cae?",
   note: "¿Quieres agregar un detalle?",
   review: "Revisa antes de confirmar"
@@ -262,8 +265,7 @@ function buildDynamicSteps(input: {
 }): WizardStep[] {
   const steps: WizardStep[] = [
     { key: "welcome", title: STEP_TITLES.welcome },
-    { key: "account", title: STEP_TITLES.account },
-    { key: "amount", title: STEP_TITLES.amount }
+    { key: "account", title: STEP_TITLES.account }
   ];
   if (!input.lockedMovementType) {
     steps.push({ key: "type", title: STEP_TITLES.type });
@@ -278,6 +280,7 @@ function buildDynamicSteps(input: {
   if (!accountType || !movementType) {
     return [
       ...steps,
+      { key: "amount", title: STEP_TITLES.amount },
       { key: "category", title: STEP_TITLES.category },
       { key: "note", title: STEP_TITLES.note },
       { key: "review", title: STEP_TITLES.review }
@@ -304,6 +307,7 @@ function buildDynamicSteps(input: {
             : [];
       return [
         ...steps,
+        { key: "amount", title: STEP_TITLES.amount },
         { key: "creditExpenseImpact", title: STEP_TITLES.creditExpenseImpact },
         { key: "creditExpensePayment", title: STEP_TITLES.creditExpensePayment },
         ...ownerPick,
@@ -314,21 +318,28 @@ function buildDynamicSteps(input: {
       ];
     }
     if (isIncome) {
-      const payIntentStep: WizardStep[] = [{ key: "creditPayIntent", title: STEP_TITLES.creditPayIntent }];
-      const payWhatStep: WizardStep[] =
-        creditPayIntent === "PAY_CARD" ? [{ key: "creditPayWhat", title: STEP_TITLES.creditPayWhat }] : [];
+      // New UX: choose the payment type before asking for amount.
+      // - INSTALLMENT: pick a pending installment, auto-fills amount.
+      // - PARTIAL_DEBT: amount is manual.
+      // - TOTAL: auto-fill amount and skip manual entry.
+      const payWhatStep: WizardStep[] = [{ key: "creditPayWhat", title: STEP_TITLES.creditPayWhat }];
       const installmentTargetStep: WizardStep[] =
-        creditPayIntent === "PAY_CARD" && input.creditPayWhat === "INSTALLMENT"
+        input.creditPayWhat === "INSTALLMENT"
           ? [{ key: "creditInstallmentTarget", title: STEP_TITLES.creditInstallmentTarget }]
           : [];
-      const impactStep: WizardStep[] =
-        creditPayIntent === "PAY_CARD" ? [{ key: "creditIncomeImpact", title: STEP_TITLES.creditIncomeImpact }] : [];
+      const installmentPickStep: WizardStep[] =
+        input.creditPayWhat === "INSTALLMENT"
+          ? [{ key: "creditInstallmentPick", title: STEP_TITLES.creditInstallmentPick }]
+          : [];
+      const amountStep: WizardStep[] =
+        input.creditPayWhat === "PARTIAL_DEBT" ? [{ key: "amount", title: STEP_TITLES.amount }] : [];
+
       return [
         ...steps,
-        ...payIntentStep,
         ...payWhatStep,
         ...installmentTargetStep,
-        ...impactStep,
+        ...installmentPickStep,
+        ...amountStep,
         { key: "note", title: STEP_TITLES.note },
         { key: "review", title: STEP_TITLES.review }
       ];
@@ -337,7 +348,7 @@ function buildDynamicSteps(input: {
 
   // Debit / Cash.
   if (isIncome) {
-    return [...steps, { key: "note", title: STEP_TITLES.note }, { key: "review", title: STEP_TITLES.review }];
+    return [...steps, { key: "amount", title: STEP_TITLES.amount }, { key: "note", title: STEP_TITLES.note }, { key: "review", title: STEP_TITLES.review }];
   }
 
   // Expense path for debit/cash.
@@ -351,6 +362,7 @@ function buildDynamicSteps(input: {
           : [];
     return [
       ...steps,
+      { key: "amount", title: STEP_TITLES.amount },
       ...ownerPick,
       ...counterpartyStep,
       { key: "category", title: STEP_TITLES.category },
@@ -443,11 +455,41 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     creditInstallmentTargetType: null,
     creditInstallmentTargetId: null,
     creditInstallmentTargetName: null,
+    creditInstallmentDebtId: null,
     creditImpactType: null,
     paymentMode: "single",
     cuotaActual: "",
     cuotaTotal: "",
     purchaseInstallmentError: null
+  });
+
+  const [creditCardPayContext, setCreditCardPayContext] = useState<{
+    loading: boolean;
+    error: string | null;
+    remainingCycle: number | null;
+    billed: number | null;
+    paid: number | null;
+    dueDate: string | null;
+    // Installment debts for this card (from Pendientes people debts only).
+    installmentOptions: Array<{
+      debtorId: string;
+      debtorName: string;
+      reason: string;
+      installmentCurrent: number | null;
+      installmentTotal: number | null;
+      installmentAmount: number | null;
+      purchaseTotalAmount: number | null;
+      remainingInstallments: number | null;
+      sourceTxId: string | null;
+    }>;
+  }>({
+    loading: false,
+    error: null,
+    remainingCycle: null,
+    billed: null,
+    paid: null,
+    dueDate: null,
+    installmentOptions: []
   });
 
   useEffect(() => {
@@ -632,6 +674,147 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
   );
 
   const step = steps[Math.min(stepIndex, Math.max(steps.length - 1, 0))];
+
+  useEffect(() => {
+    // Credit card income: we always treat it as "pay card" for this wizard flow.
+    if (selectedAccount?.type !== "CREDITO") return;
+    if (state.movementType !== "INGRESO") return;
+    if (state.creditPayIntent === "PAY_CARD") return;
+    setState((s) => ({ ...s, creditPayIntent: "PAY_CARD" }));
+  }, [selectedAccount?.type, state.creditPayIntent, state.movementType]);
+
+  useEffect(() => {
+    // Load cycle context + installment debts for credit-card income.
+    const accountId = state.accountId;
+    const shouldLoad =
+      Boolean(accountId) &&
+      selectedAccount?.type === "CREDITO" &&
+      state.movementType === "INGRESO";
+    if (!shouldLoad) return;
+
+    let alive = true;
+    async function load() {
+      try {
+        setCreditCardPayContext((prev) => ({ ...prev, loading: true, error: null }));
+
+        const [healthRes, debtsRes, txRes] = await Promise.all([
+          fetch("/api/accounts/credit/health", { cache: "no-store" }),
+          fetch("/api/debts", { cache: "no-store" }),
+          fetch(`/api/transactions?accountId=${encodeURIComponent(accountId!)}&type=EGRESO&take=500`, {
+            cache: "no-store"
+          })
+        ]);
+
+        const healthPayload = healthRes.ok ? ((await healthRes.json()) as any) : null;
+        const debtsPayload = debtsRes.ok ? ((await debtsRes.json()) as any) : null;
+        const txPayload = txRes.ok ? ((await txRes.json()) as any) : null;
+
+        const txIds = new Set<string>((txPayload?.items ?? []).map((t: any) => String(t.id)).filter(Boolean));
+        const people = (debtsPayload?.people ?? []) as any[];
+
+        const extractSourceTxId = (notes?: string | null) => {
+          if (!notes) return null;
+          const match = String(notes).match(/\bauto:source-tx:([a-z0-9_]+)\b/i);
+          return match ? match[1] : null;
+        };
+
+        const installmentOptions = people
+          .map((p) => {
+            const sourceTxId = extractSourceTxId(p.notes ?? null);
+            if (!sourceTxId || !txIds.has(sourceTxId)) return null;
+            const total = typeof p.creditInstallmentTotal === "number" ? p.creditInstallmentTotal : null;
+            if (!total || total <= 1) return null;
+            const current = typeof p.creditInstallmentCurrent === "number" ? p.creditInstallmentCurrent : null;
+            const remaining = typeof p.creditInstallmentsRemaining === "number" ? p.creditInstallmentsRemaining : null;
+            const installmentAmount =
+              typeof p.creditInstallmentAmount === "number" && Number.isFinite(p.creditInstallmentAmount)
+                ? p.creditInstallmentAmount
+                : null;
+            const purchaseTotalAmount =
+              typeof p.creditPurchaseTotalAmount === "number" && Number.isFinite(p.creditPurchaseTotalAmount)
+                ? p.creditPurchaseTotalAmount
+                : typeof p.totalAmount === "number"
+                  ? p.totalAmount
+                  : null;
+            return {
+              debtorId: String(p.id),
+              debtorName: String(p.name ?? "—"),
+              reason: String(p.reason ?? "Movimiento"),
+              installmentCurrent: current,
+              installmentTotal: total,
+              installmentAmount,
+              purchaseTotalAmount,
+              remainingInstallments: remaining,
+              sourceTxId
+            };
+          })
+          .filter(Boolean) as any[];
+
+        // Only show "pending-ish" installments.
+        const filteredInstallments = installmentOptions
+          .filter((it: any) => (typeof it.remainingInstallments === "number" ? it.remainingInstallments > 0 : true))
+          .sort((a: any, b: any) => {
+            // Prefer those closer to the end (user likely paying last quotas) then by amount desc.
+            const ar = typeof a.remainingInstallments === "number" ? a.remainingInstallments : 999;
+            const br = typeof b.remainingInstallments === "number" ? b.remainingInstallments : 999;
+            if (ar !== br) return ar - br;
+            return (b.installmentAmount ?? 0) - (a.installmentAmount ?? 0);
+          });
+
+        const healthItems = (healthPayload?.items ?? []) as any[];
+        const entry = healthItems.find((it) => String(it.accountId ?? it.account?.id ?? "") === String(accountId));
+        const latest = entry?.statements?.latest ?? entry?.latest ?? entry?.snapshot ?? null;
+
+        // This endpoint returns items with `statement.latest.summary.totalBilled` etc,
+        // but we only need: billed + payments -> remaining.
+        const billed =
+          typeof latest?.summary?.totalBilled === "number" && Number.isFinite(latest.summary.totalBilled)
+            ? latest.summary.totalBilled
+            : null;
+        const paid =
+          typeof latest?.totals?.payments === "number" && Number.isFinite(latest.totals.payments)
+            ? latest.totals.payments
+            : null;
+        const remainingCycle =
+          billed !== null && paid !== null ? Math.max(0, Math.round(billed - paid)) : billed !== null ? Math.max(0, Math.round(billed)) : null;
+        const dueDate = typeof latest?.summary?.dueDate === "string" ? latest.summary.dueDate : null;
+
+        if (!alive) return;
+        setCreditCardPayContext({
+          loading: false,
+          error: null,
+          remainingCycle,
+          billed: billed !== null ? Math.round(billed) : null,
+          paid: paid !== null ? Math.round(paid) : null,
+          dueDate,
+          installmentOptions: filteredInstallments
+        });
+      } catch (e) {
+        if (!alive) return;
+        setCreditCardPayContext((prev) => ({
+          ...prev,
+          loading: false,
+          error: e instanceof Error ? e.message : "No se pudo cargar el contexto de pago."
+        }));
+      }
+    }
+
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, [selectedAccount?.type, state.accountId, state.movementType]);
+
+  useEffect(() => {
+    // Auto-fill amount for "Pago total" once we have remainingCycle.
+    if (selectedAccount?.type !== "CREDITO") return;
+    if (state.movementType !== "INGRESO") return;
+    if (state.creditPayWhat !== "TOTAL") return;
+    if (state.amount.trim()) return;
+    if (typeof creditCardPayContext.remainingCycle !== "number") return;
+    if (!Number.isFinite(creditCardPayContext.remainingCycle) || creditCardPayContext.remainingCycle <= 0) return;
+    setState((s) => ({ ...s, amount: String(Math.max(1, creditCardPayContext.remainingCycle!)) }));
+  }, [creditCardPayContext.remainingCycle, selectedAccount?.type, state.amount, state.creditPayWhat, state.movementType]);
 
   useEffect(() => {
     lastStepKeyRef.current = step.key;
@@ -838,23 +1021,43 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
       if (key === "company" && !(state.companyName || state.companyId)) return false;
       if (key === "creditPayIntent" && !state.creditPayIntent) return false;
       if (key === "creditPayWhat" && !state.creditPayWhat) return false;
+      if (key === "creditInstallmentTarget") {
+        if (state.creditPayWhat !== "INSTALLMENT") continue;
+        if (!state.creditInstallmentTargetType) return false;
+        if (!state.creditInstallmentTargetId) return false;
+      }
+      if (key === "creditInstallmentPick") {
+        if (state.creditPayWhat !== "INSTALLMENT") continue;
+        if (!state.creditInstallmentDebtId) return false;
+        if (!(amountNumber && amountNumber > 0)) return false;
+      }
       if (key === "category" && !state.categoryId) return false;
+    }
+
+    // For credit-card income, some paths do not display the amount step, but we still need a valid amount to save.
+    if (selectedAccount?.type === "CREDITO" && state.movementType === "INGRESO") {
+      if (state.creditPayWhat === "TOTAL" && !(amountNumber && amountNumber > 0)) return false;
+      if (state.creditPayWhat === "INSTALLMENT" && !(amountNumber && amountNumber > 0)) return false;
     }
     return true;
   }, [
     amountNumber,
+    selectedAccount?.type,
     state.accountId,
     state.categoryId,
     state.companyName,
     state.creditImpactType,
     state.creditPayIntent,
     state.creditPayWhat,
+    state.movementType,
     state.cuotaActual,
     state.cuotaTotal,
     state.expenseOwner,
-    state.movementType,
     state.paymentMode,
     state.personName,
+    state.creditInstallmentDebtId,
+    state.creditInstallmentTargetId,
+    state.creditInstallmentTargetType,
     steps
   ]);
 
@@ -1061,6 +1264,14 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     if (step.key === "company") return Boolean(state.companyName || state.companyId);
     if (step.key === "creditPayIntent") return Boolean(state.creditPayIntent);
     if (step.key === "creditPayWhat") return Boolean(state.creditPayWhat);
+    if (step.key === "creditInstallmentTarget") {
+      if (state.creditPayWhat !== "INSTALLMENT") return true;
+      return Boolean(state.creditInstallmentTargetType && state.creditInstallmentTargetId);
+    }
+    if (step.key === "creditInstallmentPick") {
+      if (state.creditPayWhat !== "INSTALLMENT") return true;
+      return Boolean(state.creditInstallmentDebtId && amountNumber && amountNumber > 0);
+    }
     if (step.key === "category") return Boolean(state.categoryId);
     return true;
   }
@@ -1196,6 +1407,13 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
         state.creditInstallmentTargetId
           ? `auto:cc-installment-target:${state.creditInstallmentTargetType.toLowerCase()}:${state.creditInstallmentTargetId}`
           : null,
+        isCreditAccount &&
+        state.movementType === "INGRESO" &&
+        state.creditPayIntent === "PAY_CARD" &&
+        state.creditPayWhat === "INSTALLMENT" &&
+        state.creditInstallmentDebtId
+          ? `auto:cc-installment-source:${state.creditInstallmentDebtId}`
+          : null,
         isPerson ? "Corresponde: otra persona" : isCompany ? "Corresponde: empresa" : "Corresponde: es mío",
         state.note.trim() || null
       ].filter(Boolean);
@@ -1258,6 +1476,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
         const notes = [
           "Auto: pago cuota (tarjeta)",
           `auto:source-tx:${createdTransactionId}`,
+          state.creditInstallmentDebtId ? `auto:cc-installment-source:${state.creditInstallmentDebtId}` : null,
           state.creditInstallmentTargetName ? `Cuota de: ${state.creditInstallmentTargetName}` : null,
           state.note.trim() || null
         ]
@@ -1383,6 +1602,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
       creditInstallmentTargetType: null,
       creditInstallmentTargetId: null,
       creditInstallmentTargetName: null,
+      creditInstallmentDebtId: null,
       creditImpactType: null,
       paymentMode: "single",
       cuotaActual: "",
@@ -1645,9 +1865,9 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
               </div>
             )}
           </div>
-        ) : step.key === "amount" ? (
-          <div className="space-y-4">
-            <div className="flex items-end justify-between gap-3">
+	        ) : step.key === "amount" ? (
+	          <div className="space-y-4">
+	            <div className="flex items-end justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                   Monto
@@ -1656,15 +1876,64 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
                   {amountNumber ? formatCurrency(amountNumber) : "$0"}
                 </p>
               </div>
-              {selectedAccount ? (
-                <StatPill tone="neutral" className="px-3 py-1 text-[10px]">
-                  {selectedAccount.name}
-                </StatPill>
+	              {selectedAccount ? (
+	                <StatPill tone="neutral" className="px-3 py-1 text-[10px]">
+	                  {selectedAccount.name}
+	                </StatPill>
+	              ) : null}
+	            </div>
+              {selectedAccount?.type === "CREDITO" &&
+              state.movementType === "INGRESO" &&
+              state.creditPayWhat === "PARTIAL_DEBT" ? (
+                <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                      Resumen del ciclo
+                    </p>
+                    {creditCardPayContext.dueDate ? (
+                      <StatPill tone="neutral" className="px-2.5 py-1 text-[10px]">
+                        Vence {formatShortDate(creditCardPayContext.dueDate)}
+                      </StatPill>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <div className="rounded-[18px] border border-white/60 bg-white/70 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Facturado</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {typeof creditCardPayContext.billed === "number"
+                          ? formatCurrency(creditCardPayContext.billed)
+                          : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-[18px] border border-white/60 bg-white/70 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Pagado</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {typeof creditCardPayContext.paid === "number" ? formatCurrency(creditCardPayContext.paid) : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-[18px] border border-white/60 bg-white/70 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Falta</p>
+                      <p className="mt-1 text-sm font-semibold text-rose-700">
+                        {typeof creditCardPayContext.remainingCycle === "number"
+                          ? formatCurrency(creditCardPayContext.remainingCycle)
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {typeof creditCardPayContext.remainingCycle === "number" ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Despu&eacute;s de este abono, el ciclo bajar&aacute; a{" "}
+                      <span className="font-semibold text-slate-700">
+                        {formatCurrency(Math.max(0, creditCardPayContext.remainingCycle - (amountNumber ?? 0)))}
+                      </span>
+                      .
+                    </p>
+                  ) : null}
+                </SurfaceCard>
               ) : null}
-            </div>
-            <div className="rounded-[24px] border border-white/70 bg-white/75 p-3 shadow-[0_16px_36px_rgba(15,23,42,0.06)] ring-1 ring-white/60">
-              <Input
-                id="lab-amount-input"
+	            <div className="rounded-[24px] border border-white/70 bg-white/75 p-3 shadow-[0_16px_36px_rgba(15,23,42,0.06)] ring-1 ring-white/60">
+	              <Input
+	                id="lab-amount-input"
                 inputMode="numeric"
                 placeholder="Ej: 15990"
                 value={state.amount}
@@ -2313,20 +2582,19 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
 	                  <button
 	                    key={option.key}
 	                    type="button"
-	                    onClick={() => {
-	                      setState((s) => ({
-	                        ...s,
-	                        creditPayWhat: option.key,
-	                        ...(option.key === "INSTALLMENT"
-	                          ? {}
-	                          : {
-	                              creditInstallmentTargetType: null,
-	                              creditInstallmentTargetId: null,
-	                              creditInstallmentTargetName: null
-	                            })
-	                      }));
-	                      window.setTimeout(() => next(), 90);
-	                    }}
+		                    onClick={() => {
+		                      setState((s) => ({
+		                        ...s,
+		                        creditPayWhat: option.key,
+		                        creditInstallmentTargetType: null,
+		                        creditInstallmentTargetId: null,
+		                        creditInstallmentTargetName: null,
+		                        creditInstallmentDebtId: null,
+		                        // Amount is only manual for partial debt. For installment/total it's auto-filled.
+		                        amount: option.key === "PARTIAL_DEBT" ? s.amount : ""
+		                      }));
+		                      window.setTimeout(() => next(), 90);
+		                    }}
 	                    className={cn(
 	                      "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
 	                      selected ? "border-violet-200 bg-violet-50/80" : "border-white/70 bg-white/70 hover:bg-white"
@@ -2339,254 +2607,298 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
 	              })}
 	            </div>
 	          </div>
-	        ) : step.key === "creditInstallmentTarget" ? (
-	          <div className="space-y-3">
-	            <p className="text-sm text-slate-600">
-	              Te muestro sugerencias basadas en compras en cr&eacute;dito anteriores hechas con esta tarjeta.
-	            </p>
+		        ) : step.key === "creditInstallmentTarget" ? (
+		          <div className="space-y-3">
+		            <p className="text-sm text-slate-600">
+		              Elige qui&eacute;n pagar&aacute; esta cuota. En el siguiente paso ver&aacute;s sus cuotas pendientes.
+		            </p>
 
-	            {creditInstallmentCandidates.loading ? (
-	              <div className="grid gap-2 sm:grid-cols-2">
-	                {Array.from({ length: 4 }).map((_, idx) => (
-	                  <SurfaceCard key={idx} variant="soft" padding="sm" className="space-y-2">
-	                    <Skeleton className="h-4 w-32" />
-	                    <Skeleton className="h-3 w-24" />
-	                  </SurfaceCard>
-	                ))}
-	              </div>
-	            ) : creditInstallmentCandidates.error ? (
-	              <SurfaceCard variant="soft" padding="sm" className="border border-rose-200 bg-rose-50/70">
-	                <p className="text-sm font-semibold text-rose-700">No se pudieron cargar sugerencias</p>
-	                <p className="mt-1 text-xs text-rose-700/80">{creditInstallmentCandidates.error}</p>
-	              </SurfaceCard>
-	            ) : creditInstallmentCandidates.people.length === 0 &&
-	              creditInstallmentCandidates.companies.length === 0 ? (
-	              <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
-	                <p className="text-sm font-semibold text-slate-900">No encontr&eacute; coincidencias</p>
-	                <p className="mt-1 text-xs text-slate-500">
-	                  Puedes continuar igual. Si m&aacute;s adelante registras gastos a nombre de personas o
-	                  empresas en esta tarjeta, aparecer&aacute;n aqu&iacute;.
-	                </p>
-	              </SurfaceCard>
-	            ) : (
-	              <div className="space-y-3">
-	                {creditInstallmentCandidates.people.length ? (
-	                  <div className="space-y-2">
-	                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-	                      Personas
-	                    </p>
-	                    <div className="grid gap-2 sm:grid-cols-2">
-	                      {creditInstallmentCandidates.people.map((person) => {
-	                        const selected =
-	                          state.creditInstallmentTargetType === "PERSON" &&
-	                          state.creditInstallmentTargetId === person.id;
-	                        return (
-	                          <button
-	                            key={person.id}
-	                            type="button"
-	                            onClick={() => {
-	                              setState((s) => ({
-	                                ...s,
-	                                creditInstallmentTargetType: "PERSON",
-	                                creditInstallmentTargetId: person.id,
-	                                creditInstallmentTargetName: person.name
-	                              }));
-	                            }}
-	                            className={cn(
-	                              "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
-	                              selected
-	                                ? "border-emerald-200 bg-emerald-50/80"
-	                                : "border-white/70 bg-white/70 hover:bg-white"
-	                            )}
-	                          >
-	                            <div className="flex items-center justify-between gap-2">
-	                              <p className="truncate text-sm font-semibold text-slate-900">{person.name}</p>
-	                              <StatPill tone="neutral" className="px-2 py-1 text-[10px]">
-	                                Persona
-	                              </StatPill>
-	                            </div>
-	                            <p className="mt-1 text-xs text-slate-500">
-	                              {person.purchasesCount} compra(s) en cr&eacute;dito
-	                            </p>
-	                          </button>
-	                        );
-	                      })}
-	                    </div>
-	                  </div>
-	                ) : null}
+		            {creditInstallmentCandidates.loading ? (
+		              <div className="grid gap-2 sm:grid-cols-2">
+		                {Array.from({ length: 4 }).map((_, idx) => (
+		                  <SurfaceCard key={idx} variant="soft" padding="sm" className="space-y-2">
+		                    <Skeleton className="h-4 w-32" />
+		                    <Skeleton className="h-3 w-24" />
+		                  </SurfaceCard>
+		                ))}
+		              </div>
+		            ) : creditInstallmentCandidates.error ? (
+		              <SurfaceCard variant="soft" padding="sm" className="border border-rose-200 bg-rose-50/70">
+		                <p className="text-sm font-semibold text-rose-700">No se pudieron cargar sugerencias</p>
+		                <p className="mt-1 text-xs text-rose-700/80">{creditInstallmentCandidates.error}</p>
+		              </SurfaceCard>
+		            ) : creditInstallmentCandidates.people.length === 0 &&
+		              creditInstallmentCandidates.companies.length === 0 ? (
+		              <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
+		                <p className="text-sm font-semibold text-slate-900">No encontr&eacute; coincidencias</p>
+		                <p className="mt-1 text-xs text-slate-500">
+		                  Si m&aacute;s adelante registras compras en cr&eacute;dito a nombre de personas/empresas en esta
+		                  tarjeta, aparecer&aacute;n aqu&iacute;.
+		                </p>
+		              </SurfaceCard>
+		            ) : (
+		              <div className="space-y-3">
+		                {creditInstallmentCandidates.people.length ? (
+		                  <div className="space-y-2">
+		                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+		                      Personas
+		                    </p>
+		                    <div className="grid gap-2 sm:grid-cols-2">
+		                      {creditInstallmentCandidates.people.map((person) => {
+		                        const selected =
+		                          state.creditInstallmentTargetType === "PERSON" &&
+		                          state.creditInstallmentTargetId === person.id;
+		                        return (
+		                          <button
+		                            key={person.id}
+		                            type="button"
+		                            onClick={() => {
+		                              setState((s) => ({
+		                                ...s,
+		                                creditInstallmentTargetType: "PERSON",
+		                                creditInstallmentTargetId: person.id,
+		                                creditInstallmentTargetName: person.name,
+		                                creditInstallmentDebtId: null,
+		                                amount: ""
+		                              }));
+		                              window.setTimeout(() => next(), 90);
+		                            }}
+		                            className={cn(
+		                              "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
+		                              selected
+		                                ? "border-emerald-200 bg-emerald-50/80"
+		                                : "border-white/70 bg-white/70 hover:bg-white"
+		                            )}
+		                          >
+		                            <div className="flex items-center justify-between gap-2">
+		                              <p className="truncate text-sm font-semibold text-slate-900">{person.name}</p>
+		                              <StatPill tone="neutral" className="px-2 py-1 text-[10px]">
+		                                Persona
+		                              </StatPill>
+		                            </div>
+		                            <p className="mt-1 text-xs text-slate-500">
+		                              {person.purchasesCount} compra(s) en cr&eacute;dito
+		                            </p>
+		                          </button>
+		                        );
+		                      })}
+		                    </div>
+		                  </div>
+		                ) : null}
 
-	                {creditInstallmentCandidates.companies.length ? (
-	                  <div className="space-y-2">
-	                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-	                      Empresas
-	                    </p>
-	                    <div className="grid gap-2 sm:grid-cols-2">
-	                      {creditInstallmentCandidates.companies.map((company) => {
-	                        const selected =
-	                          state.creditInstallmentTargetType === "COMPANY" &&
-	                          state.creditInstallmentTargetId === company.id;
-	                        return (
-	                          <button
-	                            key={company.id}
-	                            type="button"
-	                            onClick={() => {
-	                              setState((s) => ({
-	                                ...s,
-	                                creditInstallmentTargetType: "COMPANY",
-	                                creditInstallmentTargetId: company.id,
-	                                creditInstallmentTargetName: company.name
-	                              }));
-	                            }}
-	                            className={cn(
-	                              "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
-	                              selected
-	                                ? "border-emerald-200 bg-emerald-50/80"
-	                                : "border-white/70 bg-white/70 hover:bg-white"
-	                            )}
-	                          >
-	                            <div className="flex items-center justify-between gap-2">
-	                              <p className="truncate text-sm font-semibold text-slate-900">{company.name}</p>
-	                              <StatPill tone="neutral" className="px-2 py-1 text-[10px]">
-	                                Empresa
-	                              </StatPill>
-	                            </div>
-	                            <p className="mt-1 text-xs text-slate-500">
-	                              {company.purchasesCount} compra(s) en cr&eacute;dito
-	                            </p>
-	                          </button>
-	                        );
-	                      })}
-	                    </div>
-	                  </div>
-	                ) : null}
+		                {creditInstallmentCandidates.companies.length ? (
+		                  <div className="space-y-2">
+		                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+		                      Empresas
+		                    </p>
+		                    <div className="grid gap-2 sm:grid-cols-2">
+		                      {creditInstallmentCandidates.companies.map((company) => {
+		                        const selected =
+		                          state.creditInstallmentTargetType === "COMPANY" &&
+		                          state.creditInstallmentTargetId === company.id;
+		                        return (
+		                          <button
+		                            key={company.id}
+		                            type="button"
+		                            onClick={() => {
+		                              setState((s) => ({
+		                                ...s,
+		                                creditInstallmentTargetType: "COMPANY",
+		                                creditInstallmentTargetId: company.id,
+		                                creditInstallmentTargetName: company.name,
+		                                creditInstallmentDebtId: null,
+		                                amount: ""
+		                              }));
+		                              window.setTimeout(() => next(), 90);
+		                            }}
+		                            className={cn(
+		                              "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
+		                              selected
+		                                ? "border-emerald-200 bg-emerald-50/80"
+		                                : "border-white/70 bg-white/70 hover:bg-white"
+		                            )}
+		                          >
+		                            <div className="flex items-center justify-between gap-2">
+		                              <p className="truncate text-sm font-semibold text-slate-900">{company.name}</p>
+		                              <StatPill tone="neutral" className="px-2 py-1 text-[10px]">
+		                                Empresa
+		                              </StatPill>
+		                            </div>
+		                            <p className="mt-1 text-xs text-slate-500">
+		                              {company.purchasesCount} compra(s) en cr&eacute;dito
+		                            </p>
+		                          </button>
+		                        );
+		                      })}
+		                    </div>
+		                  </div>
+		                ) : null}
+		              </div>
+		            )}
+		          </div>
+		        ) : step.key === "creditInstallmentPick" ? (
+		          <div className="space-y-3">
+		            {state.creditInstallmentTargetType === "COMPANY" ? (
+		              <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
+		                <p className="text-sm font-semibold text-slate-900">Cuotas de empresa</p>
+		                <p className="mt-1 text-xs text-slate-500">
+		                  Por ahora, el pago autom&aacute;tico de cuotas est&aacute; integrado con <span className="font-semibold">personas</span> en
+		                  Pendientes. Puedes registrar este ingreso igual, pero no se asociar&aacute; autom&aacute;ticamente a una deuda.
+		                </p>
+		              </SurfaceCard>
+		            ) : creditCardPayContext.loading ? (
+		              <div className="grid gap-2 sm:grid-cols-2">
+		                {Array.from({ length: 4 }).map((_, idx) => (
+		                  <SurfaceCard key={idx} variant="soft" padding="sm" className="space-y-2">
+		                    <Skeleton className="h-4 w-40" />
+		                    <Skeleton className="h-3 w-24" />
+		                  </SurfaceCard>
+		                ))}
+		              </div>
+		            ) : creditCardPayContext.error ? (
+		              <SurfaceCard variant="soft" padding="sm" className="border border-rose-200 bg-rose-50/70">
+		                <p className="text-sm font-semibold text-rose-700">No se pudo cargar las cuotas</p>
+		                <p className="mt-1 text-xs text-rose-700/80">{creditCardPayContext.error}</p>
+		              </SurfaceCard>
+		            ) : (
+		              <div className="space-y-3">
+		                <SurfaceCard variant="soft" padding="sm" className="border border-emerald-200/70 bg-emerald-50/60">
+		                  <div className="flex items-start justify-between gap-3">
+		                    <div className="min-w-0">
+		                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700/70">
+		                        Seleccionado
+		                      </p>
+		                      <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+		                        {state.creditInstallmentTargetName ?? "—"}
+		                      </p>
+		                      <p className="mt-0.5 text-xs text-slate-600">
+		                        Elige la cuota que est&aacute;s pagando ahora. El monto se autocompletar&aacute;.
+		                      </p>
+		                    </div>
+		                    <Button
+		                      type="button"
+		                      variant="secondary"
+		                      className="h-9 rounded-full px-3"
+		                      onClick={() => {
+		                        setState((s) => ({
+		                          ...s,
+		                          creditInstallmentTargetType: null,
+		                          creditInstallmentTargetId: null,
+		                          creditInstallmentTargetName: null,
+		                          creditInstallmentDebtId: null,
+		                          amount: ""
+		                        }));
+		                        window.setTimeout(() => back(), 60);
+		                      }}
+		                    >
+		                      Cambiar
+		                    </Button>
+		                  </div>
+		                </SurfaceCard>
 
-	                <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
-	                  <p className="text-xs text-slate-500">
-	                    Opcional: si no seleccionas nada, igual puedes continuar y registrar el pago.
-	                  </p>
-	                </SurfaceCard>
+		                {(() => {
+		                  const debtorId = state.creditInstallmentTargetId;
+		                  const options = creditCardPayContext.installmentOptions.filter((it) => it.debtorId === debtorId);
 
-                  {state.creditInstallmentTargetId && state.creditInstallmentTargetName ? (
-                    <SurfaceCard
-                      variant="soft"
-                      padding="sm"
-                      className="border border-emerald-200/70 bg-emerald-50/60"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700/70">
-                            Historial asociado
-                          </p>
-                          <p className="mt-1 truncate text-sm font-semibold text-slate-900">
-                            {state.creditInstallmentTargetName}
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-600">
-                            Seleccionado como{" "}
-                            {getCreditInstallmentTargetTypeLabel(state.creditInstallmentTargetType)?.toLowerCase() ??
-                              "referencia"}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          className="h-9 rounded-full px-3"
-                          onClick={() =>
-                            setState((s) => ({
-                              ...s,
-                              creditInstallmentTargetType: null,
-                              creditInstallmentTargetId: null,
-                              creditInstallmentTargetName: null
-                            }))
-                          }
-                        >
-                          Cambiar
-                        </Button>
-                      </div>
+		                  if (!options.length) {
+		                    return (
+		                      <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
+		                        <p className="text-sm font-semibold text-slate-900">No encontr&eacute; cuotas pendientes</p>
+		                        <p className="mt-1 text-xs text-slate-500">
+		                          Si esta compra no qued&oacute; registrada como cuotas en Pendientes, puedes usar{" "}
+		                          <span className="font-semibold">Parte de la deuda</span> para registrar el pago manualmente.
+		                        </p>
+		                      </SurfaceCard>
+		                    );
+		                  }
 
-                      {(() => {
-                        const id = state.creditInstallmentTargetId;
-                        const type = state.creditInstallmentTargetType;
-                        const candidate =
-                          type === "PERSON"
-                            ? creditInstallmentCandidates.people.find((p) => p.id === id) ?? null
-                            : type === "COMPANY"
-                              ? creditInstallmentCandidates.companies.find((c) => c.id === id) ?? null
-                              : null;
-                        const sourceTxIds = candidate?.sourceTxIds ?? [];
-                        const items = creditInstallmentCandidates.txItems
-                          .filter((tx) => sourceTxIds.includes(tx.id))
-                          .slice(0, 4);
+		                  return (
+		                    <div className="grid gap-2 sm:grid-cols-2">
+		                      {options.map((opt) => {
+		                        const total = typeof opt.installmentTotal === "number" ? opt.installmentTotal : null;
+		                        const current = typeof opt.installmentCurrent === "number" ? opt.installmentCurrent : null;
+		                        const derivedInstallmentAmount =
+		                          typeof opt.installmentAmount === "number" && Number.isFinite(opt.installmentAmount)
+		                            ? opt.installmentAmount
+		                            : typeof opt.purchaseTotalAmount === "number" &&
+		                                Number.isFinite(opt.purchaseTotalAmount) &&
+		                                typeof total === "number" &&
+		                                Number.isFinite(total) &&
+		                                total > 0
+		                              ? Math.max(1, Math.round(opt.purchaseTotalAmount / total))
+		                              : null;
 
-                        if (!items.length) {
-                          return (
-                            <p className="mt-3 text-xs text-slate-600">
-                              No encontr&eacute; detalles adicionales, pero igual puedes continuar.
-                            </p>
-                          );
-                        }
+		                        const purchaseTotalAmount =
+		                          typeof opt.purchaseTotalAmount === "number" && Number.isFinite(opt.purchaseTotalAmount)
+		                            ? opt.purchaseTotalAmount
+		                            : typeof derivedInstallmentAmount === "number" && typeof total === "number" && total > 0
+		                              ? derivedInstallmentAmount * total
+		                              : null;
 
-                        return (
-                          <div className="mt-3 space-y-2">
-                            {items.map((tx) => {
-                              const hasInstallments = Boolean(
-                                tx.isInstallmentPurchase && (tx.cuotaTotal ?? 0) > 1
-                              );
-                              const totalPurchaseAmount = tx.amount;
-                              const derivedInstallmentAmount =
-                                hasInstallments && tx.cuotaTotal && tx.cuotaTotal > 1
-                                  ? Math.max(1, Math.round(totalPurchaseAmount / tx.cuotaTotal))
-                                  : null;
-                              const displayAmount = derivedInstallmentAmount ?? totalPurchaseAmount;
-                              return (
-                                <div
-                                  key={tx.id}
-                                  className="rounded-[18px] border border-white/60 bg-white/70 p-3 shadow-[0_12px_26px_rgba(15,23,42,0.06)]"
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
-                                      <p className="truncate text-sm font-semibold text-slate-900">
-                                        {tx.description}
-                                      </p>
-                                      <p className="mt-0.5 text-xs text-slate-500">
-                                        {formatShortDate(tx.date)}
-                                        {hasInstallments && tx.cuotaActual && tx.cuotaTotal
-                                          ? ` · Cuota ${tx.cuotaActual} de ${tx.cuotaTotal}`
-                                          : ""}
-                                      </p>
-                                      {hasInstallments ? (
-                                        <p className="mt-1 text-xs text-slate-600">
-                                          Total compra:{" "}
-                                          <span className="font-semibold text-slate-800">
-                                            {formatCurrency(totalPurchaseAmount)}
-                                          </span>
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                    <p className="text-sm font-semibold text-slate-900">
-                                      {formatCurrency(displayAmount)}
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            <div className="flex justify-end">
-                              <Button
-                                type="button"
-                                className="h-10 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
-                                onClick={next}
-                              >
-                                Continuar con esta cuota
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </SurfaceCard>
-                  ) : null}
-	              </div>
-	            )}
-	          </div>
-	        ) : step.key === "category" ? (
+		                        const remaining =
+		                          typeof opt.remainingInstallments === "number" && Number.isFinite(opt.remainingInstallments)
+		                            ? opt.remainingInstallments
+		                            : typeof total === "number" && typeof current === "number"
+		                              ? Math.max(0, total - current)
+		                              : null;
+
+		                        const selected = state.creditInstallmentDebtId === (opt.sourceTxId ?? opt.debtorId);
+
+		                        return (
+		                          <button
+		                            key={`${opt.debtorId}:${opt.sourceTxId ?? "no-tx"}`}
+		                            type="button"
+		                            onClick={() => {
+		                              const nextAmount =
+		                                typeof derivedInstallmentAmount === "number" && Number.isFinite(derivedInstallmentAmount)
+		                                  ? derivedInstallmentAmount
+		                                  : null;
+		                              setState((s) => ({
+		                                ...s,
+		                                creditInstallmentDebtId: opt.sourceTxId ?? opt.debtorId,
+		                                amount: nextAmount ? String(nextAmount) : s.amount
+		                              }));
+		                              window.setTimeout(() => next(), 90);
+		                            }}
+		                            className={cn(
+		                              "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
+		                              selected
+		                                ? "border-violet-200 bg-violet-50/80"
+		                                : "border-white/70 bg-white/70 hover:bg-white"
+		                            )}
+		                          >
+		                            <div className="flex items-start justify-between gap-3">
+		                              <div className="min-w-0">
+		                                <p className="truncate text-sm font-semibold text-slate-900">{opt.reason}</p>
+		                                <p className="mt-0.5 text-xs text-slate-500">
+		                                  {typeof current === "number" && typeof total === "number" && total > 1
+		                                    ? `Cuota ${current} de ${total}`
+		                                    : "Compra en cuotas"}
+		                                  {remaining !== null ? ` · Restan ${remaining}` : ""}
+		                                </p>
+		                                {purchaseTotalAmount !== null ? (
+		                                  <p className="mt-1 text-xs text-slate-600">
+		                                    Total compra:{" "}
+		                                    <span className="font-semibold text-slate-800">
+		                                      {formatCurrency(purchaseTotalAmount)}
+		                                    </span>
+		                                  </p>
+		                                ) : null}
+		                              </div>
+		                              <p className="text-sm font-semibold text-slate-900">
+		                                {formatCurrency(derivedInstallmentAmount ?? 0)}
+		                              </p>
+		                            </div>
+		                          </button>
+		                        );
+		                      })}
+		                    </div>
+		                  );
+		                })()}
+		              </div>
+		            )}
+		          </div>
+		        ) : step.key === "category" ? (
 	          <div className="space-y-3">
 	            <div className="flex items-start justify-between gap-3">
 	              <p className="text-sm text-slate-600">
