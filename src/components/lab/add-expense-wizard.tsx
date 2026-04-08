@@ -40,6 +40,7 @@ type CreditPayIntent = "PAY_CARD" | "JUST_CREDIT";
 type CreditPayWhat = "INSTALLMENT" | "PARTIAL_DEBT" | "TOTAL";
 type CreditImpactType = "consume_cupo" | "no_consume_cupo" | "pago_tarjeta" | "ajuste_manual";
 type PaymentMode = "single" | "installments";
+type CreditInstallmentTargetType = "PERSON" | "COMPANY";
 
 type WizardState = {
   accountId: string | null;
@@ -54,6 +55,9 @@ type WizardState = {
   companyId: string | null;
   creditPayIntent: CreditPayIntent | null;
   creditPayWhat: CreditPayWhat | null;
+  creditInstallmentTargetType: CreditInstallmentTargetType | null;
+  creditInstallmentTargetId: string | null;
+  creditInstallmentTargetName: string | null;
   creditImpactType: CreditImpactType | null;
   paymentMode: PaymentMode;
   cuotaActual: string;
@@ -74,6 +78,7 @@ type StepKey =
   | "company"
   | "creditPayIntent"
   | "creditPayWhat"
+  | "creditInstallmentTarget"
   | "category"
   | "note"
   | "review";
@@ -85,8 +90,8 @@ type WizardStep = {
 
 const STEP_TITLES: Record<StepKey, string> = {
   welcome: "Bienvenida",
-  account: "¿Desde dónde pagaste este gasto?",
-  amount: "¿Cuánto pagaste?",
+  account: "¿Qué cuenta usarás?",
+  amount: "¿Cuál es el monto?",
   type: "¿Qué estás registrando?",
   creditExpenseImpact: "Impacto en el cupo",
   creditExpensePayment: "Forma de pago",
@@ -96,6 +101,7 @@ const STEP_TITLES: Record<StepKey, string> = {
   company: "¿Qué empresa debe cubrir este gasto?",
   creditPayIntent: "¿Este dinero lo estás usando para pagar la tarjeta?",
   creditPayWhat: "¿Qué quieres pagar?",
+  creditInstallmentTarget: "¿A quién corresponde esta cuota?",
   category: "¿En qué categoría cae?",
   note: "¿Quieres agregar un detalle?",
   review: "Revisa antes de confirmar"
@@ -120,6 +126,22 @@ function getCreditPayWhatLabel(what: CreditPayWhat | null) {
   if (what === "PARTIAL_DEBT") return "Parte de la deuda";
   if (what === "TOTAL") return "Pago total";
   return null;
+}
+
+function getCreditInstallmentTargetTypeLabel(value: CreditInstallmentTargetType | null) {
+  if (value === "PERSON") return "Persona";
+  if (value === "COMPANY") return "Empresa";
+  return null;
+}
+
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  const day = `${d.getDate()}`.padStart(2, "0");
+  const month = `${d.getMonth() + 1}`.padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
 }
 
 function getCreditImpactLabel(value: CreditImpactType | null) {
@@ -295,12 +317,17 @@ function buildDynamicSteps(input: {
       const payIntentStep: WizardStep[] = [{ key: "creditPayIntent", title: STEP_TITLES.creditPayIntent }];
       const payWhatStep: WizardStep[] =
         creditPayIntent === "PAY_CARD" ? [{ key: "creditPayWhat", title: STEP_TITLES.creditPayWhat }] : [];
+      const installmentTargetStep: WizardStep[] =
+        creditPayIntent === "PAY_CARD" && input.creditPayWhat === "INSTALLMENT"
+          ? [{ key: "creditInstallmentTarget", title: STEP_TITLES.creditInstallmentTarget }]
+          : [];
       const impactStep: WizardStep[] =
         creditPayIntent === "PAY_CARD" ? [{ key: "creditIncomeImpact", title: STEP_TITLES.creditIncomeImpact }] : [];
       return [
         ...steps,
         ...payIntentStep,
         ...payWhatStep,
+        ...installmentTargetStep,
         ...impactStep,
         { key: "note", title: STEP_TITLES.note },
         { key: "review", title: STEP_TITLES.review }
@@ -378,6 +405,28 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
   const [recentPersonIds, setRecentPersonIds] = useState<string[]>([]);
   const [recentCompanyIds, setRecentCompanyIds] = useState<string[]>([]);
 
+  const [creditInstallmentCandidates, setCreditInstallmentCandidates] = useState<{
+    loading: boolean;
+    error: string | null;
+    txItems: Array<{
+      id: string;
+      description: string;
+      date: string;
+      amount: number;
+      isInstallmentPurchase?: boolean;
+      cuotaActual?: number | null;
+      cuotaTotal?: number | null;
+    }>;
+    people: Array<{ id: string; name: string; purchasesCount: number; sourceTxIds: string[] }>;
+    companies: Array<{ id: string; name: string; purchasesCount: number; sourceTxIds: string[] }>;
+  }>({
+    loading: false,
+    error: null,
+    txItems: [],
+    people: [],
+    companies: []
+  });
+
   const [state, setState] = useState<WizardState>({
     accountId: null,
     amount: "",
@@ -391,6 +440,9 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     companyId: null,
     creditPayIntent: null,
     creditPayWhat: null,
+    creditInstallmentTargetType: null,
+    creditInstallmentTargetId: null,
+    creditInstallmentTargetName: null,
     creditImpactType: null,
     paymentMode: "single",
     cuotaActual: "",
@@ -595,11 +647,156 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     });
   }, [steps]);
 
+  useEffect(() => {
+    // When the "payment of one installment" path is active, suggest who that installment belongs to,
+    // based on existing debts/reimbursements generated from credit-card purchases on this same card.
+    const accountId = state.accountId;
+    const shouldLoad =
+      step.key === "creditInstallmentTarget" &&
+      Boolean(accountId) &&
+      selectedAccount?.type === "CREDITO" &&
+      state.movementType === "INGRESO" &&
+      state.creditPayIntent === "PAY_CARD" &&
+      state.creditPayWhat === "INSTALLMENT";
+
+    if (!shouldLoad) return;
+
+    let alive = true;
+    async function loadCandidates() {
+      try {
+        setCreditInstallmentCandidates((prev) => ({ ...prev, loading: true, error: null }));
+
+        const [txRes, debtsRes] = await Promise.all([
+          fetch(`/api/transactions?accountId=${encodeURIComponent(accountId!)}&type=EGRESO&take=500`, {
+            cache: "no-store"
+          }),
+          fetch("/api/debts", { cache: "no-store" })
+        ]);
+
+        const txPayload = txRes.ok ? ((await txRes.json()) as any) : null;
+        const debtsPayload = debtsRes.ok ? ((await debtsRes.json()) as any) : null;
+
+        const txItems = ((txPayload?.items ?? []) as any[])
+          .map((t) => {
+            const amount = typeof t?.amount === "number" ? Math.abs(t.amount) : Number.NaN;
+            return {
+              id: String(t.id),
+              description: String(t.description ?? "Movimiento"),
+              date: String(t.date ?? ""),
+              amount: Number.isFinite(amount) ? amount : 0,
+              isInstallmentPurchase: Boolean(t?.isInstallmentPurchase),
+              cuotaActual: typeof t?.cuotaActual === "number" ? t.cuotaActual : null,
+              cuotaTotal: typeof t?.cuotaTotal === "number" ? t.cuotaTotal : null
+            };
+          })
+          .filter((t) => Boolean(t.id));
+
+        const txIds = new Set<string>((txPayload?.items ?? []).map((t: any) => String(t.id)).filter(Boolean));
+
+        const people = (debtsPayload?.people ?? []) as Array<{ id: string; name: string; notes?: string | null }>;
+        const companies = (debtsPayload?.companies ?? []) as Array<{
+          id: string;
+          name: string;
+          entries?: Array<{ transactionId?: string | null }>;
+        }>;
+
+        const extractSourceTxId = (notes?: string | null) => {
+          if (!notes) return null;
+          const match = String(notes).match(/\bauto:source-tx:([a-z0-9_]+)\b/i);
+          return match ? match[1] : null;
+        };
+
+        const peopleCounts = people
+          .map((p) => {
+            const sourceTxId = extractSourceTxId(p.notes ?? null);
+            const sourceTxIds = sourceTxId && txIds.has(sourceTxId) ? [sourceTxId] : [];
+            return {
+              id: p.id,
+              name: p.name,
+              purchasesCount: sourceTxIds.length,
+              sourceTxIds
+            };
+          })
+          .filter((p) => p.sourceTxIds.length > 0)
+          .sort((a, b) => b.purchasesCount - a.purchasesCount || a.name.localeCompare(b.name));
+
+        const companyCounts = companies
+          .map((c) => {
+            const entries = c.entries ?? [];
+            const sourceTxIds = entries.reduce<string[]>((acc, entry) => {
+              const txId = entry?.transactionId ? String(entry.transactionId) : null;
+              if (txId && txIds.has(txId) && !acc.includes(txId)) acc.push(txId);
+              return acc;
+            }, []);
+            return { id: c.id, name: c.name, purchasesCount: sourceTxIds.length, sourceTxIds };
+          })
+          .filter((c) => c.sourceTxIds.length > 0)
+          .sort((a, b) => b.purchasesCount - a.purchasesCount || a.name.localeCompare(b.name));
+
+        if (!alive) return;
+        setCreditInstallmentCandidates({
+          loading: false,
+          error: null,
+          txItems,
+          people: peopleCounts,
+          companies: companyCounts
+        });
+      } catch (e) {
+        if (!alive) return;
+        setCreditInstallmentCandidates((prev) => ({
+          ...prev,
+          loading: false,
+          error: e instanceof Error ? e.message : "No se pudieron cargar sugerencias."
+        }));
+      }
+    }
+
+    void loadCandidates();
+    return () => {
+      alive = false;
+    };
+  }, [
+    step.key,
+    state.accountId,
+    state.movementType,
+    state.creditPayIntent,
+    state.creditPayWhat,
+    selectedAccount?.type
+  ]);
+
   const progress = useMemo(() => {
     const total = Math.max(steps.length - 1, 1);
     if (step.key === "welcome") return 0;
     return Math.round((Math.min(stepIndex, total) / total) * 100);
   }, [stepIndex, step.key, steps.length]);
+
+  const stepTitle = useMemo(() => {
+    if (step.key === "account") {
+      if (state.movementType === "INGRESO") return "¿En qué cuenta entra este dinero?";
+      if (state.movementType === "TRANSFERENCIA") return "¿Desde qué cuenta estás moviendo dinero?";
+      return "¿Desde dónde pagaste este gasto?";
+    }
+    if (step.key === "amount") {
+      if (state.movementType === "INGRESO") {
+        if (selectedAccount?.type === "CREDITO") {
+          return state.creditPayIntent === "PAY_CARD" ? "¿Cuánto pagaste de la tarjeta?" : "¿Cuánto abonaste a la tarjeta?";
+        }
+        return "¿Cuánto recibiste?";
+      }
+      if (state.movementType === "TRANSFERENCIA") return "¿Cuánto estás moviendo?";
+      return "¿Cuánto pagaste?";
+    }
+    if (step.key === "owner") {
+      return state.movementType === "GASTO" ? "¿A quién corresponde este gasto?" : STEP_TITLES.owner;
+    }
+    if (step.key === "category") {
+      return state.movementType === "GASTO" ? "¿En qué categoría cae?" : STEP_TITLES.category;
+    }
+    if (step.key === "note") {
+      return state.movementType === "TRANSFERENCIA" ? "¿Quieres dejar un detalle?" : STEP_TITLES.note;
+    }
+    return STEP_TITLES[step.key];
+  }, [selectedAccount?.type, state.creditPayIntent, state.movementType, step.key]);
 
   const selectedCategory = useMemo(
     () => {
@@ -688,6 +885,9 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     if (state.movementType === "INGRESO" && selectedAccount?.type === "CREDITO") {
       if (state.creditPayIntent === "PAY_CARD") {
         const what = getCreditPayWhatLabel(state.creditPayWhat);
+        if (state.creditPayWhat === "INSTALLMENT" && state.creditInstallmentTargetName) {
+          return `Cuota: ${state.creditInstallmentTargetName}`;
+        }
         return what ? `Pago: ${what.toLowerCase()}` : "Pago de tarjeta";
       }
       if (state.creditPayIntent === "JUST_CREDIT") return "Abono / ajuste";
@@ -699,7 +899,14 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     }
 
     return null;
-  }, [selectedAccount?.type, state.creditPayIntent, state.creditPayWhat, state.expenseOwner, state.movementType]);
+  }, [
+    selectedAccount?.type,
+    state.creditInstallmentTargetName,
+    state.creditPayIntent,
+    state.creditPayWhat,
+    state.expenseOwner,
+    state.movementType
+  ]);
 
   const reviewDetails = useMemo(() => {
     if (state.movementType === "TRANSFERENCIA") {
@@ -709,6 +916,9 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
       if (selectedAccount?.type === "CREDITO") {
         if (state.creditPayIntent === "PAY_CARD") {
           const what = getCreditPayWhatLabel(state.creditPayWhat);
+          if (state.creditPayWhat === "INSTALLMENT" && state.creditInstallmentTargetName) {
+            return `Vas a registrar una cuota asociada a ${state.creditInstallmentTargetName}.`;
+          }
           return what ? `Vas a registrar: ${what.toLowerCase()}.` : "Vas a registrar un pago de tarjeta.";
         }
         return "Vas a registrar un abono/ajuste en la tarjeta.";
@@ -746,6 +956,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     selectedAccount?.type,
     state.companyName,
     state.creditImpactType,
+    state.creditInstallmentTargetName,
     state.creditPayIntent,
     state.creditPayWhat,
     state.cuotaActual,
@@ -966,6 +1177,17 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
 
       const notesParts = [
         state.movementType === "TRANSFERENCIA" ? "Transferencia manual" : null,
+        isCreditAccount && state.movementType === "INGRESO" && state.creditPayIntent === "PAY_CARD"
+          ? [
+              "Pago tarjeta",
+              state.creditPayWhat ? `Pago: ${getCreditPayWhatLabel(state.creditPayWhat)}` : null,
+              state.creditPayWhat === "INSTALLMENT" && state.creditInstallmentTargetName
+                ? `Cuota de: ${state.creditInstallmentTargetName}`
+                : null
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : null,
         isPerson ? "Corresponde: otra persona" : isCompany ? "Corresponde: empresa" : "Corresponde: es mío",
         state.note.trim() || null
       ].filter(Boolean);
@@ -1104,7 +1326,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
     setState({
       accountId: null,
       amount: "",
-      movementType: "GASTO",
+      movementType: initialMovementType ?? "GASTO",
       categoryId: null,
       note: "",
       expenseOwner: null,
@@ -1114,6 +1336,9 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
       companyId: null,
       creditPayIntent: null,
       creditPayWhat: null,
+      creditInstallmentTargetType: null,
+      creditInstallmentTargetId: null,
+      creditInstallmentTargetName: null,
       creditImpactType: null,
       paymentMode: "single",
       cuotaActual: "",
@@ -1130,7 +1355,11 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
             {mode === "demo" ? "Laboratorio" : "Nuevo movimiento"}
           </p>
           <h2 className="mt-1 truncate text-[1.35rem] font-semibold tracking-[-0.04em] text-slate-900 sm:text-[1.55rem]">
-            Agregar gasto
+            {state.movementType === "INGRESO"
+              ? "Agregar ingreso"
+              : state.movementType === "TRANSFERENCIA"
+                ? "Registrar transferencia"
+                : "Agregar gasto"}
           </h2>
         </div>
         {mode === "demo" ? (
@@ -1155,7 +1384,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
                 {step.key === "welcome" ? "Inicio" : `Paso ${stepIndex}`}
               </StatPill>
               <p className="truncate text-[0.98rem] font-semibold tracking-[-0.02em] text-slate-900">
-                {step.title}
+                {stepTitle}
               </p>
             </div>
             <p className="mt-1 text-xs text-slate-500">
@@ -2003,7 +2232,14 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
 	                      setState((s) => ({
 	                        ...s,
 	                        creditPayIntent: option.key,
-	                        creditPayWhat: option.key === "PAY_CARD" ? s.creditPayWhat : null
+	                        creditPayWhat: option.key === "PAY_CARD" ? s.creditPayWhat : null,
+	                        ...(option.key === "PAY_CARD"
+	                          ? {}
+	                          : {
+	                              creditInstallmentTargetType: null,
+	                              creditInstallmentTargetId: null,
+	                              creditInstallmentTargetName: null
+	                            })
 	                      }));
 	                      window.setTimeout(() => next(), 90);
 	                    }}
@@ -2034,7 +2270,17 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
 	                    key={option.key}
 	                    type="button"
 	                    onClick={() => {
-	                      setState((s) => ({ ...s, creditPayWhat: option.key }));
+	                      setState((s) => ({
+	                        ...s,
+	                        creditPayWhat: option.key,
+	                        ...(option.key === "INSTALLMENT"
+	                          ? {}
+	                          : {
+	                              creditInstallmentTargetType: null,
+	                              creditInstallmentTargetId: null,
+	                              creditInstallmentTargetName: null
+	                            })
+	                      }));
 	                      window.setTimeout(() => next(), 90);
 	                    }}
 	                    className={cn(
@@ -2048,6 +2294,239 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
 	                );
 	              })}
 	            </div>
+	          </div>
+	        ) : step.key === "creditInstallmentTarget" ? (
+	          <div className="space-y-3">
+	            <p className="text-sm text-slate-600">
+	              Te muestro sugerencias basadas en compras en cr&eacute;dito anteriores hechas con esta tarjeta.
+	            </p>
+
+	            {creditInstallmentCandidates.loading ? (
+	              <div className="grid gap-2 sm:grid-cols-2">
+	                {Array.from({ length: 4 }).map((_, idx) => (
+	                  <SurfaceCard key={idx} variant="soft" padding="sm" className="space-y-2">
+	                    <Skeleton className="h-4 w-32" />
+	                    <Skeleton className="h-3 w-24" />
+	                  </SurfaceCard>
+	                ))}
+	              </div>
+	            ) : creditInstallmentCandidates.error ? (
+	              <SurfaceCard variant="soft" padding="sm" className="border border-rose-200 bg-rose-50/70">
+	                <p className="text-sm font-semibold text-rose-700">No se pudieron cargar sugerencias</p>
+	                <p className="mt-1 text-xs text-rose-700/80">{creditInstallmentCandidates.error}</p>
+	              </SurfaceCard>
+	            ) : creditInstallmentCandidates.people.length === 0 &&
+	              creditInstallmentCandidates.companies.length === 0 ? (
+	              <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
+	                <p className="text-sm font-semibold text-slate-900">No encontr&eacute; coincidencias</p>
+	                <p className="mt-1 text-xs text-slate-500">
+	                  Puedes continuar igual. Si m&aacute;s adelante registras gastos a nombre de personas o
+	                  empresas en esta tarjeta, aparecer&aacute;n aqu&iacute;.
+	                </p>
+	              </SurfaceCard>
+	            ) : (
+	              <div className="space-y-3">
+	                {creditInstallmentCandidates.people.length ? (
+	                  <div className="space-y-2">
+	                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+	                      Personas
+	                    </p>
+	                    <div className="grid gap-2 sm:grid-cols-2">
+	                      {creditInstallmentCandidates.people.map((person) => {
+	                        const selected =
+	                          state.creditInstallmentTargetType === "PERSON" &&
+	                          state.creditInstallmentTargetId === person.id;
+	                        return (
+	                          <button
+	                            key={person.id}
+	                            type="button"
+	                            onClick={() => {
+	                              setState((s) => ({
+	                                ...s,
+	                                creditInstallmentTargetType: "PERSON",
+	                                creditInstallmentTargetId: person.id,
+	                                creditInstallmentTargetName: person.name
+	                              }));
+	                            }}
+	                            className={cn(
+	                              "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
+	                              selected
+	                                ? "border-emerald-200 bg-emerald-50/80"
+	                                : "border-white/70 bg-white/70 hover:bg-white"
+	                            )}
+	                          >
+	                            <div className="flex items-center justify-between gap-2">
+	                              <p className="truncate text-sm font-semibold text-slate-900">{person.name}</p>
+	                              <StatPill tone="neutral" className="px-2 py-1 text-[10px]">
+	                                Persona
+	                              </StatPill>
+	                            </div>
+	                            <p className="mt-1 text-xs text-slate-500">
+	                              {person.purchasesCount} compra(s) en cr&eacute;dito
+	                            </p>
+	                          </button>
+	                        );
+	                      })}
+	                    </div>
+	                  </div>
+	                ) : null}
+
+	                {creditInstallmentCandidates.companies.length ? (
+	                  <div className="space-y-2">
+	                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+	                      Empresas
+	                    </p>
+	                    <div className="grid gap-2 sm:grid-cols-2">
+	                      {creditInstallmentCandidates.companies.map((company) => {
+	                        const selected =
+	                          state.creditInstallmentTargetType === "COMPANY" &&
+	                          state.creditInstallmentTargetId === company.id;
+	                        return (
+	                          <button
+	                            key={company.id}
+	                            type="button"
+	                            onClick={() => {
+	                              setState((s) => ({
+	                                ...s,
+	                                creditInstallmentTargetType: "COMPANY",
+	                                creditInstallmentTargetId: company.id,
+	                                creditInstallmentTargetName: company.name
+	                              }));
+	                            }}
+	                            className={cn(
+	                              "tap-feedback rounded-[22px] border px-4 py-4 text-left shadow-[0_14px_32px_rgba(15,23,42,0.06)] transition",
+	                              selected
+	                                ? "border-emerald-200 bg-emerald-50/80"
+	                                : "border-white/70 bg-white/70 hover:bg-white"
+	                            )}
+	                          >
+	                            <div className="flex items-center justify-between gap-2">
+	                              <p className="truncate text-sm font-semibold text-slate-900">{company.name}</p>
+	                              <StatPill tone="neutral" className="px-2 py-1 text-[10px]">
+	                                Empresa
+	                              </StatPill>
+	                            </div>
+	                            <p className="mt-1 text-xs text-slate-500">
+	                              {company.purchasesCount} compra(s) en cr&eacute;dito
+	                            </p>
+	                          </button>
+	                        );
+	                      })}
+	                    </div>
+	                  </div>
+	                ) : null}
+
+	                <SurfaceCard variant="soft" padding="sm" className="border border-white/70 bg-white/65">
+	                  <p className="text-xs text-slate-500">
+	                    Opcional: si no seleccionas nada, igual puedes continuar y registrar el pago.
+	                  </p>
+	                </SurfaceCard>
+
+                  {state.creditInstallmentTargetId && state.creditInstallmentTargetName ? (
+                    <SurfaceCard
+                      variant="soft"
+                      padding="sm"
+                      className="border border-emerald-200/70 bg-emerald-50/60"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700/70">
+                            Historial asociado
+                          </p>
+                          <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                            {state.creditInstallmentTargetName}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-600">
+                            Seleccionado como{" "}
+                            {getCreditInstallmentTargetTypeLabel(state.creditInstallmentTargetType)?.toLowerCase() ??
+                              "referencia"}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-9 rounded-full px-3"
+                          onClick={() =>
+                            setState((s) => ({
+                              ...s,
+                              creditInstallmentTargetType: null,
+                              creditInstallmentTargetId: null,
+                              creditInstallmentTargetName: null
+                            }))
+                          }
+                        >
+                          Cambiar
+                        </Button>
+                      </div>
+
+                      {(() => {
+                        const id = state.creditInstallmentTargetId;
+                        const type = state.creditInstallmentTargetType;
+                        const candidate =
+                          type === "PERSON"
+                            ? creditInstallmentCandidates.people.find((p) => p.id === id) ?? null
+                            : type === "COMPANY"
+                              ? creditInstallmentCandidates.companies.find((c) => c.id === id) ?? null
+                              : null;
+                        const sourceTxIds = candidate?.sourceTxIds ?? [];
+                        const items = creditInstallmentCandidates.txItems
+                          .filter((tx) => sourceTxIds.includes(tx.id))
+                          .slice(0, 4);
+
+                        if (!items.length) {
+                          return (
+                            <p className="mt-3 text-xs text-slate-600">
+                              No encontr&eacute; detalles adicionales, pero igual puedes continuar.
+                            </p>
+                          );
+                        }
+
+                        return (
+                          <div className="mt-3 space-y-2">
+                            {items.map((tx) => {
+                              const hasInstallments = Boolean(
+                                tx.isInstallmentPurchase && (tx.cuotaTotal ?? 0) > 1
+                              );
+                              return (
+                                <div
+                                  key={tx.id}
+                                  className="rounded-[18px] border border-white/60 bg-white/70 p-3 shadow-[0_12px_26px_rgba(15,23,42,0.06)]"
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <p className="truncate text-sm font-semibold text-slate-900">
+                                        {tx.description}
+                                      </p>
+                                      <p className="mt-0.5 text-xs text-slate-500">
+                                        {formatShortDate(tx.date)}
+                                        {hasInstallments && tx.cuotaActual && tx.cuotaTotal
+                                          ? ` · Cuota ${tx.cuotaActual} de ${tx.cuotaTotal}`
+                                          : ""}
+                                      </p>
+                                    </div>
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      {formatCurrency(tx.amount)}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <div className="flex justify-end">
+                              <Button
+                                type="button"
+                                className="h-10 rounded-full bg-emerald-600 text-white hover:bg-emerald-700"
+                                onClick={next}
+                              >
+                                Continuar con esta cuota
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </SurfaceCard>
+                  ) : null}
+	              </div>
+	            )}
 	          </div>
 	        ) : step.key === "category" ? (
 	          <div className="space-y-3">
