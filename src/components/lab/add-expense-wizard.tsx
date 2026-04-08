@@ -1188,6 +1188,14 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
               .filter(Boolean)
               .join(" · ")
           : null,
+        isCreditAccount &&
+        state.movementType === "INGRESO" &&
+        state.creditPayIntent === "PAY_CARD" &&
+        state.creditPayWhat === "INSTALLMENT" &&
+        state.creditInstallmentTargetType &&
+        state.creditInstallmentTargetId
+          ? `auto:cc-installment-target:${state.creditInstallmentTargetType.toLowerCase()}:${state.creditInstallmentTargetId}`
+          : null,
         isPerson ? "Corresponde: otra persona" : isCompany ? "Corresponde: empresa" : "Corresponde: es mío",
         state.note.trim() || null
       ].filter(Boolean);
@@ -1234,6 +1242,42 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
       if (!txRes.ok) throw new Error(txPayload?.message ?? "No se pudo guardar el movimiento.");
 
       const createdTransactionId = (txPayload?.item?.id as string | undefined) ?? undefined;
+
+      if (
+        isCreditAccount &&
+        state.movementType === "INGRESO" &&
+        state.creditPayIntent === "PAY_CARD" &&
+        state.creditPayWhat === "INSTALLMENT" &&
+        state.creditInstallmentTargetType === "PERSON" &&
+        state.creditInstallmentTargetId &&
+        createdTransactionId
+      ) {
+        // This person debt lives in "Me deben". If the user is paying an installment for that person,
+        // register it as an abono on the debtor so Pendientes stays in sync.
+        const debtorId = state.creditInstallmentTargetId;
+        const notes = [
+          "Auto: pago cuota (tarjeta)",
+          `auto:source-tx:${createdTransactionId}`,
+          state.creditInstallmentTargetName ? `Cuota de: ${state.creditInstallmentTargetName}` : null,
+          state.note.trim() || null
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+        const paymentRes = await fetch(`/api/debts/${debtorId}/payments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: Math.max(1, absoluteAmount),
+            paidAt: today,
+            notes
+          })
+        });
+        const paymentPayload = (await paymentRes.json()) as { message?: string };
+        if (!paymentRes.ok) {
+          throw new Error(paymentPayload.message ?? "No se pudo registrar el pago en Pendientes.");
+        }
+      }
 
       if (isPerson && transactionType === "EGRESO") {
         const owedAmount = Math.max(1, absoluteAmount);

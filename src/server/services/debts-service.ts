@@ -196,6 +196,125 @@ export async function getDebtsSnapshot(workspaceId: string) {
     }
   }
 
+  const approxEqual = (a: number, b: number, tolerancePct = 0.02) => {
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+    if (a === b) return true;
+    const denom = Math.max(1, Math.abs(b));
+    return Math.abs(a - b) / denom <= tolerancePct;
+  };
+
+  // Self-heal: older bugs could store credit-card installment debts as:
+  // - totalAmount = purchaseTotal * installmentTotal (double counted)
+  // - installmentValue = purchaseTotal (instead of per-installment)
+  // If the debt has a strong source transaction marker, we can safely correct it.
+  const debtorFixes: Array<{
+    id: string;
+    nextTotalAmount: number;
+    nextInstallmentCount: number;
+    nextInstallmentValue: number;
+    nextPaidInstallments: number;
+    nextPaidAmount: number;
+    nextStatus: DebtorStatus;
+  }> = [];
+
+  const paymentsSumByDebtorId = new Map<string, number>();
+  for (const debtor of debtors) {
+    const sum = (debtor.payments ?? []).reduce((acc, p) => acc + toAmountNumber(p.amount), 0);
+    paymentsSumByDebtorId.set(debtor.id, sum);
+  }
+
+  for (const debtor of debtors) {
+    const sourceTxId = extractSourceTransactionIdFromNotes(debtor.notes);
+    if (!sourceTxId) continue;
+    const tx = txById.get(sourceTxId);
+    if (!tx) continue;
+    const meta = extractCreditCardInstallments(tx.metadata);
+    if (!meta) continue;
+
+    const installmentTotal =
+      typeof meta.installmentTotal === "number" && Number.isFinite(meta.installmentTotal) ? meta.installmentTotal : null;
+    const purchaseTotal =
+      typeof meta.purchaseTotalAmount === "number" && Number.isFinite(meta.purchaseTotalAmount)
+        ? meta.purchaseTotalAmount
+        : null;
+    if (!installmentTotal || installmentTotal <= 1 || !purchaseTotal || purchaseTotal <= 0) continue;
+
+    const rawInstallment =
+      typeof meta.rawInstallmentAmount === "number" && Number.isFinite(meta.rawInstallmentAmount)
+        ? meta.rawInstallmentAmount
+        : null;
+    const perInstallment = rawInstallment && rawInstallment > 0 && rawInstallment < purchaseTotal
+      ? rawInstallment
+      : Math.round(purchaseTotal / installmentTotal);
+    if (!Number.isFinite(perInstallment) || perInstallment <= 0) continue;
+
+    const storedTotal = toAmountNumber(debtor.totalAmount);
+    const storedInstallmentValue = toAmountNumber(debtor.installmentValue);
+
+    const looksDoubleCounted =
+      approxEqual(storedTotal, purchaseTotal * installmentTotal, 0.02) ||
+      approxEqual(storedInstallmentValue, purchaseTotal, 0.02);
+    if (!looksDoubleCounted) continue;
+
+    const nextTotalAmount = Math.max(1, Math.round(purchaseTotal));
+    const nextInstallmentCount = Math.max(2, Math.round(installmentTotal));
+    const nextInstallmentValue = Math.max(1, Math.round(perInstallment));
+    const nextPaidInstallments = Math.min(nextInstallmentCount, Math.max(0, debtor.paidInstallments ?? 0));
+
+    const paymentsSum = paymentsSumByDebtorId.get(debtor.id) ?? 0;
+    const paidFromInstallments = nextInstallmentValue * nextPaidInstallments;
+    const nextPaidAmount = Math.min(nextTotalAmount, Math.max(paymentsSum, paidFromInstallments, 0));
+
+    const nextStatus =
+      nextPaidAmount >= nextTotalAmount
+        ? DebtorStatus.PAGADO
+        : nextPaidAmount > 0
+          ? DebtorStatus.ABONANDO
+          : DebtorStatus.PENDIENTE;
+
+    debtorFixes.push({
+      id: debtor.id,
+      nextTotalAmount,
+      nextInstallmentCount,
+      nextInstallmentValue,
+      nextPaidInstallments,
+      nextPaidAmount,
+      nextStatus
+    });
+  }
+
+  if (debtorFixes.length) {
+    await prisma.$transaction(
+      debtorFixes.map((fix) =>
+        prisma.debtor.update({
+          where: { id: fix.id },
+          data: {
+            totalAmount: fix.nextTotalAmount,
+            isInstallmentDebt: true,
+            installmentCount: fix.nextInstallmentCount,
+            installmentValue: fix.nextInstallmentValue,
+            paidInstallments: fix.nextPaidInstallments,
+            paidAmount: fix.nextPaidAmount,
+            status: fix.nextStatus
+          }
+        })
+      )
+    );
+
+    const fixesById = new Map(debtorFixes.map((f) => [f.id, f]));
+    for (const debtor of debtors) {
+      const fix = fixesById.get(debtor.id);
+      if (!fix) continue;
+      (debtor as any).totalAmount = fix.nextTotalAmount;
+      (debtor as any).isInstallmentDebt = true;
+      (debtor as any).installmentCount = fix.nextInstallmentCount;
+      (debtor as any).installmentValue = fix.nextInstallmentValue;
+      (debtor as any).paidInstallments = fix.nextPaidInstallments;
+      (debtor as any).paidAmount = fix.nextPaidAmount;
+      (debtor as any).status = fix.nextStatus;
+    }
+  }
+
   const people = debtors.map<PersonDebtItem>((debtor) => {
     const paymentSum = debtor.payments.reduce((acc, payment) => acc + toAmountNumber(payment.amount), 0);
     const paidAmount = Math.max(toAmountNumber(debtor.paidAmount), paymentSum);

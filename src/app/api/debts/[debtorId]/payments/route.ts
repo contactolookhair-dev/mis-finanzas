@@ -17,6 +17,12 @@ const createPaymentSchema = z.object({
   notes: z.string().optional().nullable()
 });
 
+function extractSourceTransactionIdFromNotes(notes: string | null | undefined) {
+  if (!notes) return null;
+  const match = notes.match(/\bauto:source-tx:([a-z0-9_]+)\b/i);
+  return match ? match[1] : null;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: { debtorId: string } }
@@ -43,6 +49,22 @@ export async function POST(
 
     if (!debtor) {
       return NextResponse.json({ message: "Deuda no encontrada." }, { status: 404 });
+    }
+
+    const sourceTxId = extractSourceTransactionIdFromNotes(input.notes ?? null);
+    if (sourceTxId) {
+      const existing = await prisma.debtorPayment.findFirst({
+        where: {
+          debtorId: debtor.id,
+          notes: {
+            contains: `auto:source-tx:${sourceTxId}`
+          }
+        },
+        select: { id: true }
+      });
+      if (existing) {
+        return NextResponse.json({ ok: true, deduped: true });
+      }
     }
 
     await prisma.$transaction(async (tx) => {
