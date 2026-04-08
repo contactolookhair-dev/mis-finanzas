@@ -256,92 +256,87 @@ export function InicioClient() {
     }
   }, [loadFinancialHealth]);
 
+  const loadDebtsSnapshot = useCallback(async () => {
+    try {
+      setDebtsLoading(true);
+      setDebtsError(null);
+      const response = await fetch("/api/debts", { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? "No se pudieron cargar los deudores.");
+      }
+      const payload = (await response.json()) as DebtsSnapshot;
+      setDebtsSnapshot(payload);
+    } catch (loadError) {
+      setDebtsSnapshot(null);
+      setDebtsError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los deudores.");
+    } finally {
+      setDebtsLoading(false);
+    }
+  }, []);
+
+  const loadPayablesSnapshot = useCallback(async () => {
+    try {
+      setPayablesLoading(true);
+      setPayablesError(null);
+      const response = await fetch("/api/payables", { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? "No se pudieron cargar tus cuotas por pagar.");
+      }
+      const payload = (await response.json()) as PayablesSnapshot;
+      setPayablesSnapshot(payload);
+    } catch (loadError) {
+      setPayablesSnapshot(null);
+      setPayablesError(
+        loadError instanceof Error ? loadError.message : "No se pudieron cargar tus cuotas por pagar."
+      );
+    } finally {
+      setPayablesLoading(false);
+    }
+  }, []);
+
+  const loadCreditHealthSnapshot = useCallback(async () => {
+    try {
+      setCreditHealthLoading(true);
+      const response = await fetch("/api/accounts/credit/health", { cache: "no-store" });
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as { items: CreditHealthItem[] };
+      setCreditHealth(payload.items ?? []);
+    } catch {
+      setCreditHealth([]);
+    } finally {
+      setCreditHealthLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
   useEffect(() => {
-    let aborted = false;
-
-    async function loadDebts() {
-      try {
-        setDebtsLoading(true);
-        setDebtsError(null);
-        const response = await fetch("/api/debts", { cache: "no-store" });
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as { message?: string };
-          throw new Error(payload.message ?? "No se pudieron cargar los deudores.");
-        }
-        const payload = (await response.json()) as DebtsSnapshot;
-        if (!aborted) setDebtsSnapshot(payload);
-      } catch (loadError) {
-        if (!aborted) {
-          setDebtsSnapshot(null);
-          setDebtsError(loadError instanceof Error ? loadError.message : "No se pudieron cargar los deudores.");
-        }
-      } finally {
-        if (!aborted) setDebtsLoading(false);
-      }
-    }
-
-    void loadDebts();
-    return () => {
-      aborted = true;
-    };
-  }, []);
+    void loadDebtsSnapshot();
+  }, [loadDebtsSnapshot]);
 
   useEffect(() => {
-    let aborted = false;
-
-    async function loadPayables() {
-      try {
-        setPayablesLoading(true);
-        setPayablesError(null);
-        const response = await fetch("/api/payables", { cache: "no-store" });
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as { message?: string };
-          throw new Error(payload.message ?? "No se pudieron cargar tus cuotas por pagar.");
-        }
-        const payload = (await response.json()) as PayablesSnapshot;
-        if (!aborted) setPayablesSnapshot(payload);
-      } catch (loadError) {
-        if (!aborted) {
-          setPayablesSnapshot(null);
-          setPayablesError(
-            loadError instanceof Error ? loadError.message : "No se pudieron cargar tus cuotas por pagar."
-          );
-        }
-      } finally {
-        if (!aborted) setPayablesLoading(false);
-      }
-    }
-
-    void loadPayables();
-    return () => {
-      aborted = true;
-    };
-  }, []);
+    void loadPayablesSnapshot();
+  }, [loadPayablesSnapshot]);
 
   useEffect(() => {
-    let active = true;
-    async function loadCreditHealth() {
-      try {
-        setCreditHealthLoading(true);
-        const response = await fetch("/api/accounts/credit/health", { cache: "no-store" });
-        if (!response.ok) throw new Error();
-        const payload = (await response.json()) as { items: CreditHealthItem[] };
-        if (active) setCreditHealth(payload.items ?? []);
-      } catch {
-        if (active) setCreditHealth([]);
-      } finally {
-        if (active) setCreditHealthLoading(false);
-      }
+    void loadCreditHealthSnapshot();
+  }, [loadCreditHealthSnapshot]);
+
+  useEffect(() => {
+    function handleInvalidate() {
+      void loadData();
+      void loadDebtsSnapshot();
+      void loadPayablesSnapshot();
+      void loadCreditHealthSnapshot();
     }
-    void loadCreditHealth();
-    return () => {
-      active = false;
-    };
-  }, []);
+
+    window.addEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+    return () => window.removeEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+  }, [loadCreditHealthSnapshot, loadData, loadDebtsSnapshot, loadPayablesSnapshot]);
 
   const incomes = Math.abs(snapshot?.kpis.incomes ?? 0);
   const expenses = Math.abs(snapshot?.kpis.expenses ?? 0);

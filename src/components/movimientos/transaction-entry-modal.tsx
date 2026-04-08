@@ -12,8 +12,17 @@ type Props = {
 };
 
 export function TransactionEntryModal(props: Props) {
+  const handleSuccess = () => {
+    try {
+      window.dispatchEvent(new Event("mis-finanzas:accounts-changed"));
+    } catch {
+      // noop
+    }
+    props.onSuccess?.();
+  };
+
   if (isNewExpenseWizardEnabled()) {
-    return <NewExpenseWizardModal {...props} />;
+    return <NewExpenseWizardModal {...props} onSuccess={handleSuccess} />;
   }
-  return <NewTransactionModal {...props} />;
+  return <NewTransactionModal {...props} onSuccess={handleSuccess} />;
 }

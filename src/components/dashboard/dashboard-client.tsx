@@ -871,6 +871,16 @@ export function DashboardClient() {
   }, [refreshKey]);
 
   useEffect(() => {
+    function handleInvalidate() {
+      // Keep dashboard reactive when a transaction/account changes elsewhere (e.g. global modal).
+      setRefreshKey((value) => value + 1);
+    }
+
+    window.addEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+    return () => window.removeEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+  }, []);
+
+  useEffect(() => {
     if (!initializedRef.current || !filters) return;
 
     const timeout = window.setTimeout(() => {

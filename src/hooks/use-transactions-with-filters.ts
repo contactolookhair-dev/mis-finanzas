@@ -83,6 +83,7 @@ export function buildTransactionQuery(filters: TransactionFilters) {
 
 export function useTransactionsWithFilters() {
   const [filters, setFilters] = useState<TransactionFilters>(DEFAULT_FILTERS);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [rows, setRows] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,7 +105,42 @@ export function useTransactionsWithFilters() {
   const query = useMemo(() => buildTransactionQuery(filters), [filters]);
 
   const refresh = useCallback(() => {
-    setFilters((prev) => ({ ...prev }));
+    // Bump a nonce to force re-fetch even when the filters serialize to the same query string.
+    setRefreshNonce((value) => value + 1);
+  }, []);
+
+  const loadAccounts = useCallback(async () => {
+    try {
+      const response = await fetch("/api/accounts", { cache: "no-store" });
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as {
+        items: {
+          id: string;
+          name: string;
+          bank: string;
+          type: "CREDITO" | "DEBITO" | "EFECTIVO";
+          balance: number;
+          creditBalance: number;
+          color: string | null;
+          icon: string | null;
+          appearanceMode: "auto" | "manual";
+        }[];
+      };
+      setAccounts(payload.items ?? []);
+    } catch {
+      setAccounts([]);
+    }
+  }, []);
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const response = await fetch("/api/categories", { cache: "no-store" });
+      if (!response.ok) throw new Error();
+      const payload = (await response.json()) as { items: { id: string; name: string }[] };
+      setCategories(payload.items);
+    } catch {
+      setCategories([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -131,55 +167,27 @@ export function useTransactionsWithFilters() {
     return () => {
       active = false;
     };
-  }, [query]);
+  }, [query, refreshNonce]);
 
   useEffect(() => {
-    let active = true;
-    async function loadAccounts() {
-      try {
-        const response = await fetch("/api/accounts", { cache: "no-store" });
-        if (!response.ok) throw new Error();
-        const payload = (await response.json()) as {
-          items: {
-            id: string;
-            name: string;
-            bank: string;
-            type: "CREDITO" | "DEBITO" | "EFECTIVO";
-            balance: number;
-            creditBalance: number;
-            color: string | null;
-            icon: string | null;
-            appearanceMode: "auto" | "manual";
-          }[];
-        };
-        if (active) setAccounts(payload.items);
-      } catch {
-        if (active) setAccounts([]);
-      }
-    }
     void loadAccounts();
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {
-    let active = true;
-    async function loadCategories() {
-      try {
-        const response = await fetch("/api/categories", { cache: "no-store" });
-        if (!response.ok) throw new Error();
-        const payload = (await response.json()) as { items: { id: string; name: string }[] };
-        if (active) setCategories(payload.items);
-      } catch {
-        if (active) setCategories([]);
-      }
-    }
     void loadCategories();
-    return () => {
-      active = false;
-    };
   }, []);
+
+  useEffect(() => {
+    // Global invalidation: when a transaction is created/edited/deleted elsewhere (e.g. global modal),
+    // refresh this hook's data automatically so the user doesn't need to reload the page manually.
+    function handleInvalidate() {
+      refresh();
+      void loadAccounts();
+    }
+
+    window.addEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+    return () => window.removeEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+  }, [loadAccounts, refresh]);
 
   return {
     rows,

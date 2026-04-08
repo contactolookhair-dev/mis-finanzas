@@ -2271,6 +2271,16 @@ export function CuentasClient() {
   }, [loadAccounts, loadCreditHealth]);
 
   useEffect(() => {
+    function handleInvalidate() {
+      void loadAccounts();
+      void loadCreditHealth();
+    }
+
+    window.addEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+    return () => window.removeEventListener("mis-finanzas:accounts-changed", handleInvalidate);
+  }, [loadAccounts, loadCreditHealth]);
+
+  useEffect(() => {
     const card = searchParams.get("card");
     if (!card) return;
     // Only open once accounts are loaded enough to match the card.
