@@ -5,7 +5,6 @@ import { AlertTriangle, Eye, EyeOff, Info, Plus, Wallet2 } from "lucide-react";
 import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
 import { WorkspaceOnboarding } from "@/components/onboarding/workspace-onboarding";
 import { CalculatorWidget } from "@/components/inicio/calculator-widget";
-import { MobileHomeStack } from "@/components/inicio/mobile-home-stack";
 import { Button } from "@/components/ui/button";
 import { EmptyStateCard, ErrorStateCard, Skeleton } from "@/components/ui/states";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -1516,11 +1515,6 @@ export function InicioClient() {
             Vista diaria
           </StatPill>
         }
-      />
-
-      <MobileHomeStack
-        onOpenCalculator={() => setCalculatorOpen(true)}
-        onOpenTransaction={() => setOpenModal(true)}
       />
 
       <WorkspaceOnboarding
