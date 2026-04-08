@@ -1572,6 +1572,16 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
         }
       }
 
+      try {
+        window.dispatchEvent(
+          new CustomEvent("mis-finanzas:transaction-saved", {
+            detail: { ok: true, kind: state.movementType }
+          })
+        );
+      } catch {
+        // noop
+      }
+
       setSaved(true);
       onSaved?.();
     } catch (err) {

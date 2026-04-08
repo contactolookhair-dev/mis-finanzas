@@ -127,6 +127,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess, initialMove
   const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedPulse, setSavedPulse] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
 
@@ -524,8 +525,20 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess, initialMove
         categoryId
       });
 
+      try {
+        window.dispatchEvent(
+          new CustomEvent("mis-finanzas:transaction-saved", {
+            detail: { ok: true, kind }
+          })
+        );
+      } catch {
+        // noop
+      }
+
       resetForm();
       onSuccess?.();
+      setSavedPulse(true);
+      window.setTimeout(() => setSavedPulse(false), 900);
       setSuccessNotice("Perfecto, el ingreso quedó registrado.");
       window.setTimeout(() => setSuccessNotice(null), 2500);
     } catch (submitError) {
@@ -1175,7 +1188,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess, initialMove
               className="tap-feedback h-11 rounded-2xl sm:min-w-[220px]"
               disabled={saving || loading}
             >
-              {saving ? "Guardando..." : "Guardar transacción"}
+              {saving ? "Guardando..." : savedPulse ? "Guardado" : "Guardar transacción"}
             </Button>
           </div>
         </form>

@@ -47,6 +47,11 @@ function AppShellFrame({ children }: { children: ReactNode }) {
     message: string;
     workspaceName?: string | null;
   } | null>(null);
+  const [saveToast, setSaveToast] = useState<{
+    tone: "success" | "danger";
+    message: string;
+  } | null>(null);
+  const [contentRefreshPulse, setContentRefreshPulse] = useState(false);
 
   const evaluateExpression = useCallback((value: string) => {
     if (!value.trim()) return null;
@@ -128,6 +133,49 @@ function AppShellFrame({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [workspaceToast]);
 
+  useEffect(() => {
+    if (!saveToast) return;
+    const timer = window.setTimeout(() => setSaveToast(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [saveToast]);
+
+  useEffect(() => {
+    function onSaved(event: Event) {
+      const detail = (event as CustomEvent).detail as
+        | { kind?: "GASTO" | "INGRESO" | "TRANSFERENCIA"; ok?: boolean }
+        | undefined;
+
+      if (detail?.ok === false) {
+        setSaveToast({ tone: "danger", message: "No se pudo guardar" });
+        return;
+      }
+
+      const kind = detail?.kind;
+      setSaveToast({
+        tone: "success",
+        message:
+          kind === "INGRESO"
+            ? "Ingreso guardado"
+            : kind === "TRANSFERENCIA"
+              ? "Transferencia guardada"
+              : "Gasto guardado"
+      });
+    }
+
+    window.addEventListener("mis-finanzas:transaction-saved", onSaved as EventListener);
+    return () => window.removeEventListener("mis-finanzas:transaction-saved", onSaved as EventListener);
+  }, []);
+
+  useEffect(() => {
+    function onGlobalInvalidate() {
+      setContentRefreshPulse(true);
+      window.setTimeout(() => setContentRefreshPulse(false), 320);
+    }
+
+    window.addEventListener("mis-finanzas:accounts-changed", onGlobalInvalidate);
+    return () => window.removeEventListener("mis-finanzas:accounts-changed", onGlobalInvalidate);
+  }, []);
+
   return (
     <div className="min-h-screen">
       <DashboardHeaderLoader />
@@ -176,6 +224,39 @@ function AppShellFrame({ children }: { children: ReactNode }) {
           </div>
         ) : null}
 
+        {saveToast ? (
+          <div className="fixed left-1/2 top-[4.1rem] z-[91] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 sm:top-[5.25rem]">
+            <SurfaceCard
+              variant="soft"
+              padding="sm"
+              className={cn(
+                "animate-fade-up border shadow-[0_18px_40px_rgba(15,23,42,0.10)]",
+                saveToast.tone === "success"
+                  ? "border-slate-200/70 bg-white/82 text-slate-800"
+                  : "border-rose-200/80 bg-rose-50/80 text-rose-700"
+              )}
+            >
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-2xl ring-1 ring-white/60",
+                    saveToast.tone === "success"
+                      ? "bg-slate-900 text-white"
+                      : "bg-rose-100/80 text-rose-700"
+                  )}
+                >
+                  {saveToast.tone === "success" ? (
+                    <CheckCircle2 className="h-4 w-4" strokeWidth={2.2} />
+                  ) : (
+                    <AlertTriangle className="h-4 w-4" strokeWidth={2.2} />
+                  )}
+                </span>
+                <p className="min-w-0 truncate text-sm font-semibold">{saveToast.message}</p>
+              </div>
+            </SurfaceCard>
+          </div>
+        ) : null}
+
         <div className="lg:pl-[120px]">
           <header className="glass-surface sticky top-2 z-20 mb-4 rounded-[18px] px-3.5 py-2.5 ring-1 ring-white/35 sm:top-3 sm:mb-5 sm:px-4 sm:py-3">
             <div className="flex items-center justify-between gap-3">
@@ -218,8 +299,21 @@ function AppShellFrame({ children }: { children: ReactNode }) {
                 <WorkspaceSwitchSkeleton />
               </div>
             ) : null}
+            {!workspaceSwitching && contentRefreshPulse ? (
+              <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-[26px]">
+                <div className="absolute inset-0 bg-white/10 backdrop-blur-[0.5px]" />
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/45 to-transparent opacity-70 animate-shimmer" />
+              </div>
+            ) : null}
             <PageContainer size="wide">
-              <WorkspaceReactiveBoundary>{children}</WorkspaceReactiveBoundary>
+              <div
+                className={cn(
+                  "transition-[opacity,transform] duration-[260ms] ease-out",
+                  contentRefreshPulse && "opacity-[0.96] translate-y-[4px]"
+                )}
+              >
+                <WorkspaceReactiveBoundary>{children}</WorkspaceReactiveBoundary>
+              </div>
             </PageContainer>
           </main>
         </div>
@@ -336,13 +430,6 @@ function AppShellFrame({ children }: { children: ReactNode }) {
             if (!next) setTransactionInitialMovementType(undefined);
           }}
           initialMovementType={transactionInitialMovementType}
-          onSuccess={() => {
-            try {
-              window.dispatchEvent(new Event("mis-finanzas:accounts-changed"));
-            } catch {
-              // noop
-            }
-          }}
         />
 
         <CalculatorOverlay
