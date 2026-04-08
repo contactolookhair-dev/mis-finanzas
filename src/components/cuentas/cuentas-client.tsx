@@ -466,7 +466,9 @@ function AccountUpsertModal({
                               type="button"
                               style={{ backgroundColor: option }}
                               className={`relative h-10 w-10 rounded-2xl border transition ${
-                                isActive ? "border-slate-900 shadow-lg" : "border-slate-200"
+                                isActive
+                                  ? "border-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.08)]"
+                                  : "border-slate-200"
                               }`}
                               onClick={() => onChange({ color: option, appearanceMode: "manual" })}
                               aria-label={`Color ${option}`}
@@ -489,7 +491,9 @@ function AccountUpsertModal({
                               key={option}
                               type="button"
                               className={`relative flex h-10 w-10 items-center justify-center rounded-2xl border bg-white text-2xl transition ${
-                                isActive ? "border-slate-900 shadow-lg" : "border-slate-200"
+                                isActive
+                                  ? "border-slate-900 shadow-[0_8px_30px_rgba(0,0,0,0.08)]"
+                                  : "border-slate-200"
                               }`}
                               onClick={() => onChange({ icon: option, appearanceMode: "manual" })}
                               aria-label={`Icono ${option}`}

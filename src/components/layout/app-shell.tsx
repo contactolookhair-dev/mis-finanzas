@@ -265,8 +265,13 @@ function AppShellFrame({ children }: { children: ReactNode }) {
           </div>
         </nav>
 
-        {/* Desktop floating quick actions (mobile already has its own patterns). */}
-        <div className="fixed bottom-[104px] right-5 z-[92] flex flex-col gap-2 sm:bottom-6 sm:right-6">
+        {/* Floating quick actions */}
+        <div
+          className={cn(
+            "fixed right-3 top-1/2 z-[92] flex -translate-y-1/2 flex-col gap-2",
+            "sm:right-6 sm:top-auto sm:bottom-6 sm:translate-y-0"
+          )}
+        >
           <div className="glass-surface rounded-[22px] p-2 ring-1 ring-white/35 shadow-[0_22px_46px_rgba(15,23,42,0.12)]">
             <div className="flex flex-col gap-2">
               <Button

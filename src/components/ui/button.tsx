@@ -5,14 +5,24 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "tap-feedback inline-flex items-center justify-center rounded-full text-sm font-medium tracking-[-0.01em] transition-[transform,box-shadow,background-color,border-color,color,opacity,filter] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.985]",
+  [
+    "tap-feedback inline-flex items-center justify-center rounded-full text-sm font-medium tracking-[-0.01em]",
+    // Global premium motion.
+    "transition-all duration-200 ease-out will-change-[transform,box-shadow]",
+    // Tactile scaling.
+    "hover:scale-[1.02] active:scale-[0.98]",
+    "disabled:hover:scale-100 disabled:active:scale-100",
+    // Focus + disabled.
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+  ].join(" "),
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-white shadow-[0_12px_26px_rgba(37,99,235,0.18)] hover:brightness-[1.01] hover:shadow-[0_14px_30px_rgba(37,99,235,0.2)]",
+          "bg-primary text-white shadow-[0_10px_28px_rgba(37,99,235,0.16)] hover:brightness-[1.01] hover:shadow-[0_12px_34px_rgba(37,99,235,0.18)]",
         secondary:
-          "border border-border/80 bg-white/84 text-foreground shadow-[0_8px_20px_rgba(15,23,42,0.05)] hover:border-primary/20 hover:bg-white",
+          "border border-border/80 bg-white/84 text-foreground shadow-[0_8px_30px_rgba(0,0,0,0.05)] hover:border-primary/20 hover:bg-white hover:shadow-[0_12px_40px_rgba(0,0,0,0.07)]",
         ghost: "text-foreground hover:bg-muted/70"
       },
       size: {

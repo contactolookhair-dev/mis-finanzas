@@ -8,7 +8,19 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-[28px] border border-border/70 bg-card/92 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] backdrop-blur-xl",
+        [
+          // Premium baseline surface.
+          "rounded-[32px] border border-border/70 bg-card/92 backdrop-blur-xl",
+          // Spacing: more breathing room by default.
+          "p-6",
+          // Premium shadows: softer and more modern.
+          "shadow-[0_8px_30px_rgba(0,0,0,0.06)]",
+          // Motion.
+          "motion-safe:animate-[fadeIn_0.4s_ease-out]",
+          "transition-all duration-300 ease-out will-change-[transform,box-shadow]",
+          // Lift + hover shadow (only meaningful on hover devices).
+          "hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(0,0,0,0.08)]"
+        ].join(" "),
         className
       )}
       {...props}
