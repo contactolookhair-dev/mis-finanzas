@@ -5,6 +5,10 @@ import {
   listManualAccountsWithBalances
 } from "@/server/services/manual-accounts-service";
 import { getWorkspaceContextFromRequest } from "@/server/tenant/workspace-context";
+import { ACTIVE_WORKSPACE_COOKIE } from "@/server/auth/auth-context";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const createAccountSchema = z.object({
   name: z.string().min(2),
@@ -41,13 +45,20 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const context = await getWorkspaceContextFromRequest(request);
+  const activeWorkspaceCookie = request.cookies.get(ACTIVE_WORKSPACE_COOKIE)?.value ?? null;
   console.log("accounts:post context", {
     workspaceId: context.workspaceId ?? null,
     source: context.source,
-    userKey: context.userKey ?? null
+    userKey: context.userKey ?? null,
+    hasActiveWorkspaceCookie: Boolean(activeWorkspaceCookie)
   });
 
   if (!context.workspaceId || !context.userKey) {
+    console.log("accounts:post unauthorized", {
+      reason: !context.userKey ? "missing_userKey" : "missing_workspaceId",
+      source: context.source,
+      hasActiveWorkspaceCookie: Boolean(activeWorkspaceCookie)
+    });
     return NextResponse.json({ message: "Sesion requerida." }, { status: 401 });
   }
 
@@ -72,11 +83,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ items });
   } catch (error) {
     if (error instanceof z.ZodError) {
+      console.log("accounts:post validation-error", {
+        issues: error.issues
+      });
       return NextResponse.json(
         { message: "Datos invalidos para crear la cuenta.", issues: error.issues },
         { status: 400 }
       );
     }
+    console.error("accounts:post error", {
+      message: error instanceof Error ? error.message : "unknown"
+    });
     return NextResponse.json({ message: "No se pudo crear la cuenta." }, { status: 500 });
   }
 }

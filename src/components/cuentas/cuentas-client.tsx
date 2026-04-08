@@ -2321,8 +2321,16 @@ export function CuentasClient() {
             appearanceMode: form.appearanceMode
           })
       });
-      const body = (await response.json()) as AccountsPayload & { message?: string };
-      if (!response.ok) throw new Error(body.message ?? "No se pudo crear la cuenta.");
+      const body = (await response.json().catch(() => null)) as
+        | (AccountsPayload & { message?: string; issues?: Array<{ path?: unknown; message?: string }> })
+        | null;
+      if (!body) {
+        throw new Error("Respuesta inválida del servidor al crear la cuenta.");
+      }
+      if (!response.ok) {
+        const issueMessage = body?.issues?.[0]?.message ? ` ${body.issues[0].message}` : "";
+        throw new Error((body?.message ?? "No se pudo crear la cuenta.") + issueMessage);
+      }
       setAccounts(body.items);
       setSuccess(editingId ? "Cuenta actualizada correctamente." : "Cuenta creada correctamente.");
       setIsUpsertOpen(false);

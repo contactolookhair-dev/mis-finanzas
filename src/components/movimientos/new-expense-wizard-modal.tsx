@@ -11,9 +11,10 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  initialMovementType?: "GASTO" | "INGRESO";
 };
 
-export function NewExpenseWizardModal({ open, onOpenChange, onSuccess }: Props) {
+export function NewExpenseWizardModal({ open, onOpenChange, onSuccess, initialMovementType }: Props) {
   useLockBodyScroll(open);
 
   if (!open) return null;
@@ -46,6 +47,7 @@ export function NewExpenseWizardModal({ open, onOpenChange, onSuccess }: Props) 
 
         <AddExpenseWizard
           mode={demoMode ? "demo" : "real"}
+          initialMovementType={initialMovementType}
           onSaved={() => {
             onSuccess?.();
           }}

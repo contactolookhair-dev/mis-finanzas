@@ -48,6 +48,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  initialMovementType?: "GASTO" | "INGRESO";
 };
 
 type TransactionKind = "GASTO" | "INGRESO" | "TRANSFERENCIA";
@@ -85,8 +86,9 @@ const fieldLabelClass = "text-[11px] font-semibold uppercase tracking-[0.18em] t
 const textareaClass =
   "min-h-[92px] w-full rounded-2xl border border-white/80 bg-white/90 px-4 py-3 text-sm outline-none focus:border-violet-400";
 
-export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
+export function NewTransactionModal({ open, onOpenChange, onSuccess, initialMovementType }: Props) {
   useLockBodyScroll(open);
+  const lockedMovementType = Boolean(initialMovementType);
 
   const [kind, setKind] = useState<TransactionKind>("GASTO");
   const [classification, setClassification] = useState<"PERSONAL" | "NEGOCIO" | "PRESTADO">("PERSONAL");
@@ -127,6 +129,21 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    function onCalculatorApply(event: Event) {
+      const detail = (event as CustomEvent).detail as { value?: number } | undefined;
+      const value = detail?.value;
+      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      const normalized = Math.abs(value % 1) > 0.000001 ? Number(value.toFixed(2)) : Math.round(value);
+      setAmount(Number.isFinite(normalized) ? String(normalized) : "");
+    }
+
+    window.addEventListener("mis-finanzas:calculator-apply", onCalculatorApply as EventListener);
+    return () => {
+      window.removeEventListener("mis-finanzas:calculator-apply", onCalculatorApply as EventListener);
+    };
+  }, []);
 
   const resolvedAmount = useMemo(() => Number(amount || 0), [amount]);
   const resolvedOwedAmount = useMemo(
@@ -210,7 +227,7 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
       const raw = window.localStorage.getItem(QUICK_PREFS_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as QuickPrefs;
-      if (parsed.kind) setKind(parsed.kind);
+      if (parsed.kind && !lockedMovementType) setKind(parsed.kind);
       if (parsed.accountId) setAccountId(parsed.accountId);
       if (parsed.categoryId) setCategoryId(parsed.categoryId);
     } catch {
@@ -264,6 +281,12 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
 
     void loadCatalogs();
   }, [open, accountId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!initialMovementType) return;
+    setKind(initialMovementType);
+  }, [open, initialMovementType]);
 
   async function upsertPersonDebt(sourceTransactionId?: string) {
     if (owedDebtorMode === "EXISTING" && owedDebtorId) {
@@ -612,22 +635,24 @@ export function NewTransactionModal({ open, onOpenChange, onSuccess }: Props) {
               />
             </label>
 
-            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
-              {(["GASTO", "INGRESO", "TRANSFERENCIA"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setKind(value)}
-                  className={`tap-feedback h-10 rounded-xl text-xs font-semibold transition ${
-                    kind === value
-                      ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
-                      : "text-slate-500"
-                  }`}
-                >
-                  {value === "GASTO" ? "Gasto" : value === "INGRESO" ? "Ingreso" : "Transferencia"}
-                </button>
-              ))}
-            </div>
+            {!lockedMovementType ? (
+              <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-1">
+                {(["GASTO", "INGRESO", "TRANSFERENCIA"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setKind(value)}
+                    className={`tap-feedback h-10 rounded-xl text-xs font-semibold transition ${
+                      kind === value
+                        ? "bg-white text-slate-900 shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {value === "GASTO" ? "Gasto" : value === "INGRESO" ? "Ingreso" : "Transferencia"}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </SurfaceCard>
 
           {isCreditCardPurchase ? (

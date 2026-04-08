@@ -18,10 +18,17 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login"
   },
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? ""
-    }),
+    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+      ? [
+          GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            // Allows users who registered with email/password to later sign in with Google using the same email.
+            // Without this, NextAuth can throw OAuthAccountNotLinked for the same Gmail.
+            allowDangerousEmailAccountLinking: true
+          })
+        ]
+      : []),
     CredentialsProvider({
       name: "Credenciales",
       credentials: {

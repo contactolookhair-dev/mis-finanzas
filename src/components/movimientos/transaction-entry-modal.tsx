@@ -8,6 +8,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess?: () => void;
+  initialMovementType?: "GASTO" | "INGRESO";
 };
 
 export function TransactionEntryModal(props: Props) {
@@ -16,4 +17,3 @@ export function TransactionEntryModal(props: Props) {
   }
   return <NewTransactionModal {...props} />;
 }
-

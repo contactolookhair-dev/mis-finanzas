@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AlertTriangle, Calculator, CheckCircle2, Plus } from "lucide-react";
+import { AlertTriangle, Calculator, CheckCircle2, Minus, Plus } from "lucide-react";
 import { navigationItems } from "@/lib/constants/navigation";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -12,12 +12,12 @@ import { StatPill } from "@/components/ui/stat-pill";
 import { DashboardHeaderLoader } from "@/components/layout/dashboard-header-loader";
 import { DashboardHeaderProvider, useDashboardHeader } from "@/components/layout/dashboard-header-context";
 import { TransactionEntryModal } from "@/components/movimientos/transaction-entry-modal";
-import { CalculatorWidget } from "@/components/inicio/calculator-widget";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { useCallback, useEffect, useState } from "react";
 import { UserMenu } from "@/components/auth/user-menu";
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 import { useWorkspaceStore } from "@/shared/stores/workspace-store";
+import { CalculatorOverlay } from "@/components/inicio/calculator-overlay";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -35,6 +35,9 @@ function AppShellFrame({ children }: { children: ReactNode }) {
   );
 
   const [transactionOpen, setTransactionOpen] = useState(false);
+  const [transactionInitialMovementType, setTransactionInitialMovementType] = useState<
+    "GASTO" | "INGRESO" | undefined
+  >(undefined);
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [calculatorInput, setCalculatorInput] = useState("");
   const [calculatorResult, setCalculatorResult] = useState<number | null>(null);
@@ -263,29 +266,71 @@ function AppShellFrame({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Desktop floating quick actions (mobile already has its own patterns). */}
-        <div className="fixed bottom-6 right-6 z-30 hidden flex-col gap-2 sm:flex">
-          <Button
-            type="button"
-            onClick={() => setCalculatorOpen(true)}
-            variant="secondary"
-            className="h-11 w-11 rounded-full p-0 shadow-[0_18px_38px_rgba(15,23,42,0.14)]"
-            aria-label="Calculadora"
-          >
-            <Calculator className="h-5 w-5" strokeWidth={1.9} />
-          </Button>
-          <Button
-            type="button"
-            onClick={() => setTransactionOpen(true)}
-            className="h-12 w-12 rounded-full p-0 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-[0_22px_46px_rgba(37,99,235,0.18)] ring-1 ring-white/30 hover:brightness-105"
-            aria-label="Agregar gasto"
-          >
-            <Plus className="h-5 w-5" strokeWidth={2.2} />
-          </Button>
+        <div className="fixed bottom-[104px] right-5 z-[92] flex flex-col gap-2 sm:bottom-6 sm:right-6">
+          <div className="glass-surface rounded-[22px] p-2 ring-1 ring-white/35 shadow-[0_22px_46px_rgba(15,23,42,0.12)]">
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                onClick={() => setCalculatorOpen(true)}
+                variant="secondary"
+                className="h-11 w-11 rounded-full p-0 shadow-[0_12px_26px_rgba(15,23,42,0.10)]"
+                aria-label="Calculadora"
+                title="Calculadora"
+              >
+                <Calculator className="h-5 w-5" strokeWidth={1.9} />
+              </Button>
+
+              {/* When the transaction modal is open, keep only the calculator accessible above it. */}
+              {!transactionOpen ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTransactionInitialMovementType("INGRESO");
+                      setTransactionOpen(true);
+                    }}
+                    className={cn(
+                      "tap-feedback inline-flex h-12 w-12 items-center justify-center rounded-full",
+                      "bg-gradient-to-r from-sky-500 to-blue-600 text-white",
+                      "shadow-[0_18px_36px_rgba(37,99,235,0.22)] ring-1 ring-white/30 hover:brightness-105",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                    )}
+                    aria-label="Registrar ingreso"
+                    title="Ingreso"
+                  >
+                    <Plus className="h-5 w-5" strokeWidth={2.2} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTransactionInitialMovementType("GASTO");
+                      setTransactionOpen(true);
+                    }}
+                    className={cn(
+                      "tap-feedback inline-flex h-12 w-12 items-center justify-center rounded-full",
+                      "bg-gradient-to-r from-rose-500 to-red-600 text-white",
+                      "shadow-[0_18px_36px_rgba(225,29,72,0.22)] ring-1 ring-white/30 hover:brightness-105",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+                    )}
+                    aria-label="Registrar gasto"
+                    title="Gasto"
+                  >
+                    <Minus className="h-5 w-5" strokeWidth={2.2} />
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         <TransactionEntryModal
           open={transactionOpen}
-          onOpenChange={setTransactionOpen}
+          onOpenChange={(next) => {
+            setTransactionOpen(next);
+            if (!next) setTransactionInitialMovementType(undefined);
+          }}
+          initialMovementType={transactionInitialMovementType}
           onSuccess={() => {
             try {
               window.dispatchEvent(new Event("mis-finanzas:accounts-changed"));
@@ -295,39 +340,17 @@ function AppShellFrame({ children }: { children: ReactNode }) {
           }}
         />
 
-        {calculatorOpen ? (
-          <div className="fixed inset-0 z-[72] flex items-end justify-center bg-slate-950/36 p-0 sm:items-center sm:p-4">
-            <div className="glass-surface safe-pb w-full max-h-[88vh] overflow-y-auto rounded-t-[28px] p-4 animate-fade-up ring-1 ring-white/35 sm:max-w-md sm:rounded-[32px] sm:p-5">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    Calculadora
-                  </p>
-                  <h3 className="mt-1 text-lg font-semibold text-slate-900">Calcula sin salir</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCalculatorOpen(false)}
-                  className="tap-feedback rounded-full bg-slate-100 p-2 text-slate-500 transition hover:bg-slate-200"
-                  aria-label="Cerrar calculadora"
-                >
-                  <Plus className="h-4 w-4 rotate-45" />
-                </button>
-              </div>
-              <SurfaceCard variant="soft" padding="sm" className="shadow-none">
-                <CalculatorWidget
-                  calculatorInput={calculatorInput}
-                  calculatorResult={calculatorResult}
-                  onAppend={handleCalculatorAppend}
-                  onClear={handleCalculatorClear}
-                  onDelete={handleCalculatorDelete}
-                  onEquals={handleCalculatorEquals}
-                  compact
-                />
-              </SurfaceCard>
-            </div>
-          </div>
-        ) : null}
+        <CalculatorOverlay
+          open={calculatorOpen}
+          onOpenChange={setCalculatorOpen}
+          calculatorInput={calculatorInput}
+          calculatorResult={calculatorResult}
+          onAppend={handleCalculatorAppend}
+          onClear={handleCalculatorClear}
+          onDelete={handleCalculatorDelete}
+          onEquals={handleCalculatorEquals}
+          evaluateExpression={evaluateExpression}
+        />
       </div>
     </div>
   );

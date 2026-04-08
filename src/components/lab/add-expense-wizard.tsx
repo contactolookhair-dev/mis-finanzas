@@ -236,13 +236,16 @@ function buildDynamicSteps(input: {
   creditPayIntent: CreditPayIntent | null;
   expenseOwner: ExpenseOwner | null;
   creditPayWhat: CreditPayWhat | null;
+  lockedMovementType: boolean;
 }): WizardStep[] {
   const steps: WizardStep[] = [
     { key: "welcome", title: STEP_TITLES.welcome },
     { key: "account", title: STEP_TITLES.account },
-    { key: "amount", title: STEP_TITLES.amount },
-    { key: "type", title: STEP_TITLES.type }
+    { key: "amount", title: STEP_TITLES.amount }
   ];
+  if (!input.lockedMovementType) {
+    steps.push({ key: "type", title: STEP_TITLES.type });
+  }
 
   const accountType = input.accountType;
   const movementType = input.movementType;
@@ -338,9 +341,10 @@ type Props = {
   mode?: WizardMode;
   onDone?: () => void;
   onSaved?: () => void;
+  initialMovementType?: "GASTO" | "INGRESO";
 };
 
-export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
+export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMovementType }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -377,7 +381,7 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
   const [state, setState] = useState<WizardState>({
     accountId: null,
     amount: "",
-    movementType: "GASTO",
+    movementType: initialMovementType ?? "GASTO",
     categoryId: null,
     note: "",
     expenseOwner: null,
@@ -393,6 +397,24 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
     cuotaTotal: "",
     purchaseInstallmentError: null
   });
+
+  useEffect(() => {
+    function onCalculatorApply(event: Event) {
+      const detail = (event as CustomEvent).detail as { value?: number } | undefined;
+      const value = detail?.value;
+      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      const normalized = Math.abs(value % 1) > 0.000001 ? Number(value.toFixed(2)) : Math.round(value);
+      setState((prev) => ({
+        ...prev,
+        amount: Number.isFinite(normalized) ? String(normalized) : prev.amount
+      }));
+    }
+
+    window.addEventListener("mis-finanzas:calculator-apply", onCalculatorApply as EventListener);
+    return () => {
+      window.removeEventListener("mis-finanzas:calculator-apply", onCalculatorApply as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -551,9 +573,10 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved }: Props) {
         movementType: state.movementType,
         creditPayIntent: state.creditPayIntent,
         expenseOwner: state.expenseOwner,
-        creditPayWhat: state.creditPayWhat
+        creditPayWhat: state.creditPayWhat,
+        lockedMovementType: Boolean(initialMovementType)
       }),
-    [selectedAccount?.type, state.movementType, state.creditPayIntent, state.creditPayWhat, state.expenseOwner]
+    [selectedAccount?.type, state.movementType, state.creditPayIntent, state.creditPayWhat, state.expenseOwner, initialMovementType]
   );
 
   const step = steps[Math.min(stepIndex, Math.max(steps.length - 1, 0))];
