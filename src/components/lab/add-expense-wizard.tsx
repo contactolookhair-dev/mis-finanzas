@@ -2531,6 +2531,12 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
                               const hasInstallments = Boolean(
                                 tx.isInstallmentPurchase && (tx.cuotaTotal ?? 0) > 1
                               );
+                              const totalPurchaseAmount = tx.amount;
+                              const derivedInstallmentAmount =
+                                hasInstallments && tx.cuotaTotal && tx.cuotaTotal > 1
+                                  ? Math.max(1, Math.round(totalPurchaseAmount / tx.cuotaTotal))
+                                  : null;
+                              const displayAmount = derivedInstallmentAmount ?? totalPurchaseAmount;
                               return (
                                 <div
                                   key={tx.id}
@@ -2547,9 +2553,17 @@ export function AddExpenseWizard({ mode = "demo", onDone, onSaved, initialMoveme
                                           ? ` · Cuota ${tx.cuotaActual} de ${tx.cuotaTotal}`
                                           : ""}
                                       </p>
+                                      {hasInstallments ? (
+                                        <p className="mt-1 text-xs text-slate-600">
+                                          Total compra:{" "}
+                                          <span className="font-semibold text-slate-800">
+                                            {formatCurrency(totalPurchaseAmount)}
+                                          </span>
+                                        </p>
+                                      ) : null}
                                     </div>
                                     <p className="text-sm font-semibold text-slate-900">
-                                      {formatCurrency(tx.amount)}
+                                      {formatCurrency(displayAmount)}
                                     </p>
                                   </div>
                                 </div>
