@@ -396,13 +396,41 @@ export async function getDebtsSnapshot(workspaceId: string) {
         ? Math.max(0, installmentTotal - installmentCurrent)
         : null;
 
+    // Display-only normalization:
+    // If an older bug double-counted totals for credit-card installment purchases, correct it for the snapshot
+    // so the UI summary reflects the real purchase total, not purchaseTotal * cuotas.
+    const looksLikeDoubleCountedTotal =
+      typeof purchaseTotalAmount === "number" &&
+      Number.isFinite(purchaseTotalAmount) &&
+      purchaseTotalAmount > 0 &&
+      typeof installmentTotal === "number" &&
+      Number.isFinite(installmentTotal) &&
+      installmentTotal > 1 &&
+      totalAmount > purchaseTotalAmount * 1.5 &&
+      approxEqual(totalAmount, purchaseTotalAmount * installmentTotal, 0.02);
+
+    const paidInstallmentsGuess =
+      typeof installmentCurrent === "number" && Number.isFinite(installmentCurrent) && installmentCurrent > 0
+        ? Math.max(0, Math.min(installmentTotal ?? installmentCurrent, installmentCurrent - 1))
+        : Math.max(0, debtor.paidInstallments ?? 0);
+
+    const displayTotalAmount = looksLikeDoubleCountedTotal ? Math.round(purchaseTotalAmount!) : totalAmount;
+    const derivedPaidFromCredit =
+      looksLikeDoubleCountedTotal && typeof creditInstallmentAmount === "number" && Number.isFinite(creditInstallmentAmount)
+        ? Math.max(0, Math.round(creditInstallmentAmount * paidInstallmentsGuess))
+        : null;
+    const displayPaidAmount = looksLikeDoubleCountedTotal
+      ? Math.min(displayTotalAmount, Math.max(paymentSum, derivedPaidFromCredit ?? 0))
+      : paidAmount;
+    const displayPendingAmount = Math.max(0, displayTotalAmount - displayPaidAmount);
+
     return {
       id: debtor.id,
       name: debtor.name,
       reason: debtor.reason,
-      totalAmount,
-      paidAmount,
-      pendingAmount: Math.max(0, totalAmount - paidAmount),
+      totalAmount: displayTotalAmount,
+      paidAmount: displayPaidAmount,
+      pendingAmount: displayPendingAmount,
       status: debtor.status,
       startDate: debtor.startDate.toISOString(),
       estimatedPayDate: debtor.estimatedPayDate?.toISOString() ?? null,
